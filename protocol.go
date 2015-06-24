@@ -3,6 +3,7 @@ package gokeyless
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -102,88 +103,47 @@ const (
 // Header represents the format for a Keyless protocol header.
 type Header struct {
 	MajorVers, MinorVers uint8
-	Length               uint16
 	ID                   uint32
-	Body                 []byte
+	// Length of marshaled Body. Only used in unmarshaling.
+	Length uint16
+	Body   *Operation
 }
 
 // NewHeader returns a new Header from a sequence of Items.
-func NewHeader(items []*Item) *Header {
-	var body []byte
-	for _, item := range items {
-		b, _ := item.MarshalBinary()
-		body = append(body, b...)
-	}
-
-	length := headerSize + len(body)
-	if length < paddedLength {
-		b, _ := NewPadding(paddedLength - length).MarshalBinary()
-		body = append(body, b...)
-	}
-
+func NewHeader(operation *Operation) *Header {
 	return &Header{
 		MajorVers: 0x01,
 		MinorVers: 0x00,
-		Length:    uint16(len(body)),
 		ID:        rand.Uint32(),
-		Body:      body,
+		Body:      operation,
 	}
 }
 
 // MarshalBinary header into on-the-wire format.
 func (h *Header) MarshalBinary() ([]byte, error) {
 	data := make([]byte, 8)
+	body, err := h.Body.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
 	data[0] = h.MajorVers
 	data[1] = h.MinorVers
-	binary.BigEndian.PutUint16(data[2:4], h.Length)
+	binary.BigEndian.PutUint16(data[2:4], uint16(len(body)))
 	binary.BigEndian.PutUint32(data[4:8], h.ID)
-	return append(data, h.Body...), nil
+	return append(data, body...), nil
 }
 
 // UnmarshalBinary header from on-the-wire format.
 func (h *Header) UnmarshalBinary(data []byte) error {
+	if len(data) < 8 {
+		return fmt.Errorf("header data incomplete (only %d bytes)", len(data))
+	}
+
 	h.MajorVers = data[0]
 	h.MinorVers = data[1]
 	h.Length = binary.BigEndian.Uint16(data[2:4])
 	h.ID = binary.BigEndian.Uint32(data[4:8])
 	return nil
-}
-
-// Item represents an actual Keyless protocol value being passed.
-type Item struct {
-	Tag  Tag
-	Data []byte
-}
-
-// NewPadding returns an item to be used for padding.
-func NewPadding(size int) *Item {
-	return &Item{TagPadding, make([]byte, size)}
-}
-
-// UnmarshalItems reads items from their TLV serialized format.
-func UnmarshalItems(body []byte) (items []*Item, err error) {
-	var length int
-	for i := 0; i+2 < len(body); i += 3 + length {
-		length = int(binary.BigEndian.Uint16(body[i+1 : i+3]))
-		if i+3+length > len(body) {
-			err = fmt.Errorf("length (%d) longer than body", length)
-			return
-		}
-		tag := Tag(body[i])
-		switch tag {
-		case TagCertificateDigest:
-		case TagServerName:
-		case TagClientIP:
-		case TagOpcode:
-		case TagPayload:
-		case TagPadding:
-			continue
-		default:
-			continue
-		}
-		items = append(items, &Item{tag, body[i+3 : i+3+length]})
-	}
-	return
 }
 
 // Operation defines a single (repeatable) keyless operation.
@@ -195,18 +155,26 @@ type Operation struct {
 	SNI      string
 }
 
-// Header returns a new header corresponding to the operation
-func (o *Operation) Header() *Header {
-	var items []*Item
+// tlvBytes returns the byte representation of a Tag-Length-Value item.
+func tlvBytes(tag Tag, data []byte) []byte {
+	b := make([]byte, 3)
+	b[0] = byte(tag)
+	binary.BigEndian.PutUint16(b[1:3], uint16(len(data)))
+	return append(b, data...)
+}
 
-	items = append(items, &Item{TagOpcode, []byte{byte(o.Opcode)}})
+// MarshalBinary returns a binary
+func (o *Operation) MarshalBinary() ([]byte, error) {
+	var b []byte
+
+	b = append(b, tlvBytes(TagOpcode, []byte{byte(o.Opcode)})...)
 
 	if len(o.Payload) > 0 {
-		items = append(items, &Item{TagPayload, o.Payload})
+		b = append(b, tlvBytes(TagPayload, o.Payload)...)
 	}
 
 	if o.Dgst != emptyDigest {
-		items = append(items, &Item{TagCertificateDigest, o.Dgst[:]})
+		b = append(b, tlvBytes(TagCertificateDigest, o.Dgst[:])...)
 	}
 
 	if o.ClientIP != nil {
@@ -214,88 +182,102 @@ func (o *Operation) Header() *Header {
 		if ip == nil {
 			ip = o.ClientIP
 		}
-		items = append(items, &Item{TagClientIP, ip})
+		b = append(b, tlvBytes(TagClientIP, ip)...)
 	}
 
 	if o.SNI != "" {
-		items = append(items, &Item{TagServerName, []byte(o.SNI)})
+		b = append(b, tlvBytes(TagServerName, []byte(o.SNI))...)
 	}
 
-	return NewHeader(items)
+	if len(b)+headerSize < paddedLength {
+		padding := make([]byte, paddedLength-(len(b)+headerSize))
+		b = append(b, tlvBytes(TagPadding, padding)...)
+	}
+	return b, nil
 }
 
 // UnmarshalBinary unmarshals a binary-encoded TLV list of items into an Operation.
 func (o *Operation) UnmarshalBinary(body []byte) error {
-	items, err := UnmarshalItems(body)
-	if err != nil {
-		return err
-	}
-
+	var length int
 	seen := make(map[Tag]bool)
-	for _, item := range items {
-		if seen[item.Tag] {
-			return fmt.Errorf("tag %v seen multiple times", item.Tag)
+	for i := 0; i+2 < len(body); i += 3 + length {
+		tag := Tag(body[i])
+
+		length = int(binary.BigEndian.Uint16(body[i+1 : i+3]))
+		if i+3+length > len(body) {
+			return fmt.Errorf("length (%d) longer than body", length)
 		}
-		seen[item.Tag] = true
-		switch item.Tag {
+
+		data := body[i+3 : i+3+length]
+
+		if seen[tag] {
+			return fmt.Errorf("tag %v seen multiple times", tag)
+		}
+		seen[tag] = true
+
+		switch tag {
 		case TagOpcode:
-			if len(item.Data) != 1 {
-				return fmt.Errorf("invalid opcode: %v", item.Data)
+			if len(data) != 1 {
+				return fmt.Errorf("invalid opcode: %v", data)
 			}
-			o.Opcode = Op(item.Data[0])
+			o.Opcode = Op(data[0])
+
 		case TagPayload:
-			o.Payload = item.Data
+			o.Payload = data
+
 		case TagCertificateDigest:
-			if len(item.Data) != len(emptyDigest) {
-				return fmt.Errorf("invalid digest: %v", item.Data)
+			if len(data) != len(emptyDigest) {
+				return fmt.Errorf("invalid digest length: %d", len(data))
 			}
-			copy(o.Dgst[:], item.Data)
+			copy(o.Dgst[:], data)
+
 		case TagClientIP:
-			o.ClientIP = item.Data
+			o.ClientIP = data
+
 		case TagServerName:
-			o.SNI = string(item.Data)
+			o.SNI = string(data)
+
 		case TagPadding:
+			// ignore padding
 		default:
-			return fmt.Errorf("unknown tag: %v", item.Tag)
+			return fmt.Errorf("unknown tag: %v", tag)
 		}
 	}
-
 	return nil
 }
 
-// MarshalBinary item into on-the-wire format
-func (i *Item) MarshalBinary() ([]byte, error) {
-	data := make([]byte, 3)
-	data[0] = byte(i.Tag)
-	binary.BigEndian.PutUint16(data[1:], uint16(len(i.Data)))
-	return append(data, i.Data...), nil
+// GetError returns string errors associated with error response codes.
+func (o *Operation) GetError() error {
+	var errStr string
+	if o.Opcode != OpError || len(o.Payload) != 1 {
+		errStr = "no error"
+	} else {
+		switch Error(o.Payload[0]) {
+		case ErrCrypto:
+			errStr = "cryptography error"
+		case ErrKeyNotFound:
+			errStr = "no matching certificate digest"
+		case ErrRead:
+			errStr = "disk read failure"
+		case ErrVersionMismatch:
+			errStr = "version mismatch"
+		// ErrBadOpcode indicates use of unknown opcode in request.
+		case ErrBadOpcode:
+			errStr = "bad opcode"
+		case ErrUnexpectedOpcode:
+			errStr = "unexpected opcode"
+		case ErrFormat:
+			errStr = "malformed message"
+		case ErrInternal:
+			errStr = "internal error"
+		default:
+			errStr = "unknown error"
+		}
+	}
+	return errors.New("keyless: " + errStr)
 }
 
 // Digest represents a certificate digest used to index remote keys.
 type Digest [sha256.Size]byte
 
 var emptyDigest Digest
-
-// WriteHeader marshals and header and writes it to the conn.
-func WriteHeader(c net.Conn, header *Header) error {
-	b, err := header.MarshalBinary()
-	if err != nil {
-		return err
-	}
-	_, err = c.Write(b)
-	return err
-}
-
-// ReadHeader unmarhals a header from the wire into the internal Header structure.
-func ReadHeader(c net.Conn) (*Header, error) {
-	b := make([]byte, 8)
-	if _, err := c.Read(b); err != nil {
-		return nil, err
-	}
-
-	h := new(Header)
-	h.UnmarshalBinary(b)
-	h.Body = make([]byte, h.Length)
-	_, err := c.Read(h.Body)
-	return h, err
-}
