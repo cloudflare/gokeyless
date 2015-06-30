@@ -13,7 +13,7 @@ import (
 // PrivateKey represents a keyless-backed RSA private key.
 type PrivateKey struct {
 	public crypto.PublicKey
-	dgst   gokeyless.Digest
+	ski    gokeyless.SKI
 
 	client *Client
 
@@ -69,7 +69,7 @@ func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
 
 // Sign implements the crypto.Signer operation for the given key.
 func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
-	conn, err := key.client.DialAny(key.dgst)
+	conn, err := key.client.DialAny(key.ski)
 	if err != nil {
 		return nil, err
 	}
@@ -78,14 +78,14 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	if op == gokeyless.OpError {
 		return nil, errors.New("invalid key type or hash")
 	}
-	return conn.KeyOperation(op, msg, key.dgst)
+	return conn.KeyOperation(op, msg, key.ski)
 }
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
 func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
-	conn, err := key.client.DialAny(key.dgst)
+	conn, err := key.client.DialAny(key.ski)
 	if err != nil {
 		return nil, err
 	}
-	return conn.KeyOperation(gokeyless.OpRSADecryptRaw, msg, key.dgst)
+	return conn.KeyOperation(gokeyless.OpRSADecryptRaw, msg, key.ski)
 }

@@ -2,13 +2,10 @@ package client
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -21,15 +18,18 @@ import (
 type Client struct {
 	// Config is initialized with the client auth configuration used for communicating with keyless servers.
 	Config *tls.Config
+	// Dialer used to manage connections.
 	Dialer *net.Dialer
+	// Log used to output informational data.
+	Log *log.Logger
 	// conns maps keyless servers to any open connections to them.
 	conns map[string]*gokeyless.Conn
-	// allServers maps all known certificate digests to keyless server on which it can be found
-	allServers map[gokeyless.Digest][]string
+	// allServers maps all known certificate SKIs to keyless server on which it can be found
+	allServers map[gokeyless.SKI][]string
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
-func NewClient(certFile, keyFile, caFile string) (*Client, error) {
+func NewClient(certFile, keyFile, caFile string, logOut io.Writer) (*Client, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -49,11 +49,15 @@ func NewClient(certFile, keyFile, caFile string) (*Client, error) {
 		Config: &tls.Config{
 			RootCAs:      keyserverRoot,
 			Certificates: []tls.Certificate{cert},
-			CipherSuites: []uint16{tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384},
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			},
 		},
 		Dialer:     &net.Dialer{},
+		Log:        log.New(logOut, "[client]", log.LstdFlags),
 		conns:      make(map[string]*gokeyless.Conn),
-		allServers: make(map[gokeyless.Digest][]string),
+		allServers: make(map[gokeyless.SKI][]string),
 	}, nil
 }
 
@@ -69,7 +73,7 @@ func (c *Client) Dial(server string) (*gokeyless.Conn, error) {
 		delete(c.conns, server)
 	}
 
-	log.Printf("Dialing server: %s\n", server)
+	c.Log.Printf("Dialing %s\n", server)
 	conn, err := tls.Dial("tcp", server, c.Config)
 	if err != nil {
 		return nil, err
@@ -80,8 +84,8 @@ func (c *Client) Dial(server string) (*gokeyless.Conn, error) {
 }
 
 // DialAny smartly chooses one of the keyless servers given. (Opting to reuse an existing connection if possible)
-func (c *Client) DialAny(dgst gokeyless.Digest) (*gokeyless.Conn, error) {
-	servers := c.allServers[dgst]
+func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
+	servers := c.allServers[ski]
 	if len(servers) == 0 {
 		return nil, errors.New("no servers given")
 	}
@@ -110,33 +114,39 @@ func (c *Client) DialAny(dgst gokeyless.Digest) (*gokeyless.Conn, error) {
 	return nil, errors.New("couldn't dial any of the servers given")
 }
 
-// RegisterDigest associates the digest of a public key with a particular keyserver.
-func (c *Client) RegisterDigest(server string, dgst gokeyless.Digest) {
-	c.allServers[dgst] = append(c.allServers[dgst], server)
+// registerSKI associates the SKI of a public key with a particular keyserver.
+func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
+	c.Log.Printf("Registering key @ %s\t%x", server, ski)
+	c.allServers[ski] = append(c.allServers[ski], server)
 }
 
-// RegisterPublicKey digests and registers a public key as being held by a server.
+// RegisterPublicKey SKIs and registers a public key as being held by a server.
 func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*PrivateKey, error) {
-	var dgst gokeyless.Digest
-	switch pkey := pub.(type) {
-	case *rsa.PublicKey:
-		dgst = sha256.Sum256([]byte(fmt.Sprintf("%X", pkey.N)))
-	case *ecdsa.PublicKey:
-		// TODO: this should be consistent with the keyserver, and hopefully SKI...
-		dgst = sha256.Sum256(append(pkey.X.Bytes(), pkey.Y.Bytes()...))
-	default:
-		return nil, errors.New("certificate contains unknown public key type")
+	// TODO: Add legacy DIGEST support.
+	// var dgst gokeyless.DIGEST
+	// switch pkey := pub.(type) {
+	// case *rsa.PublicKey:
+	// 	dgst = sha256.Sum256([]byte(fmt.Sprintf("%X", pkey.N)))
+	// case *ecdsa.PublicKey:
+	// return nil, errors.New("ecdsa key digests are unsupported")
+	// default:
+	// 	return nil, errors.New("certificate contains unknown public key type")
+	// }
+
+	ski, err := gokeyless.GetSKI(pub)
+	if err != nil {
+		return nil, err
 	}
-	c.RegisterDigest(server, dgst)
+	c.registerSKI(server, ski)
 
 	return &PrivateKey{
 		public: pub,
-		dgst:   dgst,
+		ski:    ski,
 		client: c,
 	}, nil
 }
 
-// RegisterCert digests the public key contained in a certificate and associates it with a particular keyserver.
+// RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
 func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
 	return c.RegisterPublicKey(server, cert.PublicKey)
 }

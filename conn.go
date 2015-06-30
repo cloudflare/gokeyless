@@ -132,12 +132,12 @@ func (c *Conn) Ping(data []byte) error {
 	return nil
 }
 
-// KeyOperation performs an opaque cryptographic operation with the given digested key.
-func (c *Conn) KeyOperation(op Op, msg []byte, dgst Digest) ([]byte, error) {
+// KeyOperation performs an opaque cryptographic operation with the given SKIed key.
+func (c *Conn) KeyOperation(op Op, msg []byte, ski SKI) ([]byte, error) {
 	result, err := c.DoOperation(&Operation{
 		Opcode:  op,
 		Payload: msg,
-		Dgst:    dgst,
+		ski:     ski,
 	})
 	if err != nil {
 		return nil, err

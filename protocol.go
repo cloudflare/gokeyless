@@ -1,7 +1,11 @@
 package gokeyless
 
 import (
-	"crypto/sha256"
+	"crypto"
+	"crypto/sha1"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -13,12 +17,14 @@ import (
 type Tag byte
 
 const (
-	// TagCertificateDigest implies a SHA256 digest of a key.
+	// TagCertificateDigest implies a SHA256 Digest of a key.
 	TagCertificateDigest Tag = 0x01
 	// TagServerName implies an SNI string.
-	TagServerName = 0x02
+	TagServerName Tag = 0x02
 	// TagClientIP implies an IPv4/6 address.
 	TagClientIP = 0x03
+	// TagSubjectKeyIdentifier implies the Subject Key Identifier for the given key
+	TagSubjectKeyIdentifier = 0x04
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
@@ -26,6 +32,27 @@ const (
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding = 0x20
 )
+
+func (t Tag) String() string {
+	switch t {
+	case TagCertificateDigest:
+		return "TagCertificateDigest"
+	case TagServerName:
+		return "TagServerName"
+	case TagClientIP:
+		return "TagClientIP"
+	case TagSubjectKeyIdentifier:
+		return "TagSubjectKeyIdentifier"
+	case TagOpcode:
+		return "TagOpcode"
+	case TagPayload:
+		return "TagPayload"
+	case TagPadding:
+		return "TagPadding"
+	default:
+		return fmt.Sprintf("Invalid (%02x)", t)
+	}
+}
 
 // Op describing operation to be performed OR operation status.
 type Op byte
@@ -73,6 +100,41 @@ const (
 	OpError = 0xFF
 )
 
+func (o Op) String() string {
+	switch o {
+	case OpRSADecrypt:
+		return "OpRSADecrypt"
+	case OpRSADecryptRaw:
+		return "OpRSADecryptRaw"
+	case OpRSASignMD5SHA1:
+		return "OpRSASignMD5SHA1"
+	case OpRSASignSHA1:
+		return "OpRSASignSHA1"
+	case OpRSASignSHA224:
+		return "OpRSASignSHA224"
+	case OpRSASignSHA256:
+		return "OpRSASignSHA256"
+	case OpRSASignSHA384:
+		return "OpRSASignSHA384"
+	case OpRSASignSHA512:
+		return "OpRSASignSHA512"
+	case OpECDSASignMD5SHA1:
+		return "OpECDSASignMD5SHA1"
+	case OpECDSASignSHA1:
+		return "OpECDSASignSHA1"
+	case OpECDSASignSHA224:
+		return "OpECDSASignSHA224"
+	case OpECDSASignSHA256:
+		return "OpECDSASignSHA256"
+	case OpECDSASignSHA384:
+		return "OpECDSASignSHA384"
+	case OpECDSASignSHA512:
+		return "OpECDSASignSHA512"
+	default:
+		return fmt.Sprintf("Invalid (%02x)", o)
+	}
+}
+
 // Error defines a 1-byte error payload.
 type Error byte
 
@@ -94,6 +156,32 @@ const (
 	// ErrInternal indicates an internal error.
 	ErrInternal = 0x08
 )
+
+func (e Error) Error() string {
+	var errStr string
+	switch e {
+	case ErrCrypto:
+		errStr = "cryptography error"
+	case ErrKeyNotFound:
+		errStr = "no matching certificate SKI"
+	case ErrRead:
+		errStr = "disk read failure"
+	case ErrVersionMismatch:
+		errStr = "version mismatch"
+	// ErrBadOpcode indicates use of unknown opcode in request.
+	case ErrBadOpcode:
+		errStr = "bad opcode"
+	case ErrUnexpectedOpcode:
+		errStr = "unexpected opcode"
+	case ErrFormat:
+		errStr = "malformed message"
+	case ErrInternal:
+		errStr = "internal error"
+	default:
+		errStr = "unknown error"
+	}
+	return "keyless: " + errStr
+}
 
 const (
 	paddedLength = 1024
@@ -150,7 +238,7 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 type Operation struct {
 	Opcode   Op
 	Payload  []byte
-	Dgst     Digest
+	ski      SKI
 	ClientIP net.IP
 	SNI      string
 }
@@ -173,8 +261,8 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagPayload, o.Payload)...)
 	}
 
-	if o.Dgst != emptyDigest {
-		b = append(b, tlvBytes(TagCertificateDigest, o.Dgst[:])...)
+	if o.ski != emptySKI {
+		b = append(b, tlvBytes(TagSubjectKeyIdentifier, o.ski[:])...)
 	}
 
 	if o.ClientIP != nil {
@@ -211,25 +299,25 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 		data := body[i+3 : i+3+length]
 
 		if seen[tag] {
-			return fmt.Errorf("tag %v seen multiple times", tag)
+			return fmt.Errorf("tag %s seen multiple times", tag)
 		}
 		seen[tag] = true
 
 		switch tag {
 		case TagOpcode:
 			if len(data) != 1 {
-				return fmt.Errorf("invalid opcode: %v", data)
+				return fmt.Errorf("invalid opcode: %s", data)
 			}
 			o.Opcode = Op(data[0])
 
 		case TagPayload:
 			o.Payload = data
 
-		case TagCertificateDigest:
-			if len(data) != len(emptyDigest) {
-				return fmt.Errorf("invalid digest length: %d", len(data))
+		case TagSubjectKeyIdentifier:
+			if len(data) != len(emptySKI) {
+				return fmt.Errorf("invalid SKI length: %d", len(data))
 			}
-			copy(o.Dgst[:], data)
+			copy(o.ski[:], data)
 
 		case TagClientIP:
 			o.ClientIP = data
@@ -240,7 +328,7 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 		case TagPadding:
 			// ignore padding
 		default:
-			return fmt.Errorf("unknown tag: %v", tag)
+			return fmt.Errorf("unknown tag: %s", tag)
 		}
 	}
 	return nil
@@ -248,36 +336,33 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 // GetError returns string errors associated with error response codes.
 func (o *Operation) GetError() error {
-	var errStr string
 	if o.Opcode != OpError || len(o.Payload) != 1 {
-		errStr = "no error"
-	} else {
-		switch Error(o.Payload[0]) {
-		case ErrCrypto:
-			errStr = "cryptography error"
-		case ErrKeyNotFound:
-			errStr = "no matching certificate digest"
-		case ErrRead:
-			errStr = "disk read failure"
-		case ErrVersionMismatch:
-			errStr = "version mismatch"
-		// ErrBadOpcode indicates use of unknown opcode in request.
-		case ErrBadOpcode:
-			errStr = "bad opcode"
-		case ErrUnexpectedOpcode:
-			errStr = "unexpected opcode"
-		case ErrFormat:
-			errStr = "malformed message"
-		case ErrInternal:
-			errStr = "internal error"
-		default:
-			errStr = "unknown error"
-		}
+		return errors.New("keyless: no error")
 	}
-	return errors.New("keyless: " + errStr)
+	return Error(o.Payload[0])
 }
 
-// Digest represents a certificate digest used to index remote keys.
-type Digest [sha256.Size]byte
+// SKI represents a subject key identifier used to index remote keys.
+type SKI [sha1.Size]byte
 
-var emptyDigest Digest
+var emptySKI SKI
+
+// GetSKI returns the SKI of a public key.
+func GetSKI(pub crypto.PublicKey) (SKI, error) {
+	encodedPub, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return emptySKI, err
+	}
+
+	subPKI := new(struct {
+		Algorithm        pkix.AlgorithmIdentifier
+		SubjectPublicKey asn1.BitString
+	})
+
+	_, err = asn1.Unmarshal(encodedPub, subPKI)
+	if err != nil {
+		return emptySKI, err
+	}
+
+	return sha1.Sum(subPKI.SubjectPublicKey.Bytes), nil
+}

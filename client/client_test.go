@@ -2,28 +2,31 @@ package client
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/pem"
-	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"testing"
 )
 
 const (
-	certFile  = "testdata/rsa-client.pem"
-	keyFile   = "testdata/rsa-client-key.pem"
-	caFile    = "testdata/testca-keyserver.pem"
-	rsaPubKey = "testdata/rsa.pubkey"
-	//rsaPrivKey = "testdata/rsa.key"
-	server = "rsa-server:3407"
+	certFile    = "testdata/rsa-client.pem"
+	keyFile     = "testdata/rsa-client-key.pem"
+	caFile      = "testdata/testca-keyserver.pem"
+	rsaPubKey   = "testdata/rsa.pubkey"
+	ecdsaPubKey = "testdata/ecdsa.pubkey"
+	server      = "rsa-server:3407"
 )
 
 var (
-	client *Client
-	pkey   *PrivateKey
+	client   *Client
+	rsaKey   *PrivateKey
+	ecdsaKey *PrivateKey
 )
 
 func init() {
@@ -32,7 +35,7 @@ func init() {
 	var pub crypto.PublicKey
 	var p *pem.Block
 
-	if client, err = NewClient(certFile, keyFile, caFile); err != nil {
+	if client, err = NewClient(certFile, keyFile, caFile, ioutil.Discard); err != nil {
 		log.Fatal(err)
 	}
 
@@ -43,7 +46,18 @@ func init() {
 	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if pkey, err = client.RegisterPublicKey(server, pub); err != nil {
+	if rsaKey, err = client.RegisterPublicKey(server, pub); err != nil {
+		log.Fatal(err)
+	}
+
+	if pemBytes, err = ioutil.ReadFile(ecdsaPubKey); err != nil {
+		log.Fatal(err)
+	}
+	p, _ = pem.Decode(pemBytes)
+	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
+		log.Fatal(err)
+	}
+	if ecdsaKey, err = client.RegisterPublicKey(server, pub); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -64,6 +78,39 @@ func TestConnect(t *testing.T) {
 	}
 }
 
+var (
+	h   = crypto.SHA256
+	r   = rand.Reader
+	msg = h.New().Sum([]byte("Hello!"))
+)
+
+func TestECDSASign(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	conn, err := client.Dial(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	sig, err := ecdsaKey.Sign(r, msg, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ecdsaPub, ok := ecdsaKey.Public().(*ecdsa.PublicKey); ok {
+		ecdsaSig := new(struct{ R, S *big.Int })
+		asn1.Unmarshal(sig, ecdsaSig)
+		if !ecdsa.Verify(ecdsaPub, msg, ecdsaSig.R, ecdsaSig.S) {
+			t.Log("ecdsa verify failed")
+		}
+	} else {
+		t.Fatal("couldn't use public key as ECDSA key")
+	}
+}
+
 func TestRSASign(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -75,18 +122,14 @@ func TestRSASign(t *testing.T) {
 	}
 	defer conn.Close()
 
-	msg := []byte("Hello!")
-	h := crypto.SHA256
-	sig, err := pkey.Sign(nil, msg, h)
+	sig, err := rsaKey.Sign(r, msg, h)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fmt.Printf("%02x\n", msg)
-	hashed := sha256.Sum256(msg)
-	if rsaPub, ok := pkey.Public().(*rsa.PublicKey); ok {
-		if err := rsa.VerifyPKCS1v15(rsaPub, h, hashed[:], sig); err != nil {
-			t.Fatal(err)
+	if rsaPub, ok := rsaKey.Public().(*rsa.PublicKey); ok {
+		if err := rsa.VerifyPKCS1v15(rsaPub, h, msg, sig); err != nil {
+			t.Log("rsa verify failed")
 		}
 	} else {
 		t.Fatal("couldn't use public key as RSA key")
