@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -133,5 +134,51 @@ func TestRSASign(t *testing.T) {
 		}
 	} else {
 		t.Fatal("couldn't use public key as RSA key")
+	}
+}
+
+func TestRSADecrypt(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+	conn, err := client.Dial(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var pub *rsa.PublicKey
+	var ok bool
+	if pub, ok = rsaKey.Public().(*rsa.PublicKey); !ok {
+		t.Fatal("couldn't use public key as RSA key")
+	}
+
+	var c, m []byte
+	if c, err = rsa.EncryptPKCS1v15(r, pub, msg); err != nil {
+		t.Fatal(err)
+	}
+
+	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(msg, m) != 0 {
+		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+		t.Fatal("rsa decrypt failed")
+	}
+
+	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(msg)}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(msg, m) != 0 {
+		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+		t.Fatal("rsa decrypt failed")
+	}
+
+	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(msg) + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(msg, m) == 0 {
+		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+		t.Fatal("rsa decrypt suceeded despite incorrect SessionKeyLen")
 	}
 }
