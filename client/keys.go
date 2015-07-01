@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
+	"crypto/subtle"
 	"errors"
 	"io"
 
@@ -87,5 +88,25 @@ func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.Decrypter
 	if err != nil {
 		return nil, err
 	}
-	return conn.KeyOperation(gokeyless.OpRSADecryptRaw, msg, key.ski)
+	switch opts := opts.(type) {
+	case *rsa.PKCS1v15DecryptOptions:
+		ptxt, decyptErr := conn.KeyOperation(gokeyless.OpRSADecrypt, msg, key.ski)
+
+		// If opts.SessionKeyLen is set, we must perform a variation of
+		// rsa.DecryptPKCS1v15SessionKey to ensure the entire operation
+		// is performed in constant time regardless of padding errors.
+		if l := opts.SessionKeyLen; l > 0 {
+			plaintext := make([]byte, l)
+			if _, err := io.ReadFull(rand, plaintext); err != nil {
+				return nil, err
+			}
+			valid := subtle.ConstantTimeEq(int32(len(ptxt)), int32(l))
+			subtle.ConstantTimeCopy(valid, plaintext, ptxt[:l])
+			return plaintext, nil
+		}
+		// Otherwise, we can just return the error like rsa.DecryptPKCS1v15.
+		return ptxt, decyptErr
+	default:
+		return nil, errors.New("invalid options for Decrypt")
+	}
 }
