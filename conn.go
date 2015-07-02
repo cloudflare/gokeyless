@@ -2,24 +2,25 @@ package gokeyless
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"net"
+	"io"
 	"sync"
 )
 
 // Conn represents an open keyless connection.
 type Conn struct {
-	net.Conn
+	tls.Conn
 	sync.Mutex
 	IsOpen    bool
 	listeners map[uint32]chan *Header
 }
 
 // NewConn initializes a new Conn
-func NewConn(inner net.Conn) *Conn {
+func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
-		Conn:      inner,
+		Conn:      *inner,
 		IsOpen:    true,
 		listeners: make(map[uint32]chan *Header),
 	}
@@ -44,7 +45,7 @@ func (c *Conn) WriteHeader(h *Header) error {
 // ReadHeader unmarhals a header from the wire into the internal Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
 	b := make([]byte, 8)
-	if _, err := c.Read(b); err != nil {
+	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
 	}
 
@@ -52,7 +53,7 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	h.UnmarshalBinary(b)
 
 	body := make([]byte, h.Length)
-	if _, err := c.Read(body); err != nil {
+	if _, err := io.ReadFull(c, body); err != nil {
 		return nil, err
 	}
 

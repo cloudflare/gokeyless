@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/cloudflare/gokeyless"
 )
@@ -103,13 +104,16 @@ func (s *Server) getKey(ski gokeyless.SKI, digest gokeyless.Digest) (key crypto.
 
 func (s *Server) handle(conn *gokeyless.Conn) {
 	defer conn.Close()
+	s.Log.Println("Handling new connection...")
 	// Continuosly read request Headers from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
 	for connError == nil {
-		h, connError := conn.ReadHeader()
-		if connError != nil {
-			return
+		conn.SetDeadline(time.Now().Add(time.Hour))
+
+		var h *gokeyless.Header
+		if h, connError = conn.ReadHeader(); connError != nil {
+			continue
 		}
 
 		s.Log.Printf("version:%d.%d id:%d op:%s", h.MajorVers, h.MinorVers, h.ID, h.Body.Opcode)
@@ -228,7 +232,7 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 
-		go s.handle(gokeyless.NewConn(c))
+		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
 	}
 
 }
@@ -236,7 +240,7 @@ func (s *Server) Serve(l net.Listener) error {
 // ListenAndServe listens on the TCP network address s.Addr and then
 // calls Serve to handle requests on incoming keyless connections.
 func (s *Server) ListenAndServe() error {
-	l, err := tls.Listen("tcp", s.Addr, s.Config)
+	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		return err
 	}
