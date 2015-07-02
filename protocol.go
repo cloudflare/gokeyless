@@ -373,16 +373,14 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.Payload = data
 
 		case TagSubjectKeyIdentifier:
-			if len(data) != sha1.Size {
-				return fmt.Errorf("invalid SKI length: %d", len(data))
+			if len(data) == sha1.Size {
+				copy(o.SKI[:], data)
 			}
-			copy(o.SKI[:], data)
 
 		case TagCertificateDigest:
-			if len(data) != sha256.Size {
-				return fmt.Errorf("invalid Digest length: %d", len(data))
+			if len(data) == sha256.Size {
+				copy(o.Digest[:], data)
 			}
-			copy(o.Digest[:], data)
 
 		case TagClientIP:
 			o.ClientIP = data
