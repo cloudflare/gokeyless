@@ -24,10 +24,12 @@ const (
 	TagCertificateDigest Tag = 0x01
 	// TagServerName implies an SNI string.
 	TagServerName Tag = 0x02
-	// TagClientIP implies an IPv4/6 address.
+	// TagClientIP implies an IPv4/6 address of the client connecting.
 	TagClientIP = 0x03
-	// TagSubjectKeyIdentifier implies the Subject Key Identifier for the given key
+	// TagSubjectKeyIdentifier implies the Subject Key Identifier for the given key.
 	TagSubjectKeyIdentifier = 0x04
+	// TagServerIP implies an IPv4/6 address of the proxying server.
+	TagServerIP = 0x05
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
@@ -46,6 +48,8 @@ func (t Tag) String() string {
 		return "TagClientIP"
 	case TagSubjectKeyIdentifier:
 		return "TagSubjectKeyIdentifier"
+	case TagServerIP:
+		return "TagServerIP"
 	case TagOpcode:
 		return "TagOpcode"
 	case TagPayload:
@@ -295,7 +299,19 @@ type Operation struct {
 	SKI      SKI
 	Digest   Digest
 	ClientIP net.IP
+	ServerIP net.IP
 	SNI      string
+}
+
+func (o *Operation) String() string {
+	return fmt.Sprintf("[Opcode: %s, SKI: %v, Digest: %v, Client IP: %s, Server IP: %s, SNI: %s]",
+		o.Opcode,
+		o.SKI,
+		o.Digest,
+		o.ClientIP,
+		o.ServerIP,
+		o.SNI,
+	)
 }
 
 // tlvBytes returns the byte representation of a Tag-Length-Value item.
@@ -332,6 +348,14 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagClientIP, ip)...)
 	}
 
+	if o.ServerIP != nil {
+		ip := o.ServerIP.To4()
+		if ip == nil {
+			ip = o.ServerIP
+		}
+		b = append(b, tlvBytes(TagServerIP, ip)...)
+	}
+
 	if o.SNI != "" {
 		b = append(b, tlvBytes(TagServerName, []byte(o.SNI))...)
 	}
@@ -352,7 +376,7 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		length = int(binary.BigEndian.Uint16(body[i+1 : i+3]))
 		if i+3+length > len(body) {
-			return fmt.Errorf("length (%d) longer than body", length)
+			return fmt.Errorf("%s length is %dB beyond end of body", tag, i+3+length-len(body))
 		}
 
 		data := body[i+3 : i+3+length]
@@ -384,6 +408,9 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		case TagClientIP:
 			o.ClientIP = data
+
+		case TagServerIP:
+			o.ServerIP = data
 
 		case TagServerName:
 			o.SNI = string(data)

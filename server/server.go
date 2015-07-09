@@ -116,7 +116,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			continue
 		}
 
-		s.Log.Printf("version:%d.%d id:%d op:%s", h.MajorVers, h.MinorVers, h.ID, h.Body.Opcode)
+		s.Log.Printf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
 
 		var opts crypto.SignerOpts
 		var isRSA bool
