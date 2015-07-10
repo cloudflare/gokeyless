@@ -80,9 +80,10 @@ func TestConnect(t *testing.T) {
 }
 
 var (
-	h   = crypto.SHA256
-	r   = rand.Reader
-	msg = h.New().Sum([]byte("Hello!"))
+	h    = crypto.SHA256
+	r    = rand.Reader
+	ptxt = []byte("Hello!")
+	msg  = h.New().Sum(ptxt)[len(ptxt):]
 )
 
 func TestECDSASign(t *testing.T) {
@@ -154,31 +155,31 @@ func TestRSADecrypt(t *testing.T) {
 	}
 
 	var c, m []byte
-	if c, err = rsa.EncryptPKCS1v15(r, pub, msg); err != nil {
+	if c, err = rsa.EncryptPKCS1v15(r, pub, ptxt); err != nil {
 		t.Fatal(err)
 	}
 
 	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Compare(msg, m) != 0 {
-		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+	if bytes.Compare(ptxt, m) != 0 {
+		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
 		t.Fatal("rsa decrypt failed")
 	}
 
-	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(msg)}); err != nil {
+	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)}); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Compare(msg, m) != 0 {
-		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+	if bytes.Compare(ptxt, m) != 0 {
+		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
 		t.Fatal("rsa decrypt failed")
 	}
 
-	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(msg) + 1}); err != nil {
+	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1}); err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Compare(msg, m) == 0 {
-		t.Logf("m: %dB\tmsg: %dB", len(m), len(msg))
+	if bytes.Compare(ptxt, m) == 0 {
+		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
 		t.Fatal("rsa decrypt suceeded despite incorrect SessionKeyLen")
 	}
 }

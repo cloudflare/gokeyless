@@ -24,7 +24,7 @@ type Client struct {
 	Log *log.Logger
 	// conns maps keyless servers to any open connections to them.
 	conns map[string]*gokeyless.Conn
-	// allServers maps all known certificate SKIs to keyless server on which it can be found
+	// allServers maps all known certificate SKIs to their keyless servers.
 	allServers map[gokeyless.SKI][]string
 }
 
@@ -55,7 +55,7 @@ func NewClient(certFile, keyFile, caFile string, logOut io.Writer) (*Client, err
 			},
 		},
 		Dialer:     &net.Dialer{},
-		Log:        log.New(logOut, "[client]", log.LstdFlags),
+		Log:        log.New(logOut, "[client] ", log.LstdFlags),
 		conns:      make(map[string]*gokeyless.Conn),
 		allServers: make(map[gokeyless.SKI][]string),
 	}, nil
@@ -122,26 +122,18 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
 
 // RegisterPublicKey SKIs and registers a public key as being held by a server.
 func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*PrivateKey, error) {
-	// TODO: Add legacy DIGEST support.
-	// var dgst gokeyless.DIGEST
-	// switch pkey := pub.(type) {
-	// case *rsa.PublicKey:
-	// 	dgst = sha256.Sum256([]byte(fmt.Sprintf("%X", pkey.N)))
-	// case *ecdsa.PublicKey:
-	// return nil, errors.New("ecdsa key digests are unsupported")
-	// default:
-	// 	return nil, errors.New("certificate contains unknown public key type")
-	// }
-
 	ski, err := gokeyless.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
 	c.registerSKI(server, ski)
 
+	digest, _ := gokeyless.GetDigest(pub)
+
 	return &PrivateKey{
 		public: pub,
 		ski:    ski,
+		digest: digest,
 		client: c,
 	}, nil
 }

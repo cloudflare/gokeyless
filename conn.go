@@ -2,28 +2,27 @@ package gokeyless
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
-	"net"
+	"io"
 	"sync"
 )
 
 // Conn represents an open keyless connection.
 type Conn struct {
-	net.Conn
-	IsOpen  bool
-	cond    *sync.Cond
-	headers map[uint32]*Header
+	tls.Conn
+	sync.Mutex
+	IsOpen    bool
+	listeners map[uint32]chan *Header
 }
 
 // NewConn initializes a new Conn
-func NewConn(inner net.Conn) *Conn {
+func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
-		Conn:    inner,
-		IsOpen:  true,
-		cond:    sync.NewCond(new(sync.Mutex)),
-		headers: make(map[uint32]*Header),
+		Conn:      *inner,
+		IsOpen:    true,
+		listeners: make(map[uint32]chan *Header),
 	}
 }
 
@@ -46,7 +45,7 @@ func (c *Conn) WriteHeader(h *Header) error {
 // ReadHeader unmarhals a header from the wire into the internal Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
 	b := make([]byte, 8)
-	if _, err := c.Read(b); err != nil {
+	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
 	}
 
@@ -54,7 +53,7 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	h.UnmarshalBinary(b)
 
 	body := make([]byte, h.Length)
-	if _, err := c.Read(body); err != nil {
+	if _, err := io.ReadFull(c, body); err != nil {
 		return nil, err
 	}
 
@@ -65,32 +64,44 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	return h, nil
 }
 
-func (c *Conn) queueRead() {
+func (c *Conn) doRead() error {
 	h, err := c.ReadHeader()
 	if err != nil {
-		log.Printf("Error reading header: %v", err)
-		return
+		return err
 	}
 
-	c.cond.L.Lock()
-	c.headers[h.ID] = h
-	c.cond.L.Unlock()
-	c.cond.Broadcast()
+	c.Lock()
+	defer c.Unlock()
+
+	l, ok := c.listeners[h.ID]
+	if !ok {
+		return fmt.Errorf("read unqueued header with id: %v", h.ID)
+	}
+
+	l <- h
+
+	delete(c.listeners, h.ID)
+	close(l)
+	return nil
 }
 
 // ListenResponse attempts to read a response with the appropriate ID, blocking until it is available.
 func (c *Conn) ListenResponse(id uint32) (*Header, error) {
-	go c.queueRead()
-	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
+	l := make(chan *Header, 1)
 
-	for c.headers[id] == nil {
-		c.cond.Wait()
+	c.Lock()
+	c.listeners[id] = l
+	c.Unlock()
+
+	if err := c.doRead(); err != nil {
+		c.Lock()
+		delete(c.listeners, id)
+		c.Unlock()
+		close(l)
+		return nil, err
 	}
 
-	h := c.headers[id]
-	delete(c.headers, id)
-	return h, nil
+	return <-l, nil
 }
 
 // DoOperation excutes an entire keyless operation, returning its result.
@@ -132,12 +143,50 @@ func (c *Conn) Ping(data []byte) error {
 	return nil
 }
 
+// respondOperation writes a keyless response operation to the wire.
+func (c *Conn) respondOperation(id uint32, operation *Operation) error {
+	resp := NewHeader(operation)
+	resp.ID = id
+	return c.WriteHeader(resp)
+}
+
+// Respond sends a keyless response.
+func (c *Conn) Respond(id uint32, payload []byte) error {
+	return c.respondOperation(
+		id,
+		&Operation{
+			Opcode:  OpResponse,
+			Payload: payload,
+		})
+}
+
+// RespondPong responds to a keyless Ping operation.
+func (c *Conn) RespondPong(id uint32, payload []byte) error {
+	return c.respondOperation(
+		id,
+		&Operation{
+			Opcode:  OpPong,
+			Payload: payload,
+		})
+}
+
+// RespondError sends a keyless error response.
+func (c *Conn) RespondError(id uint32, err Error) error {
+	return c.respondOperation(
+		id,
+		&Operation{
+			Opcode:  OpError,
+			Payload: []byte{byte(err)},
+		})
+}
+
 // KeyOperation performs an opaque cryptographic operation with the given SKIed key.
-func (c *Conn) KeyOperation(op Op, msg []byte, ski SKI) ([]byte, error) {
+func (c *Conn) KeyOperation(op Op, msg []byte, ski SKI, digest Digest) ([]byte, error) {
 	result, err := c.DoOperation(&Operation{
 		Opcode:  op,
 		Payload: msg,
-		ski:     ski,
+		SKI:     ski,
+		Digest:  digest,
 	})
 	if err != nil {
 		return nil, err
