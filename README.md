@@ -6,7 +6,7 @@
 ## Keyless SSL implementation in Go
 
 CFSSL is an implementation CloudFlare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
-an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless)
+an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless). **NOTE: CURRENTLY IN ALPHA TESTING**
 
 Note that certain linux distributions have certain algorithms removed
 (RHEL-based distributions in particular), so the golang from the
