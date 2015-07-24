@@ -18,13 +18,14 @@ import (
 )
 
 var (
-	port     string
-	certFile string
-	keyFile  string
-	caFile   string
-	keyDir   string
-	silent   bool
-	keyName  *regexp.Regexp
+	port        string
+	metricsPort string
+	certFile    string
+	keyFile     string
+	caFile      string
+	keyDir      string
+	silent      bool
+	keyName     *regexp.Regexp
 )
 
 func init() {
@@ -34,6 +35,7 @@ func init() {
 	flag.StringVar(&caFile, "ca-file", "keyless-ca.pem", "Keyless client certificate authority")
 	flag.StringVar(&keyDir, "private-key-directory", "keys/", "Directory in which private keys are stored with .key extension")
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
+	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
 	flag.BoolVar(&silent, "silent", false, "Whether or not to output debugging information")
 	flag.Parse()
 }
@@ -46,7 +48,8 @@ func main() {
 		logOut = os.Stdout
 	}
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), logOut)
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
+		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort), logOut)
 	if err != nil {
 		log.Fatal(err)
 	}

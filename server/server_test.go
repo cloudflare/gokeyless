@@ -17,6 +17,7 @@ const (
 	rsaPrivKey   = "testdata/rsa.key"
 	ecdsaPrivKey = "testdata/ecdsa.key"
 	addr         = "rsa-server:3407"
+	metricsAddr  = "rsa-server:80"
 )
 
 var (
@@ -29,7 +30,7 @@ func init() {
 	var key crypto.Signer
 	var p *pem.Block
 
-	s, err = NewServerFromFile(certFile, keyFile, caFile, addr, os.Stdout)
+	s, err = NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr, os.Stdout)
 	if err != nil {
 		log.Fatal(err)
 	}
