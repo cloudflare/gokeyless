@@ -31,10 +31,12 @@ type Server struct {
 	keys map[gokeyless.SKI]crypto.Signer
 	// digests maps keys' digests to their SKI.
 	digests map[gokeyless.Digest]gokeyless.SKI
+	// stats stores statistics about keyless requests.
+	stats *statistics
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients
-func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr string, logOut io.Writer) *Server {
+func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr string, logOut io.Writer) *Server {
 	return &Server{
 		Addr: addr,
 		Config: &tls.Config{
@@ -48,11 +50,12 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr string, logO
 		Log:     log.New(logOut, "[server] ", log.LstdFlags),
 		keys:    make(map[gokeyless.SKI]crypto.Signer),
 		digests: make(map[gokeyless.Digest]gokeyless.SKI),
+		stats:   newStatistics(metricsAddr),
 	}
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
-func NewServerFromFile(certFile, keyFile, caFile, addr string, logOut io.Writer) (*Server, error) {
+func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string, logOut io.Writer) (*Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -67,7 +70,7 @@ func NewServerFromFile(certFile, keyFile, caFile, addr string, logOut io.Writer)
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
 		return nil, errors.New("gokeyless/client: failed to read keyless CA from PEM")
 	}
-	return NewServer(cert, keylessCA, addr, logOut), nil
+	return NewServer(cert, keylessCA, addr, metricsAddr, logOut), nil
 }
 
 // RegisterKey adds a new key to the server's internal repertoire.
@@ -116,6 +119,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			continue
 		}
 
+		requestBegin := time.Now()
 		s.Log.Printf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
 
 		var opts crypto.SignerOpts
@@ -125,18 +129,21 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		switch h.Body.Opcode {
 		case gokeyless.OpPing:
 			connError = conn.RespondPong(h.ID, h.Body.Payload)
+			s.stats.logRequest(requestBegin)
 			continue
 
 		case gokeyless.OpRSADecrypt:
 			if key, ok = s.getKey(h.Body.SKI, h.Body.Digest); !ok {
 				s.Log.Println(gokeyless.ErrKeyNotFound)
 				connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
+				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			if _, ok = key.Public().(*rsa.PublicKey); !ok {
 				s.Log.Printf("%s: Key is not RSA\n", gokeyless.ErrCrypto)
 				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
@@ -144,6 +151,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			if !ok {
 				s.Log.Printf("%s: Key is not Decrypter\n", gokeyless.ErrCrypto)
 				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
@@ -151,10 +159,12 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			if err != nil {
 				s.Log.Printf("%s: Decryption error: %v", gokeyless.ErrCrypto, err)
 				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			connError = conn.Respond(h.ID, ptxt)
+			s.stats.logRequest(requestBegin)
 			continue
 		case gokeyless.OpRSASignMD5SHA1:
 			isRSA = true
@@ -191,15 +201,18 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		case gokeyless.OpError:
 			s.Log.Printf("%s: %s is not a valid request Opcode\n", gokeyless.ErrUnexpectedOpcode, h.Body.Opcode)
 			connError = conn.RespondError(h.ID, gokeyless.ErrUnexpectedOpcode)
+			s.stats.logInvalid(requestBegin)
 			continue
 		default:
 			connError = conn.RespondError(h.ID, gokeyless.ErrBadOpcode)
+			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
 		if key, ok = s.getKey(h.Body.SKI, h.Body.Digest); !ok {
 			s.Log.Println(gokeyless.ErrKeyNotFound)
 			connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
+			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
@@ -207,6 +220,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		if _, ok := key.Public().(*rsa.PublicKey); isRSA && !ok {
 			s.Log.Printf("%s: request is RSA, but key is ECDSA\n", gokeyless.ErrCrypto)
 			connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
@@ -214,13 +228,15 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		if err != nil {
 			s.Log.Printf("%s: Signing error: %v\n", gokeyless.ErrCrypto, err)
 			connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
 		connError = conn.Respond(h.ID, sig)
+		s.stats.logRequest(requestBegin)
 	}
+
 	s.Log.Printf("Connection error: %v\n", connError)
-	return
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
@@ -234,7 +250,6 @@ func (s *Server) Serve(l net.Listener) error {
 
 		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
 	}
-
 }
 
 // ListenAndServe listens on the TCP network address s.Addr and then
