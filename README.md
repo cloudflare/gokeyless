@@ -15,9 +15,6 @@ Installing the appropriate package for your operating system should leave you wi
 installation](http://golang.org/doc/install) and a properly set `GOPATH`.
 
 ```
-# To download and build the server binary:
-$ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
-# For full source code:
 $ go get -u github.com/cloudflare/gokeyless/...
-$ cd $GOPATH/src/github.com/cloudflare/gokeyless/
+$ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
 ```
