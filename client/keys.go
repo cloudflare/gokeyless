@@ -79,6 +79,7 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 
 	op := signOpFromKeyHash(key, opts.HashFunc())
 	if op == gokeyless.OpError {
@@ -93,6 +94,8 @@ func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.Decrypter
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
+
 	switch opts := opts.(type) {
 	case *rsa.PKCS1v15DecryptOptions:
 		ptxt, decyptErr := conn.KeyOperation(gokeyless.OpRSADecrypt, msg, key.ski, key.digest)
@@ -106,7 +109,9 @@ func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.Decrypter
 				return nil, err
 			}
 			valid := subtle.ConstantTimeEq(int32(len(ptxt)), int32(l))
-			subtle.ConstantTimeCopy(valid, plaintext, ptxt[:l])
+			v2 := subtle.ConstantTimeLessOrEq(l, len(ptxt))
+			l2 := subtle.ConstantTimeSelect(v2, l, len(ptxt))
+			subtle.ConstantTimeCopy(valid, plaintext[:l2], ptxt[:l2])
 			return plaintext, nil
 		}
 		// Otherwise, we can just return the error like rsa.DecryptPKCS1v15.

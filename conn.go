@@ -13,7 +13,7 @@ import (
 type Conn struct {
 	tls.Conn
 	sync.Mutex
-	IsOpen    bool
+	users     uint32
 	listeners map[uint32]chan *Header
 }
 
@@ -21,15 +21,38 @@ type Conn struct {
 func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
 		Conn:      *inner,
-		IsOpen:    true,
+		users:     1,
 		listeners: make(map[uint32]chan *Header),
 	}
 }
 
+// Use marks conn as used by the current goroutine, returning ok if the Conn is open.
+// This should be accompanied by a later Close() call.
+func (c *Conn) Use() bool {
+	c.Lock()
+	defer c.Unlock()
+	if c.users == 0 {
+		return false
+	}
+	c.users++
+	return true
+}
+
 // Close marks conn as closed and closed the inner net.Conn.
 func (c *Conn) Close() {
-	c.IsOpen = false
-	c.Conn.Close()
+	c.Lock()
+	defer c.Unlock()
+	c.users--
+	if c.users == 0 {
+		c.Conn.Close()
+	}
+}
+
+// IsClosed returns true if the connection has been closed.
+func (c *Conn) IsClosed() bool {
+	c.Lock()
+	defer c.Unlock()
+	return c.users == 0
 }
 
 // WriteHeader marshals and header and writes it to the conn.
@@ -44,6 +67,8 @@ func (c *Conn) WriteHeader(h *Header) error {
 
 // ReadHeader unmarhals a header from the wire into the internal Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
+	c.Lock()
+	defer c.Unlock()
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
@@ -71,37 +96,36 @@ func (c *Conn) doRead() error {
 	}
 
 	c.Lock()
-	defer c.Unlock()
-
-	l, ok := c.listeners[h.ID]
-	if !ok {
-		return fmt.Errorf("read unqueued header with id: %v", h.ID)
+	if _, ok := c.listeners[h.ID]; !ok {
+		c.listeners[h.ID] = make(chan *Header, 1)
 	}
+	c.Unlock()
 
-	l <- h
+	c.listeners[h.ID] <- h
 
-	delete(c.listeners, h.ID)
-	close(l)
 	return nil
 }
 
-// ListenResponse attempts to read a response with the appropriate ID, blocking until it is available.
-func (c *Conn) ListenResponse(id uint32) (*Header, error) {
-	l := make(chan *Header, 1)
-
+// listenResponse attempts to read a response with the appropriate ID, blocking until it is available.
+func (c *Conn) listenResponse(id uint32) (*Header, error) {
 	c.Lock()
-	c.listeners[id] = l
+	if _, ok := c.listeners[id]; !ok {
+		c.listeners[id] = make(chan *Header, 1)
+	}
 	c.Unlock()
 
-	if err := c.doRead(); err != nil {
+	defer func() {
 		c.Lock()
+		close(c.listeners[id])
 		delete(c.listeners, id)
 		c.Unlock()
-		close(l)
+	}()
+
+	if err := c.doRead(); err != nil {
 		return nil, err
 	}
 
-	return <-l, nil
+	return <-c.listeners[id], nil
 }
 
 // DoOperation excutes an entire keyless operation, returning its result.
@@ -111,7 +135,7 @@ func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 		return nil, err
 	}
 
-	resp, err := c.ListenResponse(req.ID)
+	resp, err := c.listenResponse(req.ID)
 	if err != nil {
 		return nil, err
 	}
