@@ -3,10 +3,7 @@ package main
 import (
 	"crypto"
 	"flag"
-	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +11,7 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -24,7 +22,6 @@ var (
 	keyFile     string
 	caFile      string
 	keyDir      string
-	silent      bool
 	keyExt      *regexp.Regexp
 )
 
@@ -36,34 +33,30 @@ func init() {
 	flag.StringVar(&keyDir, "private-key-directory", "keys/", "Directory in which private keys are stored with .key extension")
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
-	flag.BoolVar(&silent, "silent", false, "Whether or not to output debugging information")
+	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
 	flag.Parse()
 }
 
 func main() {
-	var logOut io.Writer
-	if silent {
-		logOut = ioutil.Discard
-	} else {
-		logOut = os.Stdout
-	}
-
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
-		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort), logOut)
+		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
-		log.Fatal(err)
+		log.Critical(err)
+		os.Exit(1)
 	}
 
 	keys, err := LoadKeysFromDir(keyDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Critical(err)
+		os.Exit(1)
 	}
 
 	for _, key := range keys {
 		s.RegisterKey(key)
 	}
 
-	log.Fatal(s.ListenAndServe())
+	log.Critical(s.ListenAndServe())
+	os.Exit(1)
 }
 
 // LoadKey attempts to load a private key from PEM or DER.
@@ -84,7 +77,7 @@ func LoadKeysFromDir(dir string) (keys []crypto.Signer, err error) {
 		}
 
 		if !info.IsDir() && keyExt.MatchString(info.Name()) {
-			fmt.Printf("Loading %s...\n", path)
+			log.Debugf("Loading %s...\n", path)
 			in, err := ioutil.ReadFile(path)
 			if err != nil {
 				return err

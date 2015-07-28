@@ -11,15 +11,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"flag"
-	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 )
 
@@ -29,7 +27,6 @@ var (
 	keyFile   string
 	caFile    string
 	pubkeyDir string
-	silent    bool
 	pubkeyExt *regexp.Regexp
 	loadSize  int
 )
@@ -42,30 +39,26 @@ func init() {
 	flag.StringVar(&pubkeyDir, "public-key-directory", "keys/", "Directory in which public keys are stored with .pubkey extension")
 	flag.StringVar(&server, "server", "rsa-server:2407", "Keyless server on which to listen")
 	flag.IntVar(&loadSize, "load", 256, "Number of concurrent connections to keyserver")
-	flag.BoolVar(&silent, "silent", false, "Whether or not to output debugging information")
+	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
 	flag.Parse()
 }
 
 func main() {
-	var logOut io.Writer
-	if silent {
-		logOut = ioutil.Discard
-	} else {
-		logOut = os.Stdout
-	}
-
-	c, err := client.NewClientFromFile(certFile, keyFile, caFile, logOut)
+	c, err := client.NewClientFromFile(certFile, keyFile, caFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Critical(err)
+		os.Exit(1)
 	}
 
 	if err := testConnect(c, server); err != nil {
-		log.Fatal(err)
+		log.Critical(err)
+		os.Exit(1)
 	}
 
 	pubkeys, err := LoadPubKeysFromDir(pubkeyDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Critical(err)
+		os.Exit(1)
 	}
 
 	privkeys := make([]*client.PrivateKey, len(pubkeys))
@@ -73,15 +66,17 @@ func main() {
 		var err error
 		privkeys[i], err = c.RegisterPublicKey(server, pubkeys[i])
 		if err != nil {
-			log.Fatal(err)
+			log.Critical(err)
+			os.Exit(1)
 		}
 
 		if err := testKey(privkeys[i]); err != nil {
-			log.Fatal(err)
+			log.Critical(err)
+			os.Exit(1)
 		}
 	}
 
-	log.Fatal(loadTest(func() error {
+	log.Critical(loadTest(func() error {
 		if err := testConnect(c, server); err != nil {
 			return err
 		}
@@ -93,6 +88,7 @@ func main() {
 		}
 		return nil
 	}))
+	os.Exit(1)
 }
 
 type testFunc func() error
@@ -108,7 +104,7 @@ func loadTest(test testFunc) error {
 	}
 	for err := range errs {
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 	}
 	return nil
@@ -132,7 +128,7 @@ func LoadPubKeysFromDir(dir string) (pubkeys []crypto.PublicKey, err error) {
 		}
 
 		if !info.IsDir() && pubkeyExt.MatchString(info.Name()) {
-			fmt.Printf("Loading %s...\n", path)
+			log.Infof("Loading %s...\n", path)
 			in, err := ioutil.ReadFile(path)
 			if err != nil {
 				return err

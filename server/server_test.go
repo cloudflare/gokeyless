@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"io/ioutil"
 	"log"
-	"os"
 	"testing"
 )
 
@@ -30,7 +29,7 @@ func init() {
 	var key crypto.Signer
 	var p *pem.Block
 
-	s, err = NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr, os.Stdout)
+	s, err = NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr)
 	if err != nil {
 		log.Fatal(err)
 	}

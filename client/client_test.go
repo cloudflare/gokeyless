@@ -36,7 +36,7 @@ func init() {
 	var pub crypto.PublicKey
 	var p *pem.Block
 
-	if client, err = NewClientFromFile(certFile, keyFile, caFile, ioutil.Discard); err != nil {
+	if client, err = NewClientFromFile(certFile, keyFile, caFile); err != nil {
 		log.Fatal(err)
 	}
 
