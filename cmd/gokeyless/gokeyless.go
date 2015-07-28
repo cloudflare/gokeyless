@@ -25,11 +25,11 @@ var (
 	caFile      string
 	keyDir      string
 	silent      bool
-	keyName     *regexp.Regexp
+	keyExt      *regexp.Regexp
 )
 
 func init() {
-	keyName = regexp.MustCompile(`.+\.key`)
+	keyExt = regexp.MustCompile(`.+\.key`)
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyless-ca.pem", "Keyless client certificate authority")
@@ -83,7 +83,7 @@ func LoadKeysFromDir(dir string) (keys []crypto.Signer, err error) {
 			return err
 		}
 
-		if !info.IsDir() && keyName.MatchString(info.Name()) {
+		if !info.IsDir() && keyExt.MatchString(info.Name()) {
 			fmt.Printf("Loading %s...\n", path)
 			in, err := ioutil.ReadFile(path)
 			if err != nil {
