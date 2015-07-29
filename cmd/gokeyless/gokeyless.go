@@ -41,22 +41,19 @@ func main() {
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
-		log.Critical(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	keys, err := LoadKeysFromDir(keyDir)
 	if err != nil {
-		log.Critical(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	for _, key := range keys {
 		s.RegisterKey(key)
 	}
 
-	log.Critical(s.ListenAndServe())
-	os.Exit(1)
+	log.Fatal(s.ListenAndServe())
 }
 
 // LoadKey attempts to load a private key from PEM or DER.

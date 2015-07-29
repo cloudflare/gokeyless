@@ -1,6 +1,6 @@
 language: go
 go:
-- tip
+  - tip
 before_script:
   - go get golang.org/x/tools/cmd/vet
   - go get golang.org/x/tools/cmd/goimports
@@ -14,11 +14,6 @@ script:
   - go test github.com/cloudflare/gokeyless/...
   - go vet github.com/cloudflare/gokeyless/...
   - fgt golint github.com/cloudflare/gokeyless/...
-  - go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' ./... | xargs -i sh -c {}
-  - gover
-  - if [ "$COVERALLS_TOKEN" != "" ]; then
-      goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken $COVERALLS_TOKEN;
-    fi
 notifications:
   email:
     recipients:

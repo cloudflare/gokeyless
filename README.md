@@ -1,7 +1,6 @@
 # Go Keyless
 
 [![Build Status](https://travis-ci.org/cloudflare/gokeyless.png?branch=master)](https://travis-ci.org/cloudflare/gokeyless)
-[![Coverage Status](https://coveralls.io/repos/cloudflare/gokeyless/badge.svg?branch=master)](https://coveralls.io/r/cloudflare/gokeyless?branch=master)
 [![GoDoc](https://godoc.org/github.com/cloudflare/gokeyless?status.png)](https://godoc.org/github.com/cloudflare/gokeyless)
 ## Keyless SSL implementation in Go
 

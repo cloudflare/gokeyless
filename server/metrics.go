@@ -29,7 +29,9 @@ func newStatistics(metricsAddr string) *statistics {
 	stats.Register("Invalid Request Rate", stats.invalidRate)
 	stats.Register("Response Latency", stats.latency)
 
-	go stats.ListenAndServe(metricsAddr)
+	if metricsAddr != "" {
+		go stats.ListenAndServe(metricsAddr)
+	}
 
 	return stats
 }

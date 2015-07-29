@@ -37,7 +37,7 @@ func init() {
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyserver-ca.pem", "Keyless client certificate authority")
 	flag.StringVar(&pubkeyDir, "public-key-directory", "keys/", "Directory in which public keys are stored with .pubkey extension")
-	flag.StringVar(&server, "server", "rsa-server:2407", "Keyless server on which to listen")
+	flag.StringVar(&server, "server", "localhost:2407", "Keyless server on which to listen")
 	flag.IntVar(&loadSize, "load", 256, "Number of concurrent connections to keyserver")
 	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
 	flag.Parse()
@@ -46,37 +46,31 @@ func init() {
 func main() {
 	c, err := client.NewClientFromFile(certFile, keyFile, caFile)
 	if err != nil {
-		log.Critical(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	if err := testConnect(c, server); err != nil {
-		log.Critical(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	pubkeys, err := LoadPubKeysFromDir(pubkeyDir)
 	if err != nil {
-		log.Critical(err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	privkeys := make([]*client.PrivateKey, len(pubkeys))
 	for i := range pubkeys {
 		var err error
-		privkeys[i], err = c.RegisterPublicKey(server, pubkeys[i])
-		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+		if privkeys[i], err = c.RegisterPublicKey(server, pubkeys[i]); err != nil {
+			log.Fatal(err)
 		}
 
 		if err := testKey(privkeys[i]); err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Fatal(err)
 		}
 	}
 
-	log.Critical(loadTest(func() error {
+	log.Fatal(loadTest(func() error {
 		if err := testConnect(c, server); err != nil {
 			return err
 		}
@@ -88,7 +82,6 @@ func main() {
 		}
 		return nil
 	}))
-	os.Exit(1)
 }
 
 type testFunc func() error

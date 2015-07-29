@@ -1,4 +1,4 @@
-package client
+package tests
 
 import (
 	"bytes"
@@ -6,69 +6,17 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/asn1"
-	"encoding/pem"
-	"io/ioutil"
-	"log"
 	"math/big"
 	"testing"
 )
-
-const (
-	certFile    = "testdata/rsa-client.pem"
-	keyFile     = "testdata/rsa-client-key.pem"
-	caFile      = "testdata/testca-keyserver.pem"
-	rsaPubKey   = "testdata/rsa.pubkey"
-	ecdsaPubKey = "testdata/ecdsa.pubkey"
-	server      = "rsa-server:3407"
-)
-
-var (
-	client   *Client
-	rsaKey   *PrivateKey
-	ecdsaKey *PrivateKey
-)
-
-func init() {
-	var err error
-	var pemBytes []byte
-	var pub crypto.PublicKey
-	var p *pem.Block
-
-	if client, err = NewClientFromFile(certFile, keyFile, caFile); err != nil {
-		log.Fatal(err)
-	}
-
-	if pemBytes, err = ioutil.ReadFile(rsaPubKey); err != nil {
-		log.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-	if rsaKey, err = client.RegisterPublicKey(server, pub); err != nil {
-		log.Fatal(err)
-	}
-
-	if pemBytes, err = ioutil.ReadFile(ecdsaPubKey); err != nil {
-		log.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-	if ecdsaKey, err = client.RegisterPublicKey(server, pub); err != nil {
-		log.Fatal(err)
-	}
-}
 
 func TestConnect(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
 
-	conn, err := client.Dial(server)
+	conn, err := c.Dial(serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +39,7 @@ func TestECDSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := client.Dial(server)
+	conn, err := c.Dial(serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +66,7 @@ func TestRSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := client.Dial(server)
+	conn, err := c.Dial(serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +90,7 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	conn, err := client.Dial(server)
+	conn, err := c.Dial(serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
