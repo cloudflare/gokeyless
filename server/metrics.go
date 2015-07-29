@@ -3,11 +3,11 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
 )
 
@@ -29,7 +29,9 @@ func newStatistics(metricsAddr string) *statistics {
 	stats.Register("Invalid Request Rate", stats.invalidRate)
 	stats.Register("Response Latency", stats.latency)
 
-	go stats.ListenAndServe(metricsAddr)
+	if metricsAddr != "" {
+		go stats.ListenAndServe(metricsAddr)
+	}
 
 	return stats
 }
@@ -76,6 +78,6 @@ func (stats *statistics) ListenAndServe(addr string) {
 	http.HandleFunc("/metrics.js", stats.serveJSON)
 	http.HandleFunc("/metrics.json", stats.serveJSON)
 
-	log.Printf("Serving metrics endpoint at %s/metrics\n", addr)
-	log.Fatalln(http.ListenAndServe(addr, nil))
+	log.Infof("Serving metrics endpoint at %s/metrics\n", addr)
+	log.Critical(http.ListenAndServe(addr, nil))
 }
