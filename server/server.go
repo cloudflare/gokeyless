@@ -35,7 +35,7 @@ type Server struct {
 	stats *statistics
 }
 
-// NewServer prepares a TLS server capable of receiving connections from keyless clients
+// NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr string, logOut io.Writer) *Server {
 	return &Server{
 		Addr: addr,
@@ -123,7 +123,6 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		s.Log.Printf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
 
 		var opts crypto.SignerOpts
-		var isRSA bool
 		var key crypto.Signer
 		var ok bool
 		switch h.Body.Opcode {
@@ -166,39 +165,19 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			connError = conn.Respond(h.ID, ptxt)
 			s.stats.logRequest(requestBegin)
 			continue
-		case gokeyless.OpRSASignMD5SHA1:
-			isRSA = true
-			fallthrough
-		case gokeyless.OpECDSASignMD5SHA1:
+		case gokeyless.OpRSASignMD5SHA1, gokeyless.OpECDSASignMD5SHA1:
 			opts = crypto.MD5SHA1
-		case gokeyless.OpRSASignSHA1:
-			isRSA = true
-			fallthrough
-		case gokeyless.OpECDSASignSHA1:
+		case gokeyless.OpRSASignSHA1, gokeyless.OpECDSASignSHA1:
 			opts = crypto.SHA1
-		case gokeyless.OpRSASignSHA224:
-		case gokeyless.OpECDSASignSHA224:
+		case gokeyless.OpRSASignSHA224, gokeyless.OpECDSASignSHA224:
 			opts = crypto.SHA224
-		case gokeyless.OpRSASignSHA256:
-			isRSA = true
-			fallthrough
-		case gokeyless.OpECDSASignSHA256:
+		case gokeyless.OpRSASignSHA256, gokeyless.OpECDSASignSHA256:
 			opts = crypto.SHA256
-		case gokeyless.OpRSASignSHA384:
-			isRSA = true
-			fallthrough
-		case gokeyless.OpECDSASignSHA384:
+		case gokeyless.OpRSASignSHA384, gokeyless.OpECDSASignSHA384:
 			opts = crypto.SHA384
-		case gokeyless.OpRSASignSHA512:
-			isRSA = true
-			fallthrough
-		case gokeyless.OpECDSASignSHA512:
+		case gokeyless.OpRSASignSHA512, gokeyless.OpECDSASignSHA512:
 			opts = crypto.SHA512
-		case gokeyless.OpPong:
-			fallthrough
-		case gokeyless.OpResponse:
-			fallthrough
-		case gokeyless.OpError:
+		case gokeyless.OpPong, gokeyless.OpResponse, gokeyless.OpError:
 			s.Log.Printf("%s: %s is not a valid request Opcode\n", gokeyless.ErrUnexpectedOpcode, h.Body.Opcode)
 			connError = conn.RespondError(h.ID, gokeyless.ErrUnexpectedOpcode)
 			s.stats.logInvalid(requestBegin)
@@ -217,11 +196,19 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		}
 
 		// Ensure we don't perform an ECDSA sign for an RSA request.
-		if _, ok := key.Public().(*rsa.PublicKey); isRSA && !ok {
-			s.Log.Printf("%s: request is RSA, but key is ECDSA\n", gokeyless.ErrCrypto)
-			connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
-			s.stats.logInvalid(requestBegin)
-			continue
+		switch h.Body.Opcode {
+		case gokeyless.OpRSASignMD5SHA1,
+			gokeyless.OpRSASignSHA1,
+			gokeyless.OpRSASignSHA224,
+			gokeyless.OpRSASignSHA256,
+			gokeyless.OpRSASignSHA384,
+			gokeyless.OpRSASignSHA512:
+			if _, ok := key.Public().(*rsa.PublicKey); !ok {
+				s.Log.Printf("%s: request is RSA, but key isn't\n", gokeyless.ErrCrypto)
+				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				s.stats.logInvalid(requestBegin)
+				continue
+			}
 		}
 
 		sig, err := key.Sign(rand.Reader, h.Body.Payload, opts)
@@ -236,7 +223,11 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		s.stats.logRequest(requestBegin)
 	}
 
-	s.Log.Printf("Connection error: %v\n", connError)
+	if connError == io.EOF {
+		s.Log.Println("connection closed by client")
+	} else {
+		s.Log.Printf("connection error: %v\n", connError)
+	}
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
