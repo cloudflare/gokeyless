@@ -6,13 +6,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"sync"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
 )
 
@@ -22,8 +21,6 @@ type Client struct {
 	Config *tls.Config
 	// Dialer used to manage connections.
 	Dialer *net.Dialer
-	// Log used to output informational data.
-	Log *log.Logger
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
 	// conns maps keyless servers to any open connections to them.
@@ -33,7 +30,7 @@ type Client struct {
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
-func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool, logOut io.Writer) *Client {
+func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 	return &Client{
 		Config: &tls.Config{
 			RootCAs:      keyserverCA,
@@ -44,14 +41,13 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool, logOut io.Write
 			},
 		},
 		Dialer:     &net.Dialer{},
-		Log:        log.New(logOut, "[client] ", log.LstdFlags),
 		conns:      make(map[string]*gokeyless.Conn),
 		allServers: make(map[gokeyless.SKI][]string),
 	}
 }
 
 // NewClientFromFile reads certificate, key, and CA files in order to create a Server.
-func NewClientFromFile(certFile, keyFile, caFile string, logOut io.Writer) (*Client, error) {
+func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -67,7 +63,7 @@ func NewClientFromFile(certFile, keyFile, caFile string, logOut io.Writer) (*Cli
 		return nil, errors.New("gokeyless/client: failed to read keyserver CA from PEM")
 	}
 
-	return NewClient(cert, keyserverCA, logOut), nil
+	return NewClient(cert, keyserverCA), nil
 }
 
 // Dial retuns a (reused/reusable) connection to a keyless server.
@@ -76,22 +72,29 @@ func (c *Client) Dial(server string) (*gokeyless.Conn, error) {
 		return nil, errors.New("gokeyless/client: TLS client has not yet been initialized with certificate and keyserver CA")
 	}
 
-	if conn, ok := c.conns[server]; ok {
+	c.m.RLock()
+	conn, ok := c.conns[server]
+	c.m.RUnlock()
+	if ok {
 		if conn.Use() {
 			return conn, nil
 		}
-		delete(c.conns, server)
+		c.m.Lock()
+		if c.conns[server] == conn {
+			delete(c.conns, server)
+		}
+		c.m.Unlock()
 	}
 
-	c.Log.Printf("Dialing %s\n", server)
-	conn, err := tls.Dial("tcp", server, c.Config)
+	log.Debugf("Dialing %s\n", server)
+	inner, err := tls.Dial("tcp", server, c.Config)
 	if err != nil {
 		return nil, err
 	}
 
 	c.m.Lock()
 	defer c.m.Unlock()
-	c.conns[server] = gokeyless.NewConn(conn)
+	c.conns[server] = gokeyless.NewConn(inner)
 	return c.conns[server], nil
 }
 
@@ -126,10 +129,10 @@ func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 		if err == nil {
 			return conn, nil
 		}
-		log.Printf("Couldn't dial server %s: %v", servers[n], err)
+		log.Debugf("Couldn't dial server %s: %v", servers[n], err)
 		servers = append(servers[:n], servers[n+1:]...)
 	}
-	return nil, errors.New("couldn't dial any of the servers given")
+	return nil, errors.New("couldn't dial any of the registered servers")
 }
 
 // getServers returns the keyserver that have been registered with the given SKI.
@@ -141,7 +144,7 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 
 // registerSKI associates the SKI of a public key with a particular keyserver.
 func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
-	c.Log.Printf("Registering key @ %s\t%x", server, ski)
+	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
 	c.m.Lock()
 	defer c.m.Unlock()
 	c.allServers[ski] = append(c.allServers[ski], server)

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/cloudflare/cfssl/log"
 )
 
 // Conn represents an open keyless connection.
@@ -44,7 +46,9 @@ func (c *Conn) Close() {
 	defer c.Unlock()
 	c.users--
 	if c.users == 0 {
-		c.Conn.Close()
+		if err := c.Conn.Close(); err != nil {
+			log.Errorf("Unable to close connection: %v", err)
+		}
 	}
 }
 
