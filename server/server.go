@@ -38,7 +38,8 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr
 	return &Server{
 		Addr: addr,
 		Config: &tls.Config{
-			RootCAs:      keylessCA,
+			ClientCAs:    keylessCA,
+			ClientAuth:   tls.RequireAndVerifyClientCert,
 			Certificates: []tls.Certificate{cert},
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
@@ -65,7 +66,7 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Se
 
 	keylessCA := x509.NewCertPool()
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
-		return nil, errors.New("gokeyless/client: failed to read keyless CA from PEM")
+		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
 	return NewServer(cert, keylessCA, addr, metricsAddr), nil
 }
