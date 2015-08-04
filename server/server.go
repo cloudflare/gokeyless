@@ -17,18 +17,116 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
+// Keystore is an abstract container for a server's private keys, allowing
+// lookup of keys based on incoming `Operation` requests.
+type Keystore interface {
+	// Add adds a new key to the store.
+	Add(*gokeyless.Operation, crypto.Signer) error
+	Get(*gokeyless.Operation) (crypto.Signer, bool)
+}
+
+// NewKeystore returns a new default keystore.
+func NewKeystore() Keystore {
+	return &defaultKeystore{
+		skis:      make(map[gokeyless.SKI]crypto.Signer),
+		digests:   make(map[gokeyless.Digest]gokeyless.SKI),
+		snis:      make(map[string]gokeyless.SKI),
+		serverIPs: make(map[string]gokeyless.SKI),
+		clientIPs: make(map[string]gokeyless.SKI),
+	}
+}
+
+// defaultKeystore is a simple default key store.
+type defaultKeystore struct {
+	sync.RWMutex
+	skis      map[gokeyless.SKI]crypto.Signer
+	digests   map[gokeyless.Digest]gokeyless.SKI
+	snis      map[string]gokeyless.SKI
+	serverIPs map[string]gokeyless.SKI
+	clientIPs map[string]gokeyless.SKI
+}
+
+// Add adds a new key to the server's internal repertoire.
+func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) error {
+	ski, err := gokeyless.GetSKI(priv.Public())
+	if err != nil {
+		return err
+	}
+
+	keys.Lock()
+	defer keys.Unlock()
+
+	if digest, ok := gokeyless.GetDigest(priv.Public()); ok {
+		keys.digests[digest] = ski
+	}
+
+	if op != nil {
+		if op.SNI != "" {
+			keys.snis[op.SNI] = ski
+		}
+		if op.ServerIP != nil {
+			keys.serverIPs[op.ServerIP.String()] = ski
+		}
+		if op.ClientIP != nil {
+			keys.clientIPs[op.ClientIP.String()] = ski
+		}
+	}
+
+	keys.skis[ski] = priv
+
+	log.Debugf("Adding key with SKI: %02x", ski)
+	return nil
+}
+
+func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, ok bool) {
+	keys.RLock()
+	defer keys.RUnlock()
+
+	ski := op.SKI
+	if priv, ok = keys.skis[ski]; ok {
+		return
+	}
+
+	log.Debug("Couldn't look up key based on SKI, trying Digest.")
+	if ski, ok = keys.digests[op.Digest]; ok {
+		priv, ok = keys.skis[ski]
+		return
+	}
+
+	log.Debug("Couldn't look up key based on Digest, trying SNI.")
+	if ski, ok = keys.snis[op.SNI]; ok {
+		priv, ok = keys.skis[ski]
+		return
+	}
+
+	if op.ServerIP != nil {
+		log.Debug("Couldn't look up key based on SNI, trying Server IP.")
+		if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
+			priv, ok = keys.skis[ski]
+			return
+		}
+	}
+
+	if op.ClientIP != nil {
+		log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
+		if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
+			priv, ok = keys.skis[ski]
+			return
+		}
+	}
+
+	log.Infof("Couldn't look up key for %s.", op)
+	return
+}
+
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
 	// TCP address to listen on
 	Addr string
 	// Config is initialized with the auth configuration used for communicating with keyless clients.
 	Config *tls.Config
-	// Mutex for non thread-safe map operations.
-	sync.Mutex
-	// keys maps all known key SKIs to their corresponding keys.
-	keys map[gokeyless.SKI]crypto.Signer
-	// digests maps keys' digests to their SKI.
-	digests map[gokeyless.Digest]gokeyless.SKI
+	// keys contains the private keys for the server
+	Keys Keystore
 	// stats stores statistics about keyless requests.
 	stats *statistics
 }
@@ -46,9 +144,8 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		keys:    make(map[gokeyless.SKI]crypto.Signer),
-		digests: make(map[gokeyless.Digest]gokeyless.SKI),
-		stats:   newStatistics(metricsAddr),
+		Keys:  NewKeystore(),
+		stats: newStatistics(metricsAddr),
 	}
 }
 
@@ -69,38 +166,6 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Se
 		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
 	return NewServer(cert, keylessCA, addr, metricsAddr), nil
-}
-
-// RegisterKey adds a new key to the server's internal repertoire.
-func (s *Server) RegisterKey(key crypto.Signer) error {
-	ski, err := gokeyless.GetSKI(key.Public())
-	if err != nil {
-		return err
-	}
-
-	s.Lock()
-	defer s.Unlock()
-
-	if digest, ok := gokeyless.GetDigest(key.Public()); ok {
-		s.digests[digest] = ski
-	}
-	s.keys[ski] = key
-
-	log.Debugf("Registering key with SKI: %02x", ski)
-	return nil
-}
-
-func (s *Server) getKey(ski gokeyless.SKI, digest gokeyless.Digest) (key crypto.Signer, ok bool) {
-	s.Lock()
-	defer s.Unlock()
-	if key, ok = s.keys[ski]; !ok {
-		log.Debug("Couldn't look up key based on SKI, trying Digest.")
-		if ski, ok = s.digests[digest]; ok {
-			key, ok = s.keys[ski]
-			return
-		}
-	}
-	return
 }
 
 func (s *Server) handle(conn *gokeyless.Conn) {
@@ -130,7 +195,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			continue
 
 		case gokeyless.OpRSADecrypt:
-			if key, ok = s.getKey(h.Body.SKI, h.Body.Digest); !ok {
+			if key, ok = s.Keys.Get(h.Body); !ok {
 				log.Error(gokeyless.ErrKeyNotFound)
 				connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
 				s.stats.logInvalid(requestBegin)
@@ -186,7 +251,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			continue
 		}
 
-		if key, ok = s.getKey(h.Body.SKI, h.Body.Digest); !ok {
+		if key, ok = s.Keys.Get(h.Body); !ok {
 			log.Error(gokeyless.ErrKeyNotFound)
 			connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
 			s.stats.logInvalid(requestBegin)

@@ -55,7 +55,7 @@ func init() {
 	if priv, err = x509.ParsePKCS1PrivateKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if err = s.RegisterKey(priv); err != nil {
+	if err = s.Keys.Add(nil, priv); err != nil {
 		log.Fatal(err)
 	}
 
@@ -66,7 +66,7 @@ func init() {
 	if priv, err = x509.ParseECPrivateKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if err = s.RegisterKey(priv); err != nil {
+	if err = s.Keys.Add(nil, priv); err != nil {
 		log.Fatal(err)
 	}
 

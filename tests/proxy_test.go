@@ -120,7 +120,7 @@ func TestTLSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RegisterKey(rsaKey); err != nil {
+	if err := s.Keys.Add(nil, rsaKey); err != nil {
 		t.Fatal(err)
 	}
 
