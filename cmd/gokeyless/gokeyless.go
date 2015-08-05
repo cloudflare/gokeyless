@@ -50,7 +50,9 @@ func main() {
 	}
 
 	for _, key := range keys {
-		s.RegisterKey(key)
+		if err := s.Keys.Add(nil, key); err != nil {
+			log.Errorf("Unable to add key: %v", err)
+		}
 	}
 
 	log.Fatal(s.ListenAndServe())
