@@ -220,8 +220,7 @@ func GetSKI(pub crypto.PublicKey) (SKI, error) {
 		SubjectPublicKey asn1.BitString
 	})
 
-	_, err = asn1.Unmarshal(encodedPub, subPKI)
-	if err != nil {
+	if _, err := asn1.Unmarshal(encodedPub, subPKI); err != nil {
 		return nilSKI, err
 	}
 
@@ -239,11 +238,12 @@ func (digest Digest) Valid() bool {
 }
 
 // GetDigest returns the digest of an RSA public key.
-func GetDigest(pub crypto.PublicKey) (Digest, bool) {
+func GetDigest(pub crypto.PublicKey) (Digest, error) {
 	if rsaPub, ok := pub.(*rsa.PublicKey); ok {
-		return sha256.Sum256([]byte(fmt.Sprintf("%X", rsaPub.N))), true
+		return sha256.Sum256([]byte(fmt.Sprintf("%X", rsaPub.N))), nil
 	}
-	return nilDigest, false
+
+	return nilDigest, errors.New("can't comute digest for non-RSA public key")
 }
 
 // Header represents the format for a Keyless protocol header.
