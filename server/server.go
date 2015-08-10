@@ -47,6 +47,7 @@ type defaultKeystore struct {
 }
 
 // Add adds a new key to the server's internal repertoire.
+// Stores in maps by SKI and (if possible) Digest, SNI, Server IP, and Client IP.
 func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) error {
 	ski, err := gokeyless.GetSKI(priv.Public())
 	if err != nil {
@@ -56,7 +57,7 @@ func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 	keys.Lock()
 	defer keys.Unlock()
 
-	if digest, ok := gokeyless.GetDigest(priv.Public()); ok {
+	if digest, err := gokeyless.GetDigest(priv.Public()); err == nil {
 		keys.digests[digest] = ski
 	}
 
