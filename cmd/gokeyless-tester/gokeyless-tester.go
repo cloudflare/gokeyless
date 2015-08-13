@@ -16,7 +16,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
+	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 )
@@ -28,17 +30,21 @@ var (
 	caFile    string
 	pubkeyDir string
 	pubkeyExt *regexp.Regexp
-	loadSize  int
+	crtExt    *regexp.Regexp
+	workers   int
+	testLen   time.Duration
 )
 
 func init() {
 	pubkeyExt = regexp.MustCompile(`.+\.pubkey`)
+	crtExt = regexp.MustCompile(`.+\.crt`)
 	flag.StringVar(&certFile, "cert", "client.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyserver-ca.pem", "Keyless client certificate authority")
 	flag.StringVar(&pubkeyDir, "public-key-directory", "keys/", "Directory in which public keys are stored with .pubkey extension")
 	flag.StringVar(&server, "server", "localhost:2407", "Keyless server on which to listen")
-	flag.IntVar(&loadSize, "load", 256, "Number of concurrent connections to keyserver")
+	flag.IntVar(&workers, "workers", 8, "Number of concurrent connections to keyserver")
+	flag.DurationVar(&testLen, "testlen", 20*time.Second, "test length in seconds")
 	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
 	flag.Parse()
 }
@@ -49,28 +55,38 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := testConnect(c, server); err != nil {
-		log.Fatal(err)
-	}
+	var privkeys []*client.PrivateKey
 
 	pubkeys, err := LoadPubKeysFromDir(pubkeyDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	privkeys := make([]*client.PrivateKey, len(pubkeys))
-	for i := range pubkeys {
-		var err error
-		if privkeys[i], err = c.RegisterPublicKey(server, pubkeys[i]); err != nil {
-			log.Fatal(err)
-		}
-
-		if err := testKey(privkeys[i]); err != nil {
+	for _, pub := range pubkeys {
+		if priv, err := c.RegisterPublicKey(server, pub); err == nil {
+			privkeys = append(privkeys, priv)
+		} else {
 			log.Fatal(err)
 		}
 	}
 
-	log.Fatal(loadTest(func() error {
+	certs, err := LoadCertsFromDir(pubkeyDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, cert := range certs {
+		if priv, err := c.RegisterCert(server, cert); err == nil {
+			privkeys = append(privkeys, priv)
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	log.Infof("Testing %s for %v with %d workers...", server, testLen, workers)
+	errCount := 0
+
+	errs := loadTest(func() error {
 		if err := testConnect(c, server); err != nil {
 			return err
 		}
@@ -81,26 +97,34 @@ func main() {
 			}
 		}
 		return nil
-	}))
+	})
+
+	done := time.After(testLen)
+	for {
+		select {
+		case err := <-errs:
+			log.Error(err)
+			errCount++
+
+		case <-done:
+			log.Infof("Completed with %d errors", errCount)
+			return
+		}
+	}
 }
 
-type testFunc func() error
-
-func loadTest(test testFunc) error {
+func loadTest(test func() error) <-chan error {
 	errs := make(chan error)
-	for i := 0; i < loadSize; i++ {
+	for i := 0; i < workers; i++ {
 		go func() {
 			for {
-				errs <- test()
+				if err := test(); err != nil {
+					errs <- err
+				}
 			}
 		}()
 	}
-	for err := range errs {
-		if err != nil {
-			log.Error(err)
-		}
-	}
-	return nil
+	return errs
 }
 
 // LoadPubKey attempts to load a public key from PEM or DER.
@@ -133,6 +157,32 @@ func LoadPubKeysFromDir(dir string) (pubkeys []crypto.PublicKey, err error) {
 			}
 
 			pubkeys = append(pubkeys, priv)
+		}
+		return nil
+	})
+	return
+}
+
+// LoadCertsFromDir reads all .crt files from a directory and returns associated Certificates.
+func LoadCertsFromDir(dir string) (certs []*x509.Certificate, err error) {
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && crtExt.MatchString(info.Name()) {
+			log.Infof("Loading %s...\n", path)
+			certPEM, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			cert, err := helpers.ParseCertificatePEM(certPEM)
+			if err != nil {
+				return err
+			}
+
+			certs = append(certs, cert)
 		}
 		return nil
 	})
