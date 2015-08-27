@@ -1,0 +1,203 @@
+#!/bin/sh
+# Init script for gokeyless
+# Implemented based on LSB Core 3.1:
+#   * Sections: 20.2, 20.3
+#
+### BEGIN INIT INFO
+# Provides:          gokeyless
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: 
+# Description:        Starts Go Keyless Server as a daemon.
+### END INIT INFO
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+export PATH
+
+if [ `id -u` -ne 0 ]; then
+   echo "You need root privileges to run this script"
+   exit 1
+fi
+
+name=gokeyless
+program=/usr/local/bin/gokeyless
+pidfile="/var/run/$name.pid"
+
+# Optional
+PORT=2407
+
+# Required
+CA_FILE=/etc/keyless/keyless_cacert.pem
+SERVER_CERT=/etc/keyless/server_cert.crt
+SERVER_KEY=/etc/keyless/server_cert.key
+PRIVATE_KEY_DIR=/etc/keyless/keys
+USER=keyless
+GROUP=keyless
+
+args="--server-cert=${SERVER_CERT} --server-key=${SERVER_KEY} --private-key-directory=${PRIVATE_KEY_DIR} --ca-file=${CA_FILE}"
+
+[ -n "${PORT}" ] && args="${args} --port=${PORT}"
+
+trace() {
+  logger -t "/etc/init.d/gokeyless" "$@"
+}
+
+emit() {
+  trace "$@"
+  echo "$@"
+}
+
+testconfig() {
+  $program $args --test
+
+  status=$?
+
+  if [ $status -ne 0 ] ; then
+    emit "Test command failed with code $status."
+  fi
+  return $status
+}
+
+start() {
+  type "$program" >/dev/null 2>/dev/null
+  if [ $? -eq 1 ]; then
+    emit "$name is not installed in $program"
+    return 1;
+  fi
+
+  if [ ! -f "$SERVER_KEY" ]; then
+    if [ ! -d `dirname $SERVER_KEY` ]; then
+      mkdir `dirname $SERVER_KEY` || return 1
+    fi
+
+    if [ ! -d `dirname $SERVER_CERT` ]; then
+      mkdir `$dirname SERVER_CERT` || return 1
+    fi
+
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout "$SERVER_KEY" -out "$SERVER_CERT" -batch
+
+    if [ $? -eq 1 ]; then
+      emit "$name failed to generate keypair"
+      return 1;
+    fi
+  fi
+
+  testconfig || exit $?
+
+  [ -f $pidfile ] && rm -f $pidfile
+
+  sh -c "
+    exec \"$program\" $args
+  " >>/var/log/$name.log 2>>/var/log/$name.err &
+
+  wait $!
+
+  for i in 0 1 2 3 4 5; do
+    [ -f $pidfile ] && break
+
+    if [ $i -eq 5 ]; then
+      emit "$name failed to start, missing pid file: $pidfile"
+      return 1
+    fi
+
+    sleep 1
+  done
+
+  ps -p `cat $pidfile` >/dev/null 2>/dev/null
+  if [ $? -eq 1 ]; then
+    emit "$name failed to start"
+    return 1;
+  fi
+
+  emit "$name started"
+  return 0
+}
+
+stop() {
+  # Try a few times to kill TERM the program
+  if status ; then
+    pid=`cat "$pidfile"`
+    trace "Killing $name (pid $pid) with SIGTERM"
+    kill -TERM $pid
+    # Wait for it to exit.
+    for i in 1 2 3 4 5 ; do
+      trace "Waiting $name (pid $pid) to die..."
+      status || break
+      sleep 1
+    done
+    if status ; then
+      emit "$name stop failed; still running."
+    else
+      emit "$name stopped."
+    fi
+  fi
+}
+
+status() {
+  if [ -f "$pidfile" ] ; then
+    pid=`cat "$pidfile"`
+    if ps -p $pid > /dev/null 2> /dev/null ; then
+      return 0
+    else
+      return 2 # program is dead but pid file exists
+    fi
+  else
+    return 3 # program is not running
+  fi
+}
+
+force_stop() {
+  if status ; then
+    stop
+    status && kill -KILL `cat "$pidfile"`
+  fi
+}
+
+
+case "$1" in
+  force-start|start|stop|force-stop|restart)
+    trace "Attempting '$1' on gokeyless"
+    ;;
+esac
+
+case "$1" in
+  force-start)
+    exec "$0" start
+    ;;
+  start)
+    status
+    code=$?
+    if [ $code -eq 0 ]; then
+      emit "$name is already running"
+      exit $code
+    else
+      start
+      exit $?
+    fi
+    ;;
+  stop) stop ;;
+  force-stop) force_stop ;;
+  status) 
+    status
+    code=$?
+    if [ $code -eq 0 ] ; then
+      emit "$name is running"
+    else
+      emit "$name is not running"
+    fi
+    exit $code
+    ;;
+  restart) 
+    testconfig || exit $?
+    stop && start
+    ;;
+  *)
+    echo "Usage: $SCRIPTNAME {start|force-start|stop|force-start|force-stop|status|restart}" >&2
+    exit 3
+  ;;
+esac
+
+exit $?
