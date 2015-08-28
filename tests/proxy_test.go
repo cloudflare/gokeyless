@@ -10,8 +10,6 @@ import (
 	"io/ioutil"
 	"testing"
 	"time"
-
-	"github.com/cloudflare/gokeyless/client"
 )
 
 const (
@@ -20,42 +18,6 @@ const (
 	network   = "tcp"
 	localAddr = "localhost:7777"
 )
-
-func LoadX509KeyPair(c *client.Client, serverAddr, certFile string) (cert tls.Certificate, err error) {
-	fail := func(err error) (tls.Certificate, error) { return tls.Certificate{}, err }
-	var certPEMBlock []byte
-	var certDERBlock *pem.Block
-
-	if certPEMBlock, err = ioutil.ReadFile(certFile); err != nil {
-		return fail(err)
-	}
-
-	for {
-		certDERBlock, certPEMBlock = pem.Decode(certPEMBlock)
-		if certDERBlock == nil {
-			break
-		}
-
-		if certDERBlock.Type == "CERTIFICATE" {
-			cert.Certificate = append(cert.Certificate, certDERBlock.Bytes)
-		}
-	}
-
-	if len(cert.Certificate) == 0 {
-		return fail(errors.New("crypto/tls: failed to parse certificate PEM data"))
-	}
-
-	if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
-		return fail(err)
-	}
-
-	cert.PrivateKey, err = c.RegisterCert(serverAddr, cert.Leaf)
-	if err != nil {
-		return fail(err)
-	}
-
-	return cert, nil
-}
 
 func serverFunc(conn *tls.Conn) {
 	defer conn.Close()
@@ -89,7 +51,7 @@ func TestTLSProxy(t *testing.T) {
 		t.SkipNow()
 	}
 
-	cert, err := LoadX509KeyPair(c, serverAddr, tlsCert)
+	cert, err := c.LoadTLSCertificate(serverAddr, tlsCert)
 	if err != nil {
 		t.Fatal(err)
 	}

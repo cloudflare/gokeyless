@@ -4,13 +4,18 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sync"
 
+	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
 )
@@ -171,4 +176,91 @@ func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*Privat
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
 func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
 	return c.RegisterPublicKey(server, cert.PublicKey)
+}
+
+var (
+	pubkeyExt = regexp.MustCompile(`.+\.pubkey`)
+	crtExt    = regexp.MustCompile(`.+\.crt`)
+)
+
+// RegisterDir reads all .pubkey and .crt files from a directory and returns associated PublicKey structs.
+func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []*PrivateKey, err error) {
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		isPubKey := pubkeyExt.MatchString(info.Name())
+		isCert := crtExt.MatchString(info.Name())
+		if !info.IsDir() && (isPubKey || isCert) {
+			log.Infof("Loading %s...\n", path)
+
+			var in []byte
+			if in, err = ioutil.ReadFile(path); err != nil {
+				return err
+			}
+
+			var priv *PrivateKey
+			if isPubKey {
+				var pub crypto.PublicKey
+				if pub, err = LoadPubKey(in); err != nil {
+					return err
+				}
+
+				if priv, err = c.RegisterPublicKey(server, pub); err != nil {
+					return err
+				}
+			} else {
+				var cert *x509.Certificate
+				if cert, err = helpers.ParseCertificatePEM(in); err != nil {
+					return err
+				}
+
+				if priv, err = c.RegisterCert(server, cert); err != nil {
+					return err
+				}
+			}
+			privkeys = append(privkeys, priv)
+		}
+		return nil
+	})
+	return
+}
+
+// LoadTLSCertificate loads a TLS certificate chain from file and registers
+// the leaf certificate's public key to the given keyserver.
+func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certificate, err error) {
+	fail := func(err error) (tls.Certificate, error) { return tls.Certificate{}, err }
+	var certPEMBlock []byte
+	var certDERBlock *pem.Block
+
+	if certPEMBlock, err = ioutil.ReadFile(certFile); err != nil {
+		return fail(err)
+	}
+
+	for {
+		certDERBlock, certPEMBlock = pem.Decode(certPEMBlock)
+		if certDERBlock == nil {
+			break
+		}
+
+		if certDERBlock.Type == "CERTIFICATE" {
+			cert.Certificate = append(cert.Certificate, certDERBlock.Bytes)
+		}
+	}
+
+	if len(cert.Certificate) == 0 {
+		return fail(errors.New("crypto/tls: failed to parse certificate PEM data"))
+	}
+
+	if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
+		return fail(err)
+	}
+
+	cert.PrivateKey, err = c.RegisterCert(server, cert.Leaf)
+	if err != nil {
+		return fail(err)
+	}
+
+	return cert, nil
 }
