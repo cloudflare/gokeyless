@@ -15,30 +15,33 @@ import (
 	"github.com/cloudflare/gokeyless/client"
 )
 
-//RunServerTests load tests a server for a given ammount of time and
-func RunServerTests(testLen time.Duration, workers int, c *client.Client, server string, privkeys []crypto.Signer) {
-	log.Infof("Testing %s for %v with %d workers...", server, testLen, workers)
-	errCount := 0
+// RunServerTests load tests a server with a given number of workers and ammount of time.
+func RunServerTests(testLen time.Duration, workers int, c *client.Client, server string, privkeys []*client.PrivateKey) {
+	log.Infof("Testing %s and %d keys for %v with %d workers...", server, len(privkeys), testLen, workers)
 
 	running := make(chan bool, workers)
-	errs := spawnTesters(workers, running, func() error {
-		if err := testConnect(c, server); err != nil {
-			return err
-		}
+	errs := make(chan error)
 
-		for _, priv := range privkeys {
-			if err := testKey(priv); err != nil {
-				return err
+	for i := 0; i < workers; i++ {
+		running <- true
+		go func() {
+			for range running {
+				errs <- testConnect(c, server)
+
+				for _, priv := range privkeys {
+					errs <- testKey(priv)
+				}
+
+				running <- true
 			}
-		}
-		return nil
-	})
+		}()
+	}
 
 	timeout := time.After(testLen)
+	errCount := 0
 	for {
 		select {
 		case err := <-errs:
-			running <- true
 			if err != nil {
 				log.Error(err)
 				errCount++
@@ -50,21 +53,6 @@ func RunServerTests(testLen time.Duration, workers int, c *client.Client, server
 			return
 		}
 	}
-}
-
-// spawnTesters spawns a number of goroutines to repeatedly perform a test.
-// Any errors are returned on a channel
-func spawnTesters(numWorkers int, running chan bool, test func() error) <-chan error {
-	errs := make(chan error)
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			running <- true
-			for range running {
-				errs <- test()
-			}
-		}()
-	}
-	return errs
 }
 
 // testConnect tests the ability to Dial and Ping a given server
@@ -84,7 +72,7 @@ func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 
 // testKey performs and verifies all possible opaque private key operations.
 func testKey(priv crypto.Signer) (err error) {
-	ptxt := []byte("Hello!")
+	ptxt := []byte("Test Plaintext")
 	r := rand.Reader
 	hashes := []crypto.Hash{
 		crypto.MD5SHA1,
