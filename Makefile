@@ -26,7 +26,7 @@ install-config:
 	@mkdir -p $(CONFIG_PREFIX)/keys
 	@chmod 700 $(CONFIG_PREFIX)/keys
 	@mkdir -p $(INIT_PREFIX)
-	@install -m755 pkg/keyless.sysv $(INIT_PREFIX)/keyless
+	@install -m755 pkg/gokeyless.sysv $(INIT_PREFIX)/gokeyless
 	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
 	@install -m400 pkg/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
 	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key

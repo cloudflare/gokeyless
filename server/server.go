@@ -10,6 +10,9 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -292,6 +295,35 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 	} else {
 		log.Errorf("connection error: %v\n", connError)
 	}
+}
+
+var keyExt = regexp.MustCompile(`.+\.key`)
+
+// LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
+// to parse the file into crypto.Signer for loading into the server Keystore.
+func (s *Server) LoadKeysFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && keyExt.MatchString(info.Name()) {
+			log.Debugf("Loading %s...\n", path)
+
+			in, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			priv, err := LoadKey(in)
+			if err != nil {
+				return err
+			}
+
+			return s.Keys.Add(nil, priv)
+		}
+		return nil
+	})
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
