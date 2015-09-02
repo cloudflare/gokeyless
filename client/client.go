@@ -26,6 +26,8 @@ type Client struct {
 	Config *tls.Config
 	// Dialer used to manage connections.
 	Dialer *net.Dialer
+	// DefaultServer is a default server to register keys to.
+	DefaultServer string
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
 	// conns maps keyless servers to any open connections to them.
@@ -124,7 +126,6 @@ func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 			}
 			c.m.Unlock()
 		}
-
 	}
 
 	// choose from possible servers at random until a connection can be established.
@@ -149,6 +150,10 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 
 // registerSKI associates the SKI of a public key with a particular keyserver.
 func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
+	if server == "" {
+		server = c.DefaultServer
+	}
+
 	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
 	c.m.Lock()
 	defer c.m.Unlock()
