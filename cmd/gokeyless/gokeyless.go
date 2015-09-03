@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cloudflare/cfssl/csr"
@@ -43,12 +44,13 @@ func init() {
 
 func main() {
 	if initCert {
-		var host string
-		fmt.Print("Keyserver Hostname/IP: ")
-		fmt.Scanln(&host)
+		var hosts string
+		fmt.Print("Keyserver Hostnames/IPs (comma-seperated): ")
+		fmt.Scanln(&hosts)
 
 		csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
-			CN:         host,
+			CN:         "Keyless Server Authentication Certificate",
+			Hosts:      strings.Split(hosts, ","),
 			KeyRequest: &csr.KeyRequest{Algo: "ecdsa", Size: 384},
 		})
 		if err != nil {
