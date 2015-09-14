@@ -19,6 +19,7 @@ var (
 	certFile  string
 	keyFile   string
 	caFile    string
+	noVerify  bool
 	pubkeyDir string
 	pubkeyExt *regexp.Regexp
 	crtExt    *regexp.Regexp
@@ -29,7 +30,8 @@ var (
 func init() {
 	flag.StringVar(&certFile, "cert", "client.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
-	flag.StringVar(&caFile, "ca-file", "keyserver-ca.pem", "Keyless client certificate authority")
+	flag.StringVar(&caFile, "ca-file", "keyserver-ca.pem", "Keyless server certificate authority")
+	flag.BoolVar(&noVerify, "no-verify", false, "Don't verify server certificate against Keyserver CA")
 	flag.StringVar(&pubkeyDir, "public-key-directory", "keys/", "Directory where certificates are stored with a .crt extension or public keys are stored with .pubkey extension")
 	flag.StringVar(&server, "server", "localhost:2407", "Keyless server on which to listen")
 	flag.IntVar(&workers, "workers", 8, "Number of concurrent connections to keyserver")
@@ -52,6 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	c.Config.InsecureSkipVerify = noVerify
 
 	privkeys, err := c.RegisterDir(server, pubkeyDir, LoadPEMPubKey)
 	if err != nil {
