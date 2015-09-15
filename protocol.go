@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+
+	"github.com/cloudflare/cfssl/helpers"
 )
 
 // Tag marks the type of an Item.
@@ -225,6 +227,20 @@ func GetSKI(pub crypto.PublicKey) (SKI, error) {
 	}
 
 	return sha1.Sum(subPKI.SubjectPublicKey.Bytes), nil
+}
+
+// GetSKICert returns the SKI of a parsed X.509 Certificate
+func GetSKICert(cert *x509.Certificate) (SKI, error) {
+	return GetSKI(cert.PublicKey)
+}
+
+// GetSKICertPEM returns the SKI of a PEM encoded X.509 Certificate
+func GetSKICertPEM(certPEM []byte) (SKI, error) {
+	cert, err := helpers.ParseCertificatePEM(certPEM)
+	if err!=nil {
+		return nilSKI, err
+	}
+	return GetSKICert(cert)
 }
 
 // Digest represents a SHA-256 digest of an RSA public key modulus
