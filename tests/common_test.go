@@ -12,16 +12,16 @@ import (
 )
 
 const (
-	serverCert   = "testdata/rsa-server.pem"
-	serverKey    = "testdata/rsa-server-key.pem"
-	keylessCA    = "testdata/testca-keyless.pem"
+	serverCert   = "testdata/server.pem"
+	serverKey    = "testdata/server-key.pem"
+	keylessCA    = "testdata/ca.pem"
 	serverAddr   = "localhost:3407"
 	rsaPrivKey   = "testdata/rsa.key"
 	ecdsaPrivKey = "testdata/ecdsa.key"
 
-	clientCert  = "testdata/rsa-client.pem"
-	clientKey   = "testdata/rsa-client-key.pem"
-	keyserverCA = "testdata/testca-keyserver.pem"
+	clientCert  = "testdata/client.pem"
+	clientKey   = "testdata/client-key.pem"
+	keyserverCA = "testdata/ca.pem"
 	rsaPubKey   = "testdata/rsa.pubkey"
 	ecdsaPubKey = "testdata/ecdsa.pubkey"
 )

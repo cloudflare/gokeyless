@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/asn1"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -38,10 +39,12 @@ func RunServerTests(testLen time.Duration, workers int, c *client.Client, server
 	}
 
 	timeout := time.After(testLen)
-	errCount := 0
+	var testCount, errCount int
 	for {
 		select {
 		case err := <-errs:
+			testCount++
+			fmt.Print(".")
 			if err != nil {
 				log.Error(err)
 				errCount++
@@ -49,7 +52,7 @@ func RunServerTests(testLen time.Duration, workers int, c *client.Client, server
 
 		case <-timeout:
 			close(running)
-			log.Infof("Completed with %d errors", errCount)
+			log.Infof("Completed with %d errors / %d tests", errCount, testCount)
 			return
 		}
 	}

@@ -51,7 +51,10 @@ func main() {
 		csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
 			CN:         "Keyless Server Authentication Certificate",
 			Hosts:      strings.Split(hosts, ","),
-			KeyRequest: &csr.KeyRequest{Algo: "ecdsa", Size: 384},
+			KeyRequest: &csr.BasicKeyRequest{
+				A: "ecdsa",
+				S: 384,
+			},
 		})
 		if err != nil {
 			log.Fatal(err)
