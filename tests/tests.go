@@ -8,121 +8,96 @@ import (
 	"crypto/rsa"
 	"encoding/asn1"
 	"errors"
-	"fmt"
 	"math/big"
 	"time"
 
+	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/tests/testapi"
 )
-
-// RunServerTests load tests a server with a given number of workers and ammount of time.
-func RunServerTests(testLen time.Duration, workers int, c *client.Client, server string, privkeys []*client.PrivateKey) {
-	log.Infof("Testing %s and %d keys for %v with %d workers...", server, len(privkeys), testLen, workers)
-
-	running := make(chan bool, workers)
-	errs := make(chan error)
-
-	for i := 0; i < workers; i++ {
-		running <- true
-		go func() {
-			for range running {
-				errs <- testConnect(c, server)
-
-				for _, priv := range privkeys {
-					errs <- testKey(priv)
-				}
-
-				running <- true
-			}
-		}()
-	}
-
-	timeout := time.After(testLen)
-	var testCount, errCount int
-	for {
-		select {
-		case err := <-errs:
-			testCount++
-			fmt.Print(".")
-			if err != nil {
-				log.Error(err)
-				errCount++
-			}
-
-		case <-timeout:
-			close(running)
-			log.Infof("Completed with %d errors / %d tests", errCount, testCount)
-			return
-		}
-	}
-}
-
-// testConnect tests the ability to Dial and Ping a given server
-func testConnect(c *client.Client, server string) error {
-	conn, err := c.Dial(server)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	return conn.Ping(nil)
-}
 
 // hashPtxt hashes the plaintext with the given hash algorithm.
 func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 	return h.New().Sum(ptxt)[len(ptxt):]
 }
 
-// testKey performs and verifies all possible opaque private key operations.
-func testKey(priv crypto.Signer) (err error) {
+// NewPingTest generates a TestFunc to connect and perform a ping.
+func NewPingTest(c *client.Client, server string) testapi.TestFunc {
+	return func() error {
+		cookie := make([]byte, 512)
+		_, err := rand.Read(cookie)
+		if err != nil {
+			return err
+		}
+		conn, err := c.Dial(server)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		return conn.Ping(nil)
+	}
+}
+
+// NewSignTests generates a map of test name to TestFunc that performs an opaque sign and verify.
+func NewSignTests(priv crypto.Signer) map[string]testapi.TestFunc {
+	tests := make(map[string]testapi.TestFunc)
 	ptxt := []byte("Test Plaintext")
 	r := rand.Reader
-	hashes := []crypto.Hash{
-		crypto.MD5SHA1,
-		crypto.SHA1,
-		crypto.SHA224,
-		crypto.SHA256,
-		crypto.SHA384,
-		crypto.SHA512,
+	hashes := map[string]crypto.Hash{
+		"sign.md5sha1": crypto.MD5SHA1,
+		"sign.sha1":    crypto.SHA1,
+		"sign.sha224":  crypto.SHA224,
+		"sign.sha256":  crypto.SHA256,
+		"sign.sha384":  crypto.SHA384,
+		"sign.sha512":  crypto.SHA512,
 	}
 
-	for _, h := range hashes {
-		var msg, sig []byte
+	for hashName, h := range hashes {
+		var msg []byte
 		if h == crypto.MD5SHA1 {
 			msg = append(hashPtxt(crypto.MD5, ptxt), hashPtxt(crypto.SHA1, ptxt)...)
 		} else {
 			msg = hashPtxt(h, ptxt)
 		}
 
-		if sig, err = priv.Sign(r, msg, h); err != nil {
-			return
-		}
+		tests[hashName] = func(h crypto.Hash) testapi.TestFunc {
+			return func() error {
+				sig, err := priv.Sign(r, msg, h)
+				if err != nil {
+					return err
+				}
 
-		switch pub := priv.Public().(type) {
-		case *rsa.PublicKey:
-			if err = rsa.VerifyPKCS1v15(pub, h, msg, sig); err != nil {
-				return
+				switch pub := priv.Public().(type) {
+				case *rsa.PublicKey:
+					return rsa.VerifyPKCS1v15(pub, h, msg, sig)
+				case *ecdsa.PublicKey:
+					ecdsaSig := new(struct{ R, S *big.Int })
+					asn1.Unmarshal(sig, ecdsaSig)
+					if !ecdsa.Verify(pub, msg, ecdsaSig.R, ecdsaSig.S) {
+						return errors.New("ecdsa verify failed")
+					}
+				default:
+					return errors.New("unknown public key type")
+				}
+
+				return nil
 			}
-		case *ecdsa.PublicKey:
-			ecdsaSig := new(struct{ R, S *big.Int })
-			asn1.Unmarshal(sig, ecdsaSig)
-			if !ecdsa.Verify(pub, msg, ecdsaSig.R, ecdsaSig.S) {
-				return errors.New("ecdsa verify failed")
-			}
-		default:
-			return errors.New("unknown public key type")
-		}
+		}(h)
 	}
+	return tests
+}
 
-	if pub, ok := priv.Public().(*rsa.PublicKey); ok {
+// NewDecryptTest generates an RSA decryption test.
+func NewDecryptTest(decrypter crypto.Decrypter) testapi.TestFunc {
+	ptxt := []byte("Test Plaintext")
+	r := rand.Reader
+
+	return func() (err error) {
 		var c, m []byte
-		if c, err = rsa.EncryptPKCS1v15(r, pub, ptxt); err != nil {
+		if c, err = rsa.EncryptPKCS1v15(r, decrypter.Public().(*rsa.PublicKey), ptxt); err != nil {
 			return
-		}
-
-		var decrypter crypto.Decrypter
-		if decrypter, ok = priv.(crypto.Decrypter); !ok {
-			return errors.New("rsa public key but cannot decrypt")
 		}
 
 		if m, err = decrypter.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
@@ -145,7 +120,44 @@ func testKey(priv crypto.Signer) (err error) {
 		if bytes.Compare(ptxt, m) == 0 {
 			return errors.New("rsa decrypt suceeded despite incorrect SessionKeyLen")
 		}
+		return nil
+	}
+}
+
+// RunAPITests runs a test suite based on on API Input and returns an API Result.
+func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, workers int) (*testapi.Results, error) {
+	log.Debugf("Testing %s", in.Keyserver)
+	certs, err := helpers.ParseCertificatesPEM([]byte(in.CertsPEM))
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	results := testapi.NewResults()
+	c.Config.InsecureSkipVerify = in.InsecureSkipVerify
+
+	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
+
+	for _, cert := range certs {
+		priv, err := c.RegisterCert(in.Keyserver, cert)
+		if err != nil {
+			return nil, err
+		}
+
+		ski, err := gokeyless.GetSKICert(cert)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := priv.Public().(*rsa.PublicKey); ok {
+			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(priv))
+		}
+
+		for name, test := range NewSignTests(priv) {
+			results.RegisterTest(ski.String()+"."+name, test)
+		}
+	}
+
+	results.RunTests(testLen, workers)
+
+	return results, nil
 }
