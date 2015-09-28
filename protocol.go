@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -205,6 +206,11 @@ type SKI [sha1.Size]byte
 
 var nilSKI SKI
 
+// String returns a canonical Base 64 encoded SKI string.
+func (ski SKI) String() string {
+	return base64.StdEncoding.EncodeToString(ski[:])
+}
+
 // Valid compares an SKI to 0 to determine if it is valid.
 func (ski SKI) Valid() bool {
 	return !bytes.Equal(ski[:], nilSKI[:])
@@ -237,7 +243,7 @@ func GetSKICert(cert *x509.Certificate) (SKI, error) {
 // GetSKICertPEM returns the SKI of a PEM encoded X.509 Certificate
 func GetSKICertPEM(certPEM []byte) (SKI, error) {
 	cert, err := helpers.ParseCertificatePEM(certPEM)
-	if err!=nil {
+	if err != nil {
 		return nilSKI, err
 	}
 	return GetSKICert(cert)

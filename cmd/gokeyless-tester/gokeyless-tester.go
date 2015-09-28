@@ -1,52 +1,42 @@
 package main
 
 import (
-	"crypto"
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
+	"encoding/json"
 	"flag"
-	"regexp"
+	"fmt"
+	"net"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/tests"
+	"github.com/cloudflare/gokeyless/tests/testapi"
 )
 
 var (
-	server    string
-	certFile  string
-	keyFile   string
-	caFile    string
-	noVerify  bool
-	pubkeyDir string
-	pubkeyExt *regexp.Regexp
-	crtExt    *regexp.Regexp
-	workers   int
-	testLen   time.Duration
+	certFile           string
+	keyFile            string
+	caFile             string
+	insecureSkipVerify bool
+	workers            int
+	testLen            time.Duration
+	testcerts          string
+	server             string
+	apiPort            string
 )
 
 func init() {
+	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
 	flag.StringVar(&certFile, "cert", "client.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
-	flag.StringVar(&caFile, "ca-file", "keyserver-ca.pem", "Keyless server certificate authority")
-	flag.BoolVar(&noVerify, "no-verify", false, "Don't verify server certificate against Keyserver CA")
-	flag.StringVar(&pubkeyDir, "public-key-directory", "keys/", "Directory where certificates are stored with a .crt extension or public keys are stored with .pubkey extension")
-	flag.StringVar(&server, "server", "localhost:2407", "Keyless server on which to listen")
+	flag.StringVar(&caFile, "ca-file", "keyserver_cacert.pem", "Keyless server certificate authority")
+	flag.BoolVar(&insecureSkipVerify, "no-verify", false, "Don't verify server certificate against Keyserver CA")
 	flag.IntVar(&workers, "workers", 8, "Number of concurrent connections to keyserver")
 	flag.DurationVar(&testLen, "testlen", 20*time.Second, "test length in seconds")
-	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
+	flag.StringVar(&server, "server", "", "(Optional) Keyless server to test")
+	flag.StringVar(&testcerts, "testcerts", "", "(Optional) Certificate(s) to test on keyserver")
+	flag.StringVar(&apiPort, "api-port", "", "(Opitional) Port on which to spawn test API listener.")
 	flag.Parse()
-}
-
-// LoadPEMPubKey attempts to load a public key from PEM.
-func LoadPEMPubKey(in []byte) (crypto.PublicKey, error) {
-	p, rest := pem.Decode(in)
-	if p == nil || len(rest) != 0 {
-		return nil, errors.New("couldn't decode public key")
-	}
-	return x509.ParsePKIXPublicKey(p.Bytes)
 }
 
 func main() {
@@ -54,12 +44,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	c.Config.InsecureSkipVerify = noVerify
+	c.Config.InsecureSkipVerify = insecureSkipVerify
 
-	privkeys, err := c.RegisterDir(server, pubkeyDir, LoadPEMPubKey)
-	if err != nil {
-		log.Fatal(err)
+	if server != "" {
+		in := &testapi.Input{
+			Keyserver: server,
+			CertsPEM:  testcerts,
+		}
+		results, err := tests.RunAPITests(in, c, testLen, workers)
+		if err != nil {
+			log.Fatal(err)
+		}
+		out, err := json.MarshalIndent(results.Registry, "", "  ")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(string(out))
 	}
 
-	tests.RunServerTests(testLen, workers, c, server, privkeys)
+	if apiPort != "" {
+		log.Fatal(tests.ListenAndServeAPI(net.JoinHostPort("", apiPort), testLen, workers, c))
+	}
 }
