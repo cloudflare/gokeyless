@@ -7,11 +7,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/asn1"
-	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"math/big"
-	"net/http"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -163,49 +160,4 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 	results.RunTests(testLen, workers)
 
 	return results, nil
-}
-
-type apiHandler struct {
-	c       *client.Client
-	testLen time.Duration
-	workers int
-}
-
-func (api *apiHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if req.Method != "POST" {
-		http.Error(w, "405 Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	in := new(testapi.Input)
-	if err := json.Unmarshal(body, in); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	results, err := RunAPITests(in, api.c, api.testLen, api.workers)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results.Registry); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-// ListenAndServeAPI creates an HTTP endpoint at addr.
-func ListenAndServeAPI(addr string, testLen time.Duration, workers int, c *client.Client) error {
-	log.Infof("Serving Tester API at %s/\n", addr)
-
-	http.Handle("/", &apiHandler{c, testLen, workers})
-	return http.ListenAndServe(addr, nil)
 }
