@@ -171,14 +171,12 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 	digest, _ := gokeyless.GetDigest(pub)
 
 	return &PrivateKey{
-		public: pub,
-		client: c,
-		template: &gokeyless.Operation{
-			SKI:      ski,
-			Digest:   digest,
-			SNI:      sni,
-			ServerIP: serverIP,
-		},
+		public:   pub,
+		client:   c,
+		ski:      ski,
+		digest:   digest,
+		sni:      sni,
+		serverIP: serverIP,
 	}, nil
 }
 

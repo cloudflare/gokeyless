@@ -3,7 +3,6 @@ package gokeyless
 import (
 	"bytes"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -206,27 +205,4 @@ func (c *Conn) RespondError(id uint32, err Error) error {
 			Opcode:  OpError,
 			Payload: []byte{byte(err)},
 		})
-}
-
-// KeyOperation performs an opaque cryptographic operation with the given SKIed key.
-func (c *Conn) KeyOperation(op Op, msg []byte, template *Operation) ([]byte, error) {
-	template.Opcode = op
-	template.Payload = msg
-	result, err := c.DoOperation(template)
-	if err != nil {
-		return nil, err
-	}
-
-	if result.Opcode != OpResponse {
-		if result.Opcode == OpError {
-			return nil, result.GetError()
-		}
-		return nil, fmt.Errorf("wrong response opcode: %v", result.Opcode)
-	}
-
-	if len(result.Payload) == 0 {
-		return nil, errors.New("empty payload")
-	}
-
-	return result.Payload, nil
 }
