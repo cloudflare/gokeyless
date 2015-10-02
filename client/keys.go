@@ -13,11 +13,9 @@ import (
 
 // PrivateKey represents a keyless-backed RSA private key.
 type PrivateKey struct {
-	public crypto.PublicKey
-	ski    gokeyless.SKI
-	digest gokeyless.Digest
-
-	client *Client
+	public   crypto.PublicKey
+	client   *Client
+	template *gokeyless.Operation
 
 	crypto.Signer
 	crypto.Decrypter
@@ -75,7 +73,7 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 		return nil, errors.New("input must be hashed message")
 	}
 
-	conn, err := key.client.DialAny(key.ski)
+	conn, err := key.client.DialAny(key.template.SKI)
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +83,12 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	if op == gokeyless.OpError {
 		return nil, errors.New("invalid key type or hash")
 	}
-	return conn.KeyOperation(op, msg, key.ski, key.digest)
+	return conn.KeyOperation(op, msg, key.template)
 }
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
 func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
-	conn, err := key.client.DialAny(key.ski)
+	conn, err := key.client.DialAny(key.template.SKI)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +96,7 @@ func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.Decrypter
 
 	switch opts := opts.(type) {
 	case *rsa.PKCS1v15DecryptOptions:
-		ptxt, decyptErr := conn.KeyOperation(gokeyless.OpRSADecrypt, msg, key.ski, key.digest)
+		ptxt, decyptErr := conn.KeyOperation(gokeyless.OpRSADecrypt, msg, key.template)
 
 		// If opts.SessionKeyLen is set, we must perform a variation of
 		// rsa.DecryptPKCS1v15SessionKey to ensure the entire operation

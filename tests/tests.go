@@ -9,6 +9,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"math/big"
+	"net"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -134,11 +135,12 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 
 	results := testapi.NewResults()
 	c.Config.InsecureSkipVerify = in.InsecureSkipVerify
+	serverIP := net.ParseIP(in.ServerIP)
 
 	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
 
 	for _, cert := range certs {
-		priv, err := c.RegisterCert(in.Keyserver, cert)
+		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, in.SNI, serverIP)
 		if err != nil {
 			return nil, err
 		}

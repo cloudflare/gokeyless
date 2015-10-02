@@ -209,13 +209,10 @@ func (c *Conn) RespondError(id uint32, err Error) error {
 }
 
 // KeyOperation performs an opaque cryptographic operation with the given SKIed key.
-func (c *Conn) KeyOperation(op Op, msg []byte, ski SKI, digest Digest) ([]byte, error) {
-	result, err := c.DoOperation(&Operation{
-		Opcode:  op,
-		Payload: msg,
-		SKI:     ski,
-		Digest:  digest,
-	})
+func (c *Conn) KeyOperation(op Op, msg []byte, template *Operation) ([]byte, error) {
+	template.Opcode = op
+	template.Payload = msg
+	result, err := c.DoOperation(template)
 	if err != nil {
 		return nil, err
 	}

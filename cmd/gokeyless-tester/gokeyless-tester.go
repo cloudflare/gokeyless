@@ -21,6 +21,8 @@ var (
 	workers            int
 	testLen            time.Duration
 	testcerts          string
+	sni                string
+	serverIP           string
 	server             string
 	apiPort            string
 )
@@ -35,6 +37,8 @@ func init() {
 	flag.DurationVar(&testLen, "testlen", 20*time.Second, "test length in seconds")
 	flag.StringVar(&server, "server", "", "(Optional) Keyless server to test")
 	flag.StringVar(&testcerts, "testcerts", "", "(Optional) Certificate(s) to test on keyserver")
+	flag.StringVar(&sni, "sni", "", "(Optional) Lazyloading SNI")
+	flag.StringVar(&serverIP, "server-ip", "", "(Optional) Lazyloading Server IP")
 	flag.StringVar(&apiPort, "api-port", "", "(Opitional) Port on which to spawn test API listener.")
 	flag.Parse()
 }
@@ -50,6 +54,8 @@ func main() {
 		in := &testapi.Input{
 			Keyserver: server,
 			CertsPEM:  testcerts,
+			SNI:       sni,
+			ServerIP:  serverIP,
 		}
 		results, err := tests.RunAPITests(in, c, testLen, workers)
 		if err != nil {

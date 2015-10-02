@@ -160,8 +160,8 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
 	c.allServers[ski] = append(c.allServers[ski], server)
 }
 
-// RegisterPublicKey SKIs and registers a public key as being held by a server.
-func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*PrivateKey, error) {
+// RegisterPublicKeyTemplate registers a public key with additional operation template information.
+func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (*PrivateKey, error) {
 	ski, err := gokeyless.GetSKI(pub)
 	if err != nil {
 		return nil, err
@@ -172,10 +172,19 @@ func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*Privat
 
 	return &PrivateKey{
 		public: pub,
-		ski:    ski,
-		digest: digest,
 		client: c,
+		template: &gokeyless.Operation{
+			SKI:      ski,
+			Digest:   digest,
+			SNI:      sni,
+			ServerIP: serverIP,
+		},
 	}, nil
+}
+
+// RegisterPublicKey SKIs and registers a public key as being held by a server.
+func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*PrivateKey, error) {
+	return c.RegisterPublicKeyTemplate(server, pub, "", nil)
 }
 
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
