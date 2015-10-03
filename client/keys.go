@@ -6,19 +6,22 @@ import (
 	"crypto/rsa"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 
 	"github.com/cloudflare/gokeyless"
 )
 
 // PrivateKey represents a keyless-backed RSA private key.
 type PrivateKey struct {
-	public crypto.PublicKey
-	ski    gokeyless.SKI
-	digest gokeyless.Digest
-
-	client *Client
-
+	public   crypto.PublicKey
+	client   *Client
+	ski      gokeyless.SKI
+	digest   gokeyless.Digest
+	clientIP net.IP
+	serverIP net.IP
+	sni      string
 	crypto.Signer
 	crypto.Decrypter
 }
@@ -69,36 +72,60 @@ func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
 	}
 }
 
+// execute performs an opaque cryptographic operation
+// on a server associated with the key.
+func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
+	conn, err := key.client.DialAny(key.ski)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	result, err := conn.DoOperation(&gokeyless.Operation{
+		Opcode:   op,
+		Payload:  msg,
+		SKI:      key.ski,
+		Digest:   key.digest,
+		ClientIP: key.clientIP,
+		ServerIP: key.serverIP,
+		SNI:      key.sni,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Opcode != gokeyless.OpResponse {
+		if result.Opcode == gokeyless.OpError {
+			return nil, result.GetError()
+		}
+		return nil, fmt.Errorf("wrong response opcode: %v", result.Opcode)
+	}
+
+	if len(result.Payload) == 0 {
+		return nil, errors.New("empty payload")
+	}
+
+	return result.Payload, nil
+}
+
 // Sign implements the crypto.Signer operation for the given key.
 func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
 	if len(msg) != opts.HashFunc().Size() {
 		return nil, errors.New("input must be hashed message")
 	}
 
-	conn, err := key.client.DialAny(key.ski)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
 	op := signOpFromKeyHash(key, opts.HashFunc())
 	if op == gokeyless.OpError {
 		return nil, errors.New("invalid key type or hash")
 	}
-	return conn.KeyOperation(op, msg, key.ski, key.digest)
+	return key.execute(op, msg)
 }
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
 func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
-	conn, err := key.client.DialAny(key.ski)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
 	switch opts := opts.(type) {
 	case *rsa.PKCS1v15DecryptOptions:
-		ptxt, decyptErr := conn.KeyOperation(gokeyless.OpRSADecrypt, msg, key.ski, key.digest)
+		ptxt, decyptErr := key.execute(gokeyless.OpRSADecrypt, msg)
 
 		// If opts.SessionKeyLen is set, we must perform a variation of
 		// rsa.DecryptPKCS1v15SessionKey to ensure the entire operation

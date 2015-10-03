@@ -12,6 +12,8 @@ type Input struct {
 	Keyserver          string `json:"keyserver"`
 	CertsPEM           string `json:"certs,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
+	SNI                string `json:"sni,omitempty"`
+	ServerIP           string `json:"sni,omitempty"`
 }
 
 // Results represents the success stats of an entire test suite.
