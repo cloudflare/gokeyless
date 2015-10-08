@@ -6,8 +6,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/asn1"
+	"log"
 	"math/big"
+	"net"
 	"testing"
 )
 
@@ -25,6 +28,31 @@ func TestConnect(t *testing.T) {
 	if err := conn.Ping([]byte("Hello!")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestBlacklist(t *testing.T) {
+	_, port, err := net.SplitHostPort(s.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cert := range s.Config.Certificates {
+		if cert.Leaf == nil {
+			if len(cert.Certificate) == 0 {
+				t.Fatal("invalid server certificate")
+			}
+			var err error
+			if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
+				log.Fatal(err)
+			}
+		}
+		c.PopulateBlacklist(cert.Leaf, port)
+	}
+	t.Logf("Blacklist: %+v", c.BlacklistIPs)
+
+	if _, err := c.LoadTLSCertificate(s.Addr, tlsCert); err == nil {
+		t.Fatal("was able to register cert to blacklisted server")
+	}
+	c.ClearBlacklist()
 }
 
 var (

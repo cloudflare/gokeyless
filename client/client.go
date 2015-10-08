@@ -28,6 +28,10 @@ type Client struct {
 	Dialer *net.Dialer
 	// DefaultServer is a default server to register keys to.
 	DefaultServer string
+	// BlacklistIPs is a list of server IPs that this client won't dial.
+	BlacklistIPs []net.IP
+	// BlacklistPort is the server port to blacklist.
+	BlacklistPort string
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
 	// conns maps keyless servers to any open connections to them.
@@ -148,16 +152,65 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 	return c.allServers[ski]
 }
 
+// PopulateBlacklist populates the client blacklist using an x509 certificate.
+func (c *Client) PopulateBlacklist(cert *x509.Certificate, port string) {
+	c.BlacklistPort = port
+	c.BlacklistIPs = append(c.BlacklistIPs, cert.IPAddresses...)
+	for _, host := range cert.DNSNames {
+		if ips, err := net.LookupIP(host); err == nil {
+			c.BlacklistIPs = append(c.BlacklistIPs, ips...)
+		}
+	}
+}
+
+// ClearBlacklist empties the client blacklist
+func (c *Client) ClearBlacklist() {
+	c.BlacklistPort = ""
+	c.BlacklistIPs = c.BlacklistIPs[:0]
+}
+
+// ValidServer determines if the given server can be resolved and doesn't resolve
+// to a blacklisted server IP.
+func (c *Client) ValidServer(server string) (err error) {
+	var host, port string
+	if host, port, err = net.SplitHostPort(server); err != nil {
+		return
+	}
+	if port != c.BlacklistPort {
+		return nil
+	}
+
+	var ips []net.IP
+	if ips, err = net.LookupIP(host); err != nil {
+		return
+	}
+
+	for _, ip := range ips {
+		for _, badIP := range c.BlacklistIPs {
+			if ip.Equal(badIP) {
+				return fmt.Errorf("%s resolves to blacklisted IP %s", host, badIP)
+			}
+		}
+	}
+
+	return nil
+}
+
 // registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) {
+func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 	if server == "" {
 		server = c.DefaultServer
 	}
 
 	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
+	if err := c.ValidServer(server); err != nil {
+		log.Errorf("Server %s invalid: %v", server, err)
+		return err
+	}
 	c.m.Lock()
 	defer c.m.Unlock()
 	c.allServers[ski] = append(c.allServers[ski], server)
+	return nil
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
@@ -166,7 +219,10 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 	if err != nil {
 		return nil, err
 	}
-	c.registerSKI(server, ski)
+
+	if err := c.registerSKI(server, ski); err != nil {
+		return nil, err
+	}
 
 	digest, _ := gokeyless.GetDigest(pub)
 
