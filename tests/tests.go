@@ -6,10 +6,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/asn1"
 	"errors"
 	"math/big"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -125,22 +128,76 @@ func NewDecryptTest(decrypter crypto.Decrypter) testapi.TestFunc {
 	}
 }
 
-// RunAPITests runs a test suite based on on API Input and returns an API Result.
-func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, workers int) (*testapi.Results, error) {
-	log.Debugf("Testing %s", in.Keyserver)
-	certs, err := helpers.ParseCertificatesPEM([]byte(in.CertsPEM))
+func getCertFromDomain(domain string) (*x509.Certificate, error) {
+	var host, port string
+	var err error
+	if host, port, err = net.SplitHostPort(domain); err != nil {
+		host = domain
+		port = "443"
+	}
+
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", net.JoinHostPort(host, port), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 
-	results := testapi.NewResults()
+	if len(conn.ConnectionState().PeerCertificates) == 0 {
+		return nil, errors.New("received no server certificates")
+	}
+
+	return conn.ConnectionState().PeerCertificates[0], nil
+}
+
+// RunAPITests runs a test suite based on on API Input and returns an API Result.
+func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, workers int) (*testapi.Results, error) {
+	log.Debugf("Testing %s", in.Keyserver)
+	var err error
+	var certs []*x509.Certificate
+
+	if len(in.CertsPEM) > 0 {
+		log.Debug("Parsing certificate PEM")
+		certs, err = helpers.ParseCertificatesPEM([]byte(in.CertsPEM))
+		if err != nil {
+			log.Warning("Couldn't parse certificate PEM")
+			return nil, err
+		}
+	}
+
+	var sni string
+	if in.Domain != "" {
+		log.Debugf("Getting certificate from %s", in.Domain)
+		if cert, err := getCertFromDomain(in.Domain); err == nil {
+			certs = append(certs, cert)
+		} else {
+			log.Warningf("Couldn't get certificate from %s: %v", in.Domain, err)
+		}
+
+		if sni, _, err = net.SplitHostPort(in.Domain); err != nil {
+			sni = in.Domain
+		}
+	}
+
 	c.Config.InsecureSkipVerify = in.InsecureSkipVerify
 	serverIP := net.ParseIP(in.ServerIP)
 
+	if newTestLen, err := time.ParseDuration(in.TestLen); err == nil {
+		if newTestLen > 0 && newTestLen < 30*time.Second {
+			testLen = newTestLen
+		}
+	}
+
+	if newWorkers, err := strconv.Atoi(in.Workers); err == nil {
+		if newWorkers > 0 && newWorkers < 1024 {
+			workers = newWorkers
+		}
+	}
+
+	results := testapi.NewResults()
 	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
 
 	for _, cert := range certs {
-		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, in.SNI, serverIP)
+		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
 		if err != nil {
 			return nil, err
 		}

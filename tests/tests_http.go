@@ -35,11 +35,16 @@ var formPage = `
         <form class="form-horizontal" id="keyserver-test" name="keyserver-test">
           <label for="keyserver">Keyserver</label>
           <input class="form-control" name="keyserver" placeholder="keyserver:port" type="text">
-          <div data-cid="view484" class="control-group">
-          <label for="certs">Certificate(s)</label>
-          <textarea class="form-control" name="certs" placeholder="Paste certificate" class="width-full" data-target="certs"></textarea>
+          <label for="domain">Domain (optional)</label>
+          <input class="form-control" name="domain" placeholder="example.com" type="text">
+          <label for="cf_ip">CloudFlare IP (optional)</label>
+          <input class="form-control" name="cf_ip" placeholder="198.41.215.163" type="text">
+          <label for="certs">Certificate(s) (optional)</label>
+          <textarea class="form-control" name="certs" placeholder="Paste PEM certificate" class="width-full" rows="25"></textarea>
+          <label for="testlen">Test Length</label><input type="text" name="testlen" value="%s">
+          <label for="workers">Num Workers</label><input type="number" name="workers" min="1" max="1024" value="%d">
           <label><input name="insecure_skip_verify" type="checkbox">Insecure Skip Verify</label>
-        <button class="btn btn-primary" style="float: right;" type="submit">Scan for %v with %d workers</button>
+        <button class="btn btn-primary" style="float: right;" type="submit">Scan</button>
       </form>
     </div>
   </div>
@@ -54,6 +59,7 @@ var formPage = `
   <script>
     $("#keyserver-test").submit(function(event) {
       event.preventDefault();
+      $("#results").hide();
       var input = {};
       $($("#keyserver-test").serializeArray()).each(function(i, field) {
         input[field.name] = (field.value === "on") ? true : field.value;
@@ -65,7 +71,12 @@ var formPage = `
           $("#results").show();
           console.log(data);
           $("#results").text(JSON.stringify(data, null, 2));
-      }, "json");
+      }, "json").fail(function(error) {
+          $("#results").empty()
+          $("#results").show();
+          console.log(error);
+          $("#results").html("<div class='alert alert-danger'>"+error.responseText+"</div>");
+      });
       console.log("Form Posted");
     });
   </script>
