@@ -10,10 +10,12 @@ import (
 // Input is a JSON struct representing a test suite to be run.
 type Input struct {
 	Keyserver          string `json:"keyserver"`
+	Domain             string `json:"domain,omitempty"`
 	CertsPEM           string `json:"certs,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
-	SNI                string `json:"sni,omitempty"`
-	ServerIP           string `json:"sni,omitempty"`
+	ServerIP           string `json:"cf_ip,omitempty"`
+	TestLen            string `json:"testlen,omitempty"`
+	Workers            string `json:"workers,omitempty"`
 }
 
 // Results represents the success stats of an entire test suite.
