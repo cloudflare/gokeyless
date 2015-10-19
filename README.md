@@ -6,10 +6,8 @@
 Go Keyless is an implementation CloudFlare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
 an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
 
-**NOTE: CURRENTLY IN ALPHA TESTING**
-
 ### Package Installation
-Instructions for installing Go Keyless from `.deb` and `.rpm` packages can be found at [pkg.cloudflare.com](https://pkg.cloudflare.com/).
+Instructions for installing Go Keyless from `.deb` and `.rpm` packages can be found at [https://pkg.cloudflare.com](https://pkg.cloudflare.com/).
 
 ### Source Installation
 Compiling Go Keyless requires Go 1.5. Binary distributions can be found at [golang.org/dl](https://golang.org/dl/), under `go1.5`.
