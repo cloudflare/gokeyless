@@ -101,6 +101,9 @@ const (
 	// OpPong indicates a response echoed from an OpPing test message.
 	OpPong = 0xF2
 
+	// OpActivate indicates a test message to verify a keyserver in an initialization state.
+	OpActivate = 0xF3
+
 	// OpResponse is used to send a block of data back to the client.
 	OpResponse = 0xF0
 	// OpError indicates some error has occurred, explanation is single byte in payload.
@@ -139,6 +142,8 @@ func (o Op) String() string {
 		return "OpPing"
 	case OpPong:
 		return "OpPong"
+	case OpActivate:
+		return "OpActivate"
 	case OpResponse:
 		return "OpResponse"
 	case OpError:
