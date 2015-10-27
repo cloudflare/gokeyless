@@ -2,7 +2,6 @@ package gokeyless
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -172,7 +171,7 @@ func (c *Conn) Ping(data []byte) error {
 }
 
 // Activate requests that the server send a hash of its API key to the client.
-func (c *Conn) Activate(token []byte) error {
+func (c *Conn) Activate(hashedToken []byte) error {
 	result, err := c.DoOperation(&Operation{
 		Opcode: OpActivate,
 	})
@@ -187,10 +186,8 @@ func (c *Conn) Activate(token []byte) error {
 		return fmt.Errorf("wrong response opcode: %v", result.Opcode)
 	}
 
-	hashedToken := sha256.Sum256(token)
-
-	if bytes.Compare(result.Payload, hashedToken[:]) != 0 {
-		return fmt.Errorf("payload doesn't match hashed token: %v!=%v", result.Payload, hashedToken[:])
+	if bytes.Compare(result.Payload, hashedToken) != 0 {
+		return fmt.Errorf("payload doesn't match hashed token: %v!=%v", result.Payload, hashedToken)
 	}
 
 	return nil

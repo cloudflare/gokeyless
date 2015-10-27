@@ -154,11 +154,6 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 
 // ActivateServer dials a server and sends an activation request.
 func (c *Client) ActivateServer(server string, token []byte) error {
-	c.Config.InsecureSkipVerify = true
-	defer func(savedISV bool) {
-		c.Config.InsecureSkipVerify = savedISV
-	}(c.Config.InsecureSkipVerify)
-
 	conn, err := c.Dial(server)
 	if err != nil {
 		return err

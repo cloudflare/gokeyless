@@ -12,6 +12,7 @@ type Input struct {
 	Keyserver          string `json:"keyserver"`
 	Domain             string `json:"domain,omitempty"`
 	CertsPEM           string `json:"certs,omitempty"`
+	HashedToken        []byte `json:"hashed_token,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 	ServerIP           string `json:"cf_ip,omitempty"`
 	TestLen            string `json:"testlen,omitempty"`

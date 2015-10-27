@@ -101,6 +101,9 @@ func initializeServer() *server.Server {
 	log.Info("Server entering initialization state")
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
+	if err != nil {
+		log.Fatal(err)
+	}
 	s.ActivationToken = []byte(initToken)
 	go func() {
 		log.Fatal(s.ListenAndServe())
