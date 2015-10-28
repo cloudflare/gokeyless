@@ -114,7 +114,7 @@ func (api *apiHandler) ServeFormResponse(w http.ResponseWriter, req *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results.Registry); err != nil {
+	if err := json.NewEncoder(w).Encode(results); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

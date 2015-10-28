@@ -28,6 +28,8 @@ install-config:
 	@mkdir -p $(INIT_PREFIX)
 	@install -m755 pkg/gokeyless.sysv $(INIT_PREFIX)/gokeyless
 	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
+	@install -m644 pkg/default.pem $(CONFIG_PREFIX)/default.pem
+	@install -m400 pkg/default-key.pem $(CONFIG_PREFIX)/default-key.pem
 	@install -m400 pkg/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
 	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
 

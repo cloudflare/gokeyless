@@ -12,59 +12,56 @@ type Input struct {
 	Keyserver          string `json:"keyserver"`
 	Domain             string `json:"domain,omitempty"`
 	CertsPEM           string `json:"certs,omitempty"`
+	HashedToken        []byte `json:"hashed_token,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 	ServerIP           string `json:"cf_ip,omitempty"`
 	TestLen            string `json:"testlen,omitempty"`
 	Workers            string `json:"workers,omitempty"`
 }
 
-// Results represents the success stats of an entire test suite.
+// Results is a registry of metrics representing the success stats of an entire test suite.
 type Results struct {
-	Tests         map[string]*Test `json:"tests"`
-	latency       metrics.Timer
-	totalTests    metrics.Counter
-	totalFailures metrics.Counter
-	metrics.Registry
+	metrics.Registry `json:"results"`
+	Tests            map[string]*Test `json:"tests"`
 }
 
-// NewResults initializes a new API Results struct.
+// NewResults initializes a new API Results registry.
 func NewResults() *Results {
 	results := &Results{
-		Tests:         make(map[string]*Test),
-		latency:       metrics.NewTimer(),
-		totalTests:    metrics.NewCounter(),
-		totalFailures: metrics.NewCounter(),
-		Registry:      metrics.NewRegistry(),
+		Registry: metrics.NewRegistry(),
+		Tests:    make(map[string]*Test),
 	}
-	results.Register("latency", results.latency)
-	results.Register("total_tests", results.totalTests)
-	results.Register("total_failures", results.totalFailures)
+	results.Register("latency", metrics.NewTimer())
+	results.Register("success", metrics.NewCounter())
+	results.Register("failure", metrics.NewCounter())
 	return results
 }
+
+// func (results *Results) MarshalJSON() {
+
+// }
 
 // TestFunc represents generic test to be run.
 type TestFunc func() error
 
 // Test represents the success stats for an individual test.
 type Test struct {
-	latency  metrics.Timer
-	tests    metrics.Counter
-	failures metrics.Counter
-	Errors   []error `json:"errors,omitempty"`
-	run      TestFunc
+	metrics.Registry `json:"results"`
+	Errors           metrics.Registry `json:"errors,omitempty"`
+	run              TestFunc
 }
 
 // RegisterTest initializes a new Test struct and adds it to results.
 func (results *Results) RegisterTest(name string, run TestFunc) {
-	results.Tests[name] = &Test{
-		latency:  metrics.NewTimer(),
-		tests:    metrics.NewCounter(),
-		failures: metrics.NewCounter(),
+	test := &Test{
+		Registry: metrics.NewRegistry(),
+		Errors:   metrics.NewRegistry(),
 		run:      run,
 	}
-	results.Register(name+".latency", results.Tests[name].latency)
-	results.Register(name+".tests", results.Tests[name].tests)
-	results.Register(name+".failures", results.Tests[name].failures)
+	test.Register("latency", metrics.NewTimer())
+	test.Register("success", metrics.NewCounter())
+	test.Register("failure", metrics.NewCounter())
+	results.Tests[name] = test
 }
 
 // RunTests continually runs the tests stored in results for testLen.
@@ -75,18 +72,20 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 		go func() {
 			for name := range tests {
 				log.Debugf("Running %s", name)
+				test := results.Tests[name]
 				testStart := time.Now()
-				t := results.Tests[name]
-				if err := t.run(); err != nil {
-					t.failures.Inc(1)
-					results.totalFailures.Inc(1)
-					t.Errors = append(t.Errors, err)
-					log.Debug(err)
+				if err := test.run(); err != nil {
+					results.Get("failure").(metrics.Counter).Inc(1)
+					test.Get("failure").(metrics.Counter).Inc(1)
+					errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
+					errCount.Inc(1)
+					log.Debugf("%s: %d", err, errCount.Count())
+				} else {
+					test.Get("success").(metrics.Counter).Inc(1)
+					results.Get("success").(metrics.Counter).Inc(1)
 				}
-				t.tests.Inc(1)
-				results.totalTests.Inc(1)
-				t.latency.UpdateSince(testStart)
-				results.latency.UpdateSince(testStart)
+				test.Get("latency").(metrics.Timer).UpdateSince(testStart)
+				results.Get("latency").(metrics.Timer).UpdateSince(testStart)
 			}
 		}()
 	}

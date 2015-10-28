@@ -4,14 +4,11 @@ import (
 	"crypto"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
-	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
@@ -19,18 +16,24 @@ import (
 )
 
 var (
-	port        string
-	metricsPort string
-	initCert    bool
-	certFile    string
-	keyFile     string
-	caFile      string
-	keyDir      string
-	pidFile     string
+	initToken    string
+	initCertFile string
+	initKeyFile  string
+	initEndpoint string
+	port         string
+	metricsPort  string
+	certFile     string
+	keyFile      string
+	caFile       string
+	keyDir       string
+	pidFile      string
 )
 
 func init() {
-	flag.BoolVar(&initCert, "init", false, "Initialize new server authentication key and certificate")
+	flag.StringVar(&initToken, "init-token", "", "API token used for server initialization")
+	flag.StringVar(&initCertFile, "init-cert", "default.pem", "Default certificate used for server initialization")
+	flag.StringVar(&initKeyFile, "init-key", "default-key.pem", "Default key used for server initialization")
+	flag.StringVar(&initEndpoint, "init-endpoint", "https://apix.cloudflare.com/certificate", "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
@@ -43,48 +46,26 @@ func init() {
 }
 
 func main() {
-	if initCert {
-		var hosts string
-		fmt.Print("Keyserver Hostnames/IPs (comma-seperated): ")
-		fmt.Scanln(&hosts)
-
-		csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
-			CN:         "Keyless Server Authentication Certificate",
-			Hosts:      strings.Split(hosts, ","),
-			KeyRequest: &csr.BasicKeyRequest{
-				A: "ecdsa",
-				S: 384,
-			},
-		})
+	var s *server.Server
+	if initToken != "" {
+		s = initializeServer()
+	} else {
+		s, err := server.NewServerFromFile(certFile, keyFile, caFile,
+			net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 		if err != nil {
+			log.Warningf("Could not create server. Run with `gokeyless -init-token=XXX` to get %s and %s", keyFile, certFile)
 			log.Fatal(err)
 		}
 
-		if err := ioutil.WriteFile(keyFile, key, 0400); err != nil {
+		if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Key generated and saved to %s\n", keyFile)
 
-		fmt.Printf("Email this CSR to keyless-csr@cloudflare.com for signing and save the resulting certificate to %s:\n", certFile)
-		fmt.Print(string(csr))
-		return
+		// Start server in background, then listen for SIGHUPs to reload keys.
+		go func() {
+			log.Fatal(s.ListenAndServe())
+		}()
 	}
-
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
-		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
-	if err != nil {
-		log.Warningf("Could not create server. Run `gokeyless -init` to get %s and %s", keyFile, certFile)
-		log.Fatal(err)
-	}
-
-	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
-		log.Fatal(err)
-	}
-
-	// Start server in background, then listen for SIGHUPs to reload keys.
-	go func() {
-		log.Fatal(s.ListenAndServe())
-	}()
 
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {

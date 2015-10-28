@@ -170,6 +170,29 @@ func (c *Conn) Ping(data []byte) error {
 	return nil
 }
 
+// Activate requests that the server send a hash of its API key to the client.
+func (c *Conn) Activate(hashedToken []byte) error {
+	result, err := c.DoOperation(&Operation{
+		Opcode: OpActivate,
+	})
+	if err != nil {
+		return err
+	}
+
+	if result.Opcode != OpResponse {
+		if result.Opcode == OpError {
+			return result.GetError()
+		}
+		return fmt.Errorf("wrong response opcode: %v", result.Opcode)
+	}
+
+	if bytes.Compare(result.Payload, hashedToken) != 0 {
+		return fmt.Errorf("payload doesn't match hashed token: %v!=%v", result.Payload, hashedToken)
+	}
+
+	return nil
+}
+
 // respondOperation writes a keyless response operation to the wire.
 func (c *Conn) respondOperation(id uint32, operation *Operation) error {
 	resp := NewHeader(operation)

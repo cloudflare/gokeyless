@@ -152,6 +152,17 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 	return c.allServers[ski]
 }
 
+// ActivateServer dials a server and sends an activation request.
+func (c *Client) ActivateServer(server string, token []byte) error {
+	conn, err := c.Dial(server)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	return conn.Activate(token)
+}
+
 // PopulateBlacklist populates the client blacklist using an x509 certificate.
 func (c *Client) PopulateBlacklist(cert *x509.Certificate, port string) {
 	c.BlacklistPort = port

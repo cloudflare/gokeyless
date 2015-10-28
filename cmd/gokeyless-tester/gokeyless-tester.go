@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		out, err := json.MarshalIndent(results.Registry, "", "  ")
+		out, err := json.MarshalIndent(results, "", "  ")
 		if err != nil {
 			log.Fatal(err)
 		}
