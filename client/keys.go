@@ -75,7 +75,7 @@ func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
 // execute performs an opaque cryptographic operation
 // on a server associated with the key.
 func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
-	conn, err := key.client.DialAny(key.ski)
+	conn, err := key.client.Dial(key.ski)
 	if err != nil {
 		return nil, err
 	}

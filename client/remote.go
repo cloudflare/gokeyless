@@ -16,6 +16,7 @@ import (
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
 	Dial(*Client) (*gokeyless.Conn, error)
+	Add(Remote) Remote
 }
 
 // A server is an individual remote server
@@ -25,9 +26,9 @@ type server struct {
 	conn       *gokeyless.Conn
 }
 
-// LookupServers uses DNS to look up an array of servers with
+// LookupServer uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
-func LookupServers(hostport, serverName string) ([]Remote, error) {
+func LookupServer(hostport, serverName string) (Remote, error) {
 	var host, port string
 	var err error
 	if host, port, err = net.SplitHostPort(hostport); err != nil {
@@ -59,7 +60,7 @@ func LookupServers(hostport, serverName string) ([]Remote, error) {
 			ServerName: serverName,
 		}
 	}
-	return servers, nil
+	return NewGroup(servers), nil
 }
 
 // Dial dials a remote server, returning an existing connection if possible.
@@ -80,6 +81,10 @@ func (s *server) Dial(c *Client) (*gokeyless.Conn, error) {
 	return s.conn, nil
 }
 
+func (s *server) Add(r Remote) Remote {
+	return NewGroup([]Remote{s, r})
+}
+
 type priority float64
 
 func (p *priority) Update(val float64) {
@@ -94,32 +99,21 @@ type item struct {
 	errs  []error
 }
 
-// A group is a load-balanced set of external servers.
+// A group is a Remote consisting of a load-balanced set of external servers.
 type group struct {
 	sync.Mutex
 	remotes []*item
 }
 
-// NewGroup creates a new group set by looking up IPs through DNS.
+// NewGroup creates a new group from a set of remotes.
 func NewGroup(remotes []Remote) Remote {
 	g := new(group)
 	heap.Init(g)
 	for _, r := range remotes {
-		heap.Push(g, item{Remote: r})
+		heap.Push(g, &item{Remote: r})
 	}
 
 	return g
-}
-
-// LookupGroup uses DNU to look up a group of servers with
-// optional TLS server name.
-func LookupGroup(hostport, serverName string) (Remote, error) {
-	remotes, err := LookupServers(hostport, serverName)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewGroup(remotes), nil
 }
 
 func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
@@ -173,6 +167,11 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 	}()
 
 	return conn, nil
+}
+
+func (g *group) Add(r Remote) Remote {
+	heap.Push(g, item{Remote: r})
+	return g
 }
 
 func (g *group) Len() int {

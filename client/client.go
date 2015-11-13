@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,8 +33,10 @@ type Client struct {
 	BlacklistPort string
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
-	// allServers maps all known certificate SKIs to their keyless servers.
-	allServers map[gokeyless.SKI][]Remote
+	// servers maps all known server names to their servers.
+	servers map[string]Remote
+	// remotes maps all known certificate SKIs to their Remote.
+	remotes map[gokeyless.SKI]Remote
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
@@ -49,8 +50,9 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Dialer:     &net.Dialer{},
-		allServers: make(map[gokeyless.SKI][]Remote),
+		Dialer:  &net.Dialer{},
+		servers: make(map[string]Remote),
+		remotes: make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -74,36 +76,22 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 	return NewClient(cert, keyserverCA), nil
 }
 
-// DialAny smartly chooses one of the keyless servers given. (Opting to reuse an existing connection if possible)
-func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
-	servers := c.getServers(ski)
-	if len(servers) == 0 {
+// Dial smartly establishes a connection to a registered keyless server
+// or reuses an existing connection if possible.
+func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
+	c.m.RLock()
+	r, ok := c.remotes[ski]
+	c.m.RUnlock()
+	if !ok {
 		return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
 	}
 
-	// choose from possible servers at random until a connection can be established.
-	for len(servers) > 0 {
-		n := rand.Intn(len(servers))
-		conn, err := servers[n].Dial(c)
-		if err == nil {
-			return conn, nil
-		}
-		log.Debugf("Couldn't dial server %s: %v", servers[n], err)
-		servers = append(servers[:n], servers[n+1:]...)
-	}
-	return nil, errors.New("couldn't dial any of the registered servers")
-}
-
-// getServers returns the keyserver that have been registered with the given SKI.
-func (c *Client) getServers(ski gokeyless.SKI) []Remote {
-	c.m.RLock()
-	defer c.m.RUnlock()
-	return c.allServers[ski]
+	return r.Dial(c)
 }
 
 // ActivateServer dials a server and sends an activation request.
 func (c *Client) ActivateServer(server string, token []byte) error {
-	g, err := LookupGroup(server, "")
+	g, err := LookupServer(server, "")
 	if err != nil {
 		return err
 	}
@@ -161,26 +149,51 @@ func (c *Client) ValidServer(server string) (err error) {
 	return nil
 }
 
+// AddRemote adds a remote for the given SKI, optionally registering it
+// under the given server name.
+func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	if server == "" {
+		server = c.DefaultServer
+	}
+
+	if oldServer, ok := c.servers[server]; ok {
+		oldServer.Add(r)
+	} else {
+		c.servers[server] = r
+	}
+
+	if oldRemote, ok := c.remotes[ski]; ok {
+		oldRemote.Add(r)
+	} else {
+		c.remotes[ski] = r
+	}
+}
+
 // registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
+func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
 	if server == "" {
 		server = c.DefaultServer
 	}
 
 	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
-	if err := c.ValidServer(server); err != nil {
+	if err = c.ValidServer(server); err != nil {
 		log.Errorf("Server %s invalid: %v", server, err)
-		return err
+		return
 	}
 
-	g, err := LookupGroup(server, "")
-	if err != nil {
-		return err
+	c.m.RLock()
+	s, ok := c.servers[server]
+	c.m.RUnlock()
+	if !ok {
+		if s, err = LookupServer(server, ""); err != nil {
+			return
+		}
 	}
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.allServers[ski] = append(c.allServers[ski], g)
-	return nil
+
+	c.AddRemote(server, s, ski)
+	return
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
