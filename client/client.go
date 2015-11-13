@@ -34,10 +34,8 @@ type Client struct {
 	BlacklistPort string
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
-	// conns maps keyless servers to any open connections to them.
-	conns map[string]*gokeyless.Conn
 	// allServers maps all known certificate SKIs to their keyless servers.
-	allServers map[gokeyless.SKI][]string
+	allServers map[gokeyless.SKI][]Remote
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
@@ -52,8 +50,7 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 			},
 		},
 		Dialer:     &net.Dialer{},
-		conns:      make(map[string]*gokeyless.Conn),
-		allServers: make(map[gokeyless.SKI][]string),
+		allServers: make(map[gokeyless.SKI][]Remote),
 	}
 }
 
@@ -77,38 +74,6 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 	return NewClient(cert, keyserverCA), nil
 }
 
-// Dial retuns a (reused/reusable) connection to a keyless server.
-func (c *Client) Dial(server string) (*gokeyless.Conn, error) {
-	if c.Config == nil {
-		return nil, errors.New("gokeyless/client: TLS client has not yet been initialized with certificate and keyserver CA")
-	}
-
-	c.m.RLock()
-	conn, ok := c.conns[server]
-	c.m.RUnlock()
-	if ok {
-		if conn.Use() {
-			return conn, nil
-		}
-		c.m.Lock()
-		if c.conns[server] == conn {
-			delete(c.conns, server)
-		}
-		c.m.Unlock()
-	}
-
-	log.Debugf("Dialing %s\n", server)
-	inner, err := tls.Dial("tcp", server, c.Config)
-	if err != nil {
-		return nil, err
-	}
-
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.conns[server] = gokeyless.NewConn(inner)
-	return c.conns[server], nil
-}
-
 // DialAny smartly chooses one of the keyless servers given. (Opting to reuse an existing connection if possible)
 func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 	servers := c.getServers(ski)
@@ -116,26 +81,10 @@ func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 		return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
 	}
 
-	for _, server := range servers {
-		c.m.RLock()
-		conn, ok := c.conns[server]
-		c.m.RUnlock()
-		if ok {
-			if conn.Use() {
-				return conn, nil
-			}
-			c.m.Lock()
-			if c.conns[server] == conn {
-				delete(c.conns, server)
-			}
-			c.m.Unlock()
-		}
-	}
-
 	// choose from possible servers at random until a connection can be established.
 	for len(servers) > 0 {
 		n := rand.Intn(len(servers))
-		conn, err := c.Dial(servers[n])
+		conn, err := servers[n].Dial(c)
 		if err == nil {
 			return conn, nil
 		}
@@ -146,7 +95,7 @@ func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 }
 
 // getServers returns the keyserver that have been registered with the given SKI.
-func (c *Client) getServers(ski gokeyless.SKI) []string {
+func (c *Client) getServers(ski gokeyless.SKI) []Remote {
 	c.m.RLock()
 	defer c.m.RUnlock()
 	return c.allServers[ski]
@@ -154,7 +103,12 @@ func (c *Client) getServers(ski gokeyless.SKI) []string {
 
 // ActivateServer dials a server and sends an activation request.
 func (c *Client) ActivateServer(server string, token []byte) error {
-	conn, err := c.Dial(server)
+	g, err := LookupGroup(server, "")
+	if err != nil {
+		return err
+	}
+
+	conn, err := g.Dial(c)
 	if err != nil {
 		return err
 	}
@@ -218,9 +172,14 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 		log.Errorf("Server %s invalid: %v", server, err)
 		return err
 	}
+
+	g, err := LookupGroup(server, "")
+	if err != nil {
+		return err
+	}
 	c.m.Lock()
 	defer c.m.Unlock()
-	c.allServers[ski] = append(c.allServers[ski], server)
+	c.allServers[ski] = append(c.allServers[ski], g)
 	return nil
 }
 
