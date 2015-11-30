@@ -328,6 +328,7 @@ type Operation struct {
 	ClientIP net.IP
 	ServerIP net.IP
 	SNI      string
+	AKI      SKI
 }
 
 func (o *Operation) String() string {
