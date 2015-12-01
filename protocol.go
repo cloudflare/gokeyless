@@ -216,9 +216,14 @@ func (ski SKI) String() string {
 	return base64.StdEncoding.EncodeToString(ski[:])
 }
 
+// Equal compares two SKIs for equality.
+func (ski SKI) Equal(other SKI) bool {
+	return bytes.Equal(ski[:], other[:])
+}
+
 // Valid compares an SKI to 0 to determine if it is valid.
 func (ski SKI) Valid() bool {
-	return !bytes.Equal(ski[:], nilSKI[:])
+	return !ski.Equal(nilSKI)
 }
 
 // GetSKI returns the SKI of a public key.
