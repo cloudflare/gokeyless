@@ -37,6 +37,7 @@ func NewKeystore() Keystore {
 		snis:      make(map[string]gokeyless.SKI),
 		serverIPs: make(map[string]gokeyless.SKI),
 		clientIPs: make(map[string]gokeyless.SKI),
+		validAKIs: make(map[gokeyless.SKI]akiSet),
 	}
 }
 
@@ -48,6 +49,25 @@ type defaultKeystore struct {
 	snis      map[string]gokeyless.SKI
 	serverIPs map[string]gokeyless.SKI
 	clientIPs map[string]gokeyless.SKI
+	validAKIs map[gokeyless.SKI]akiSet
+}
+
+type akiSet []gokeyless.SKI
+
+func (akis akiSet) Contains(a gokeyless.SKI) bool {
+	for _, aki := range akis {
+		if aki.Equal(a) {
+			return true
+		}
+	}
+	return false
+}
+
+func (akis akiSet) Add(a gokeyless.SKI) akiSet {
+	if akis.Contains(a) {
+		return akis
+	}
+	return append(akis, a)
 }
 
 // Add adds a new key to the server's internal repertoire.
@@ -75,6 +95,7 @@ func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 		if op.ClientIP != nil {
 			keys.clientIPs[op.ClientIP.String()] = ski
 		}
+		keys.validAKIs[ski] = keys.validAKIs[ski].Add(op.AKI)
 	}
 
 	keys.skis[ski] = priv
@@ -88,39 +109,47 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 	defer keys.RUnlock()
 
 	ski := op.SKI
-	if priv, ok = keys.skis[ski]; ok {
-		return
-	}
+	priv, ok = keys.skis[ski]
 
-	log.Debug("Couldn't look up key based on SKI, trying Digest.")
-	if ski, ok = keys.digests[op.Digest]; ok {
-		priv, ok = keys.skis[ski]
-		return
-	}
-
-	log.Debug("Couldn't look up key based on Digest, trying SNI.")
-	if ski, ok = keys.snis[op.SNI]; ok {
-		priv, ok = keys.skis[ski]
-		return
-	}
-
-	if op.ServerIP != nil {
-		log.Debug("Couldn't look up key based on SNI, trying Server IP.")
-		if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
+	if !ok {
+		log.Debug("Couldn't look up key based on SKI, trying Digest.")
+		if ski, ok = keys.digests[op.Digest]; ok {
 			priv, ok = keys.skis[ski]
-			return
 		}
 	}
 
-	if op.ClientIP != nil {
-		log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
-		if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
+	if !ok {
+		log.Debug("Couldn't look up key based on Digest, trying SNI.")
+		if ski, ok = keys.snis[op.SNI]; ok {
 			priv, ok = keys.skis[ski]
-			return
 		}
 	}
 
-	log.Infof("Couldn't look up key for %s.", op)
+	if !ok {
+		if op.ServerIP != nil {
+			log.Debug("Couldn't look up key based on SNI, trying Server IP.")
+			if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
+				priv, ok = keys.skis[ski]
+			}
+		}
+	}
+
+	if !ok {
+		if op.ClientIP != nil {
+			log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
+			if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
+				priv, ok = keys.skis[ski]
+			}
+		}
+	}
+
+	if !ok {
+		log.Infof("Couldn't look up key for %s.", op)
+	} else if len(keys.validAKIs[ski]) > 0 && !keys.validAKIs[ski].Contains(op.AKI) {
+		log.Warningf("Attempt to access key with invalid AKI: %s", op.AKI)
+		return nil, false
+	}
+
 	return
 }
 
