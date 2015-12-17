@@ -5,6 +5,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
+	"net"
+	"strconv"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
@@ -31,6 +33,9 @@ var (
 	c        *client.Client
 	rsaKey   *client.PrivateKey
 	ecdsaKey *client.PrivateKey
+	host     string
+	port     int
+	remote   client.Remote
 )
 
 // Set up compatible server and client for use by tests.
@@ -40,6 +45,7 @@ func init() {
 	var p *pem.Block
 	var priv crypto.Signer
 	var pub crypto.PublicKey
+	var portStr string
 
 	log.Level = log.LevelFatal
 
@@ -80,6 +86,17 @@ func init() {
 	<-listening
 
 	if c, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
+		log.Fatal(err)
+	}
+
+	if host, portStr, err = net.SplitHostPort(serverAddr); err != nil {
+		log.Fatal(err)
+	}
+	if port, err = strconv.Atoi(portStr); err != nil {
+		log.Fatal(err)
+	}
+	remote, err = c.LookupServer(host, "", port)
+	if err != nil {
 		log.Fatal(err)
 	}
 

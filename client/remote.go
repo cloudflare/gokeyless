@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -28,36 +27,26 @@ type server struct {
 
 // LookupServer uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
-func LookupServer(hostport, serverName string) (Remote, error) {
-	var host, port string
-	var err error
-	if host, port, err = net.SplitHostPort(hostport); err != nil {
-		host = hostport
-		port = "2407"
-	}
-
+func (c *Client) LookupServer(host, serverName string, port int) (Remote, error) {
 	if serverName == "" {
 		serverName = host
 	}
 
-	var p int
-	if p, err = strconv.Atoi(port); err != nil {
-		return nil, err
-	}
-
-	var ips []net.IP
-	if ips, err = net.LookupIP(host); err != nil {
+	ips, err := net.LookupIP(host)
+	if err != nil {
 		return nil, err
 	}
 
 	servers := make([]Remote, len(ips))
-	for i := range ips {
-		servers[i] = &server{
-			Addr: &net.TCPAddr{
-				IP:   ips[i],
-				Port: p,
-			},
-			ServerName: serverName,
+	for _, ip := range ips {
+		if err := c.ValidIP(ip); port != c.BlacklistPort || err == nil {
+			servers = append(servers, &server{
+				Addr: &net.TCPAddr{
+					IP:   ip,
+					Port: port,
+				},
+				ServerName: serverName,
+			})
 		}
 	}
 	return NewGroup(servers), nil
@@ -170,7 +159,7 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 }
 
 func (g *group) Add(r Remote) Remote {
-	heap.Push(g, item{Remote: r})
+	heap.Push(g, &item{Remote: r})
 	return g
 }
 

@@ -10,7 +10,6 @@ import (
 	"encoding/asn1"
 	"log"
 	"math/big"
-	"net"
 	"testing"
 )
 
@@ -19,7 +18,7 @@ func TestConnect(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := c.Dial(serverAddr)
+	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +30,6 @@ func TestConnect(t *testing.T) {
 }
 
 func TestBlacklist(t *testing.T) {
-	_, port, err := net.SplitHostPort(s.Addr)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, cert := range s.Config.Certificates {
 		if cert.Leaf == nil {
 			if len(cert.Certificate) == 0 {
@@ -67,7 +62,7 @@ func TestECDSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := c.Dial(serverAddr)
+	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +89,7 @@ func TestRSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := c.Dial(serverAddr)
+	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +113,7 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	conn, err := c.Dial(serverAddr)
+	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
 	}
