@@ -148,7 +148,7 @@ func (c *Client) ActivateServer(server string, token []byte) error {
 
 // AddRemote adds a remote for the given SKI, optionally registering it
 // under the given server name.
-func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) *PrivateKey {
+func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -165,8 +165,6 @@ func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) *PrivateK
 	} else {
 		c.remotes[ski] = r
 	}
-
-	return &PrivateKey{client: c, ski: ski}
 }
 
 // registerSKI associates the SKI of a public key with a particular keyserver.
@@ -185,7 +183,9 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
 		c.m.RLock()
 		r, ok = c.servers[server]
 		c.m.RUnlock()
-		if !ok {
+		if ok {
+			server = ""
+		} else {
 			if r, err = c.LookupServer(server); err != nil {
 				return
 			}
@@ -227,6 +227,21 @@ func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*Privat
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
 func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
 	return c.RegisterPublicKey(server, cert.PublicKey)
+}
+
+// RegisterCertPEM registers a single PEM cert (possibly the leaf of a chain of certs).
+func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (*PrivateKey, error) {
+	block, _ := pem.Decode(certsPEM)
+	if block == nil {
+		return nil, errors.New("couldn't parse PEM bytes")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.RegisterCert(server, cert)
 }
 
 var (
