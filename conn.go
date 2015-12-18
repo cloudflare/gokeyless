@@ -12,7 +12,7 @@ import (
 
 // Conn represents an open keyless connection.
 type Conn struct {
-	tls.Conn
+	*tls.Conn
 	sync.Mutex
 	users     uint32
 	listeners map[uint32]chan *Header
@@ -21,7 +21,7 @@ type Conn struct {
 // NewConn initializes a new Conn
 func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
-		Conn:      *inner,
+		Conn:      inner,
 		users:     1,
 		listeners: make(map[uint32]chan *Header),
 	}

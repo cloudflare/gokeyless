@@ -31,6 +31,7 @@ var (
 	c        *client.Client
 	rsaKey   *client.PrivateKey
 	ecdsaKey *client.PrivateKey
+	remote   client.Remote
 )
 
 // Set up compatible server and client for use by tests.
@@ -80,6 +81,11 @@ func init() {
 	<-listening
 
 	if c, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
+		log.Fatal(err)
+	}
+
+	remote, err = c.LookupServer(serverAddr)
+	if err != nil {
 		log.Fatal(err)
 	}
 

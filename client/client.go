@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,18 +25,16 @@ type Client struct {
 	Config *tls.Config
 	// Dialer used to manage connections.
 	Dialer *net.Dialer
-	// DefaultServer is a default server to register keys to.
-	DefaultServer string
-	// BlacklistIPs is a list of server IPs that this client won't dial.
-	BlacklistIPs []net.IP
-	// BlacklistPort is the server port to blacklist.
-	BlacklistPort string
+	// DefaultRemote is a default remote to dial and register keys to.
+	DefaultRemote Remote
+	// Blacklist is a list of addresses that this client won't dial.
+	Blacklist AddrSet
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
-	// conns maps keyless servers to any open connections to them.
-	conns map[string]*gokeyless.Conn
-	// allServers maps all known certificate SKIs to their keyless servers.
-	allServers map[gokeyless.SKI][]string
+	// servers maps all known server names to their servers.
+	servers map[string]Remote
+	// remotes maps all known certificate SKIs to their Remote.
+	remotes map[gokeyless.SKI]Remote
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
@@ -51,9 +48,10 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Dialer:     &net.Dialer{},
-		conns:      make(map[string]*gokeyless.Conn),
-		allServers: make(map[gokeyless.SKI][]string),
+		Dialer:    &net.Dialer{},
+		Blacklist: make(AddrSet),
+		servers:   make(map[string]Remote),
+		remotes:   make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -77,84 +75,69 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 	return NewClient(cert, keyserverCA), nil
 }
 
-// Dial retuns a (reused/reusable) connection to a keyless server.
-func (c *Client) Dial(server string) (*gokeyless.Conn, error) {
-	if c.Config == nil {
-		return nil, errors.New("gokeyless/client: TLS client has not yet been initialized with certificate and keyserver CA")
-	}
+// An AddrSet is a set of addresses.
+type AddrSet map[string]bool
 
+// Add adds an addr to the set of addresses.
+func (as AddrSet) Add(addr net.Addr) {
+	as[addr.String()] = true
+}
+
+// Contains determines if an addr belongs to the set of addresses.
+func (as AddrSet) Contains(addr net.Addr) bool {
+	contains, ok := as[addr.String()]
+	return ok && contains
+}
+
+// PopulateBlacklist populates the client blacklist using an x509 certificate.
+func (c *Client) PopulateBlacklist(cert *x509.Certificate, port int) {
+	for _, ip := range cert.IPAddresses {
+		c.Blacklist.Add(&net.TCPAddr{
+			IP:   ip,
+			Port: port,
+		})
+	}
+	for _, host := range cert.DNSNames {
+		if ips, err := net.LookupIP(host); err == nil {
+			for _, ip := range ips {
+				c.Blacklist.Add(&net.TCPAddr{
+					IP:   ip,
+					Port: port,
+				})
+			}
+		}
+	}
+}
+
+// ClearBlacklist empties the client blacklist
+func (c *Client) ClearBlacklist() {
+	c.Blacklist = make(AddrSet)
+}
+
+// Dial smartly establishes a connection to a registered keyless server
+// or reuses an existing connection if possible.
+func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 	c.m.RLock()
-	conn, ok := c.conns[server]
+	r, ok := c.remotes[ski]
 	c.m.RUnlock()
-	if ok {
-		if conn.Use() {
-			return conn, nil
+	if !ok {
+		if c.DefaultRemote != nil {
+			return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
 		}
-		c.m.Lock()
-		if c.conns[server] == conn {
-			delete(c.conns, server)
-		}
-		c.m.Unlock()
+
+		r = c.DefaultRemote
 	}
-
-	log.Debugf("Dialing %s\n", server)
-	inner, err := tls.Dial("tcp", server, c.Config)
-	if err != nil {
-		return nil, err
-	}
-
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.conns[server] = gokeyless.NewConn(inner)
-	return c.conns[server], nil
-}
-
-// DialAny smartly chooses one of the keyless servers given. (Opting to reuse an existing connection if possible)
-func (c *Client) DialAny(ski gokeyless.SKI) (*gokeyless.Conn, error) {
-	servers := c.getServers(ski)
-	if len(servers) == 0 {
-		return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
-	}
-
-	for _, server := range servers {
-		c.m.RLock()
-		conn, ok := c.conns[server]
-		c.m.RUnlock()
-		if ok {
-			if conn.Use() {
-				return conn, nil
-			}
-			c.m.Lock()
-			if c.conns[server] == conn {
-				delete(c.conns, server)
-			}
-			c.m.Unlock()
-		}
-	}
-
-	// choose from possible servers at random until a connection can be established.
-	for len(servers) > 0 {
-		n := rand.Intn(len(servers))
-		conn, err := c.Dial(servers[n])
-		if err == nil {
-			return conn, nil
-		}
-		log.Debugf("Couldn't dial server %s: %v", servers[n], err)
-		servers = append(servers[:n], servers[n+1:]...)
-	}
-	return nil, errors.New("couldn't dial any of the registered servers")
-}
-
-// getServers returns the keyserver that have been registered with the given SKI.
-func (c *Client) getServers(ski gokeyless.SKI) []string {
-	c.m.RLock()
-	defer c.m.RUnlock()
-	return c.allServers[ski]
+	return r.Dial(c)
 }
 
 // ActivateServer dials a server and sends an activation request.
 func (c *Client) ActivateServer(server string, token []byte) error {
-	conn, err := c.Dial(server)
+	r, err := c.LookupServer(server)
+	if err != nil {
+		return err
+	}
+
+	conn, err := r.Dial(c)
 	if err != nil {
 		return err
 	}
@@ -163,65 +146,54 @@ func (c *Client) ActivateServer(server string, token []byte) error {
 	return conn.Activate(token)
 }
 
-// PopulateBlacklist populates the client blacklist using an x509 certificate.
-func (c *Client) PopulateBlacklist(cert *x509.Certificate, port string) {
-	c.BlacklistPort = port
-	c.BlacklistIPs = append(c.BlacklistIPs, cert.IPAddresses...)
-	for _, host := range cert.DNSNames {
-		if ips, err := net.LookupIP(host); err == nil {
-			c.BlacklistIPs = append(c.BlacklistIPs, ips...)
+// AddRemote adds a remote for the given SKI, optionally registering it
+// under the given server name.
+func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
+	c.m.Lock()
+	defer c.m.Unlock()
+
+	if server != "" {
+		if oldServer, ok := c.servers[server]; ok {
+			oldServer.Add(r)
+		} else {
+			c.servers[server] = r
 		}
 	}
+
+	if oldRemote, ok := c.remotes[ski]; ok {
+		oldRemote.Add(r)
+	} else {
+		c.remotes[ski] = r
+	}
 }
 
-// ClearBlacklist empties the client blacklist
-func (c *Client) ClearBlacklist() {
-	c.BlacklistPort = ""
-	c.BlacklistIPs = c.BlacklistIPs[:0]
-}
-
-// ValidServer determines if the given server can be resolved and doesn't resolve
-// to a blacklisted server IP.
-func (c *Client) ValidServer(server string) (err error) {
-	var host, port string
-	if host, port, err = net.SplitHostPort(server); err != nil {
-		return
-	}
-	if port != c.BlacklistPort {
-		return nil
-	}
-
-	var ips []net.IP
-	if ips, err = net.LookupIP(host); err != nil {
-		return
-	}
-
-	for _, ip := range ips {
-		for _, badIP := range c.BlacklistIPs {
-			if ip.Equal(badIP) {
-				return fmt.Errorf("%s resolves to blacklisted IP %s", host, badIP)
+// registerSKI associates the SKI of a public key with a particular keyserver.
+func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
+	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
+	var r Remote
+	if server == "" {
+		r = c.DefaultRemote
+		if r == nil {
+			err = errors.New("no default remote")
+			log.Error(err)
+			return
+		}
+	} else {
+		var ok bool
+		c.m.RLock()
+		r, ok = c.servers[server]
+		c.m.RUnlock()
+		if ok {
+			server = ""
+		} else {
+			if r, err = c.LookupServer(server); err != nil {
+				return
 			}
 		}
 	}
 
-	return nil
-}
-
-// registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
-	if server == "" {
-		server = c.DefaultServer
-	}
-
-	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
-	if err := c.ValidServer(server); err != nil {
-		log.Errorf("Server %s invalid: %v", server, err)
-		return err
-	}
-	c.m.Lock()
-	defer c.m.Unlock()
-	c.allServers[ski] = append(c.allServers[ski], server)
-	return nil
+	c.AddRemote(server, r, ski)
+	return
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
@@ -255,6 +227,21 @@ func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*Privat
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
 func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
 	return c.RegisterPublicKey(server, cert.PublicKey)
+}
+
+// RegisterCertPEM registers a single PEM cert (possibly the leaf of a chain of certs).
+func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (*PrivateKey, error) {
+	block, _ := pem.Decode(certsPEM)
+	if block == nil {
+		return nil, errors.New("couldn't parse PEM bytes")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.RegisterCert(server, cert)
 }
 
 var (

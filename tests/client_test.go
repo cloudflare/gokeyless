@@ -10,7 +10,6 @@ import (
 	"encoding/asn1"
 	"log"
 	"math/big"
-	"net"
 	"testing"
 )
 
@@ -19,7 +18,7 @@ func TestConnect(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := c.Dial(serverAddr)
+	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +30,6 @@ func TestConnect(t *testing.T) {
 }
 
 func TestBlacklist(t *testing.T) {
-	_, port, err := net.SplitHostPort(s.Addr)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, cert := range s.Config.Certificates {
 		if cert.Leaf == nil {
 			if len(cert.Certificate) == 0 {
@@ -45,12 +40,11 @@ func TestBlacklist(t *testing.T) {
 				log.Fatal(err)
 			}
 		}
-		c.PopulateBlacklist(cert.Leaf, port)
+		c.PopulateBlacklist(cert.Leaf, 3407)
 	}
-	t.Logf("Blacklist: %+v", c.BlacklistIPs)
 
-	if _, err := c.LoadTLSCertificate(s.Addr, tlsCert); err == nil {
-		t.Fatal("was able to register cert to blacklisted server")
+	if _, err := remote.Dial(c); err == nil {
+		t.Fatal("was able to dial blacklisted server")
 	}
 	c.ClearBlacklist()
 }
@@ -66,12 +60,6 @@ func TestECDSASign(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-
-	conn, err := c.Dial(serverAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
 
 	sig, err := ecdsaKey.Sign(r, msg, h)
 	if err != nil {
@@ -94,12 +82,6 @@ func TestRSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := c.Dial(serverAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
 	sig, err := rsaKey.Sign(r, msg, h)
 	if err != nil {
 		t.Fatal(err)
@@ -118,11 +100,6 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	conn, err := c.Dial(serverAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
 
 	var pub *rsa.PublicKey
 	var ok bool
@@ -130,6 +107,7 @@ func TestRSADecrypt(t *testing.T) {
 		t.Fatal("couldn't use public key as RSA key")
 	}
 
+	var err error
 	var c, m []byte
 	if c, err = rsa.EncryptPKCS1v15(r, pub, ptxt); err != nil {
 		t.Fatal(err)
