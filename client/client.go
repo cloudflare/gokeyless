@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"sync"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -28,10 +27,8 @@ type Client struct {
 	Dialer *net.Dialer
 	// DefaultRemote is a default remote to dial and register keys to.
 	DefaultRemote Remote
-	// BlacklistIPs is a list of server IPs that this client won't dial.
-	BlacklistIPs []net.IP
-	// BlacklistPort is the server port to blacklist.
-	BlacklistPort int
+	// Blacklist is a list of addresses that this client won't dial.
+	Blacklist AddrSet
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
 	// servers maps all known server names to their servers.
@@ -51,9 +48,10 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Dialer:  &net.Dialer{},
-		servers: make(map[string]Remote),
-		remotes: make(map[gokeyless.SKI]Remote),
+		Dialer:    &net.Dialer{},
+		Blacklist: make(AddrSet),
+		servers:   make(map[string]Remote),
+		remotes:   make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -77,6 +75,45 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 	return NewClient(cert, keyserverCA), nil
 }
 
+// An AddrSet is a set of addresses.
+type AddrSet map[string]bool
+
+// Add adds an addr to the set of addresses.
+func (as AddrSet) Add(addr net.Addr) {
+	as[addr.String()] = true
+}
+
+// Contains determines if an addr belongs to the set of addresses.
+func (as AddrSet) Contains(addr net.Addr) bool {
+	contains, ok := as[addr.String()]
+	return ok && contains
+}
+
+// PopulateBlacklist populates the client blacklist using an x509 certificate.
+func (c *Client) PopulateBlacklist(cert *x509.Certificate, port int) {
+	for _, ip := range cert.IPAddresses {
+		c.Blacklist.Add(&net.TCPAddr{
+			IP:   ip,
+			Port: port,
+		})
+	}
+	for _, host := range cert.DNSNames {
+		if ips, err := net.LookupIP(host); err == nil {
+			for _, ip := range ips {
+				c.Blacklist.Add(&net.TCPAddr{
+					IP:   ip,
+					Port: port,
+				})
+			}
+		}
+	}
+}
+
+// ClearBlacklist empties the client blacklist
+func (c *Client) ClearBlacklist() {
+	c.Blacklist = make(AddrSet)
+}
+
 // Dial smartly establishes a connection to a registered keyless server
 // or reuses an existing connection if possible.
 func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
@@ -95,17 +132,7 @@ func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 
 // ActivateServer dials a server and sends an activation request.
 func (c *Client) ActivateServer(server string, token []byte) error {
-	host, port, err := net.SplitHostPort(server)
-	if err != nil {
-		return err
-	}
-
-	p, err := strconv.Atoi(port)
-	if err != nil {
-		return err
-	}
-
-	r, err := c.LookupServer(host, "", p)
+	r, err := c.LookupServer(server)
 	if err != nil {
 		return err
 	}
@@ -117,65 +144,6 @@ func (c *Client) ActivateServer(server string, token []byte) error {
 	defer conn.Close()
 
 	return conn.Activate(token)
-}
-
-// PopulateBlacklist populates the client blacklist using an x509 certificate.
-func (c *Client) PopulateBlacklist(cert *x509.Certificate, port int) {
-	c.BlacklistPort = port
-	c.BlacklistIPs = append(c.BlacklistIPs, cert.IPAddresses...)
-	for _, host := range cert.DNSNames {
-		if ips, err := net.LookupIP(host); err == nil {
-			c.BlacklistIPs = append(c.BlacklistIPs, ips...)
-		}
-	}
-}
-
-// ClearBlacklist empties the client blacklist
-func (c *Client) ClearBlacklist() {
-	c.BlacklistPort = 0
-	c.BlacklistIPs = c.BlacklistIPs[:0]
-}
-
-// ValidIP determines if the given IP isn't a blacklisted server IP
-func (c *Client) ValidIP(ip net.IP) error {
-	for _, badIP := range c.BlacklistIPs {
-		if ip.Equal(badIP) {
-			return fmt.Errorf("%s is blacklisted", ip)
-		}
-	}
-
-	return nil
-}
-
-// ValidServer determines if the given server can be resolved and doesn't resolve
-// to a blacklisted server IP.
-func (c *Client) ValidServer(server string) (err error) {
-	var host, port string
-	if host, port, err = net.SplitHostPort(server); err != nil {
-		return
-	}
-
-	var p int
-	if p, err = strconv.Atoi(port); err != nil {
-		return
-	}
-
-	if p != c.BlacklistPort {
-		return nil
-	}
-
-	var ips []net.IP
-	if ips, err = net.LookupIP(host); err != nil {
-		return
-	}
-
-	for _, ip := range ips {
-		if err = c.ValidIP(ip); err != nil {
-			return
-		}
-	}
-
-	return nil
 }
 
 // AddRemote adds a remote for the given SKI, optionally registering it
@@ -213,25 +181,12 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
 			return
 		}
 	} else {
-		if err = c.ValidServer(server); err != nil {
-			log.Errorf("Server %s invalid: %v", server, err)
-			return
-		}
-
 		var ok bool
 		c.m.RLock()
 		r, ok = c.servers[server]
 		c.m.RUnlock()
 		if !ok {
-			var host, port string
-			if host, port, err = net.SplitHostPort(server); err != nil {
-				return
-			}
-			var p int
-			if p, err = strconv.Atoi(port); err != nil {
-				return
-			}
-			if r, err = c.LookupServer(host, "", p); err != nil {
+			if r, err = c.LookupServer(server); err != nil {
 				return
 			}
 		}

@@ -40,12 +40,11 @@ func TestBlacklist(t *testing.T) {
 				log.Fatal(err)
 			}
 		}
-		c.PopulateBlacklist(cert.Leaf, port)
+		c.PopulateBlacklist(cert.Leaf, 3407)
 	}
-	t.Logf("Blacklist: %+v", c.BlacklistIPs)
 
-	if _, err := c.LoadTLSCertificate(s.Addr, tlsCert); err == nil {
-		t.Fatal("was able to register cert to blacklisted server")
+	if _, err := remote.Dial(c); err == nil {
+		t.Fatal("was able to dial blacklisted server")
 	}
 	c.ClearBlacklist()
 }

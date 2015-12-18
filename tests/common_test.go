@@ -5,8 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
-	"net"
-	"strconv"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
@@ -33,8 +31,6 @@ var (
 	c        *client.Client
 	rsaKey   *client.PrivateKey
 	ecdsaKey *client.PrivateKey
-	host     string
-	port     int
 	remote   client.Remote
 )
 
@@ -45,7 +41,6 @@ func init() {
 	var p *pem.Block
 	var priv crypto.Signer
 	var pub crypto.PublicKey
-	var portStr string
 
 	log.Level = log.LevelFatal
 
@@ -89,13 +84,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	if host, portStr, err = net.SplitHostPort(serverAddr); err != nil {
-		log.Fatal(err)
-	}
-	if port, err = strconv.Atoi(portStr); err != nil {
-		log.Fatal(err)
-	}
-	remote, err = c.LookupServer(host, "", port)
+	remote, err = c.LookupServer(serverAddr)
 	if err != nil {
 		log.Fatal(err)
 	}

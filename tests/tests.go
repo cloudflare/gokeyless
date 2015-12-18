@@ -30,15 +30,7 @@ func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 // NewPingTest generates a TestFunc to connect and perform a ping.
 func NewPingTest(c *client.Client, server string) testapi.TestFunc {
 	return func() error {
-		host, port, err := net.SplitHostPort(server)
-		if err != nil {
-			return err
-		}
-		p, err := strconv.Atoi(port)
-		if err != nil {
-			return err
-		}
-		r, err := c.LookupServer(host, "", p)
+		r, err := c.LookupServer(server)
 		if err != nil {
 			return err
 		}

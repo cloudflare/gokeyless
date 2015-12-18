@@ -4,7 +4,9 @@ import (
 	"container/heap"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,9 +35,9 @@ func NewServer(addr net.Addr, serverName string) Remote {
 	}
 }
 
-// LookupServer uses DNS to look up an a group of Remote servers with
+// LookupServerWithName uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
-func (c *Client) LookupServer(host, serverName string, port int) (Remote, error) {
+func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote, error) {
 	if serverName == "" {
 		serverName = host
 	}
@@ -47,18 +49,35 @@ func (c *Client) LookupServer(host, serverName string, port int) (Remote, error)
 
 	var servers []Remote
 	for _, ip := range ips {
-		if err := c.ValidIP(ip); port != c.BlacklistPort || err == nil {
-			servers = append(servers, NewServer(&net.TCPAddr{
-				IP:   ip,
-				Port: port,
-			}, serverName))
+		addr := &net.TCPAddr{IP: ip, Port: port}
+		if !c.Blacklist.Contains(addr) {
+			servers = append(servers, NewServer(addr, serverName))
 		}
 	}
-	return NewGroup(servers), nil
+	return NewGroup(servers)
+}
+
+// LookupServer with default ServerName.
+func (c *Client) LookupServer(hostport string) (Remote, error) {
+	host, p, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return nil, err
+	}
+
+	port, err := strconv.Atoi(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.LookupServerWithName(host, host, port)
 }
 
 // Dial dials a remote server, returning an existing connection if possible.
 func (s *server) Dial(c *Client) (*gokeyless.Conn, error) {
+	if c.Blacklist.Contains(s) {
+		return nil, fmt.Errorf("server %s on client blacklist", s.String())
+	}
+
 	if s.conn != nil && s.conn.Use() {
 		return s.conn, nil
 	}
@@ -76,7 +95,8 @@ func (s *server) Dial(c *Client) (*gokeyless.Conn, error) {
 }
 
 func (s *server) Add(r Remote) Remote {
-	return NewGroup([]Remote{s, r})
+	g, _ := NewGroup([]Remote{s, r})
+	return g
 }
 
 type priority float64
@@ -100,13 +120,16 @@ type group struct {
 }
 
 // NewGroup creates a new group from a set of remotes.
-func NewGroup(remotes []Remote) Remote {
+func NewGroup(remotes []Remote) (Remote, error) {
+	if len(remotes) == 0 {
+		return nil, errors.New("attempted to create empty remote group")
+	}
 	g := new(group)
 	for _, r := range remotes {
 		heap.Push(g, &item{Remote: r})
 	}
 
-	return g
+	return g, nil
 }
 
 func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
