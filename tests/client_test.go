@@ -62,12 +62,6 @@ func TestECDSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
 	sig, err := ecdsaKey.Sign(r, msg, h)
 	if err != nil {
 		t.Fatal(err)
@@ -89,12 +83,6 @@ func TestRSASign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
 	sig, err := rsaKey.Sign(r, msg, h)
 	if err != nil {
 		t.Fatal(err)
@@ -113,11 +101,6 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
 
 	var pub *rsa.PublicKey
 	var ok bool
@@ -125,6 +108,7 @@ func TestRSADecrypt(t *testing.T) {
 		t.Fatal("couldn't use public key as RSA key")
 	}
 
+	var err error
 	var c, m []byte
 	if c, err = rsa.EncryptPKCS1v15(r, pub, ptxt); err != nil {
 		t.Fatal(err)

@@ -90,7 +90,6 @@ func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 
 		r = c.DefaultRemote
 	}
-
 	return r.Dial(c)
 }
 
@@ -181,7 +180,7 @@ func (c *Client) ValidServer(server string) (err error) {
 
 // AddRemote adds a remote for the given SKI, optionally registering it
 // under the given server name.
-func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
+func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) *PrivateKey {
 	c.m.Lock()
 	defer c.m.Unlock()
 
@@ -198,6 +197,8 @@ func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
 	} else {
 		c.remotes[ski] = r
 	}
+
+	return &PrivateKey{client: c, ski: ski}
 }
 
 // registerSKI associates the SKI of a public key with a particular keyserver.

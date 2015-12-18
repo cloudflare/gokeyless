@@ -25,6 +25,14 @@ type server struct {
 	conn       *gokeyless.Conn
 }
 
+// NewServer creates a new remote based a given addr and server name.
+func NewServer(addr net.Addr, serverName string) Remote {
+	return &server{
+		Addr:       addr,
+		ServerName: serverName,
+	}
+}
+
 // LookupServer uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
 func (c *Client) LookupServer(host, serverName string, port int) (Remote, error) {
@@ -37,16 +45,13 @@ func (c *Client) LookupServer(host, serverName string, port int) (Remote, error)
 		return nil, err
 	}
 
-	servers := make([]Remote, len(ips))
+	var servers []Remote
 	for _, ip := range ips {
 		if err := c.ValidIP(ip); port != c.BlacklistPort || err == nil {
-			servers = append(servers, &server{
-				Addr: &net.TCPAddr{
-					IP:   ip,
-					Port: port,
-				},
-				ServerName: serverName,
-			})
+			servers = append(servers, NewServer(&net.TCPAddr{
+				IP:   ip,
+				Port: port,
+			}, serverName))
 		}
 	}
 	return NewGroup(servers), nil
@@ -97,7 +102,6 @@ type group struct {
 // NewGroup creates a new group from a set of remotes.
 func NewGroup(remotes []Remote) Remote {
 	g := new(group)
-	heap.Init(g)
 	for _, r := range remotes {
 		heap.Push(g, &item{Remote: r})
 	}
@@ -109,24 +113,30 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 	g.Lock()
 	defer g.Unlock()
 
+	if g.Len() == 0 {
+		err = errors.New("remote group empty")
+		return
+	}
+
 	var i *item
-	var failed []*item
-	for err = errors.New("remote group empty"); g.Len() > 0; i = heap.Pop(g).(*item) {
+	var popped []*item
+	for g.Len() > 0 {
+		i = heap.Pop(g).(*item)
+		popped = append(popped, i)
 		if conn, err = i.Dial(c); err == nil {
 			break
 		}
 
 		i.p = 0
 		i.errs = append(i.errs, err)
-		failed = append(failed, i)
 	}
 
-	for _, f := range failed {
+	for _, f := range popped {
 		heap.Push(g, f)
 	}
 
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	go func() {
@@ -154,12 +164,13 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 			time.Sleep(time.Minute)
 		}
 	}()
-
-	return conn, nil
+	return
 }
 
 func (g *group) Add(r Remote) Remote {
-	heap.Push(g, &item{Remote: r})
+	if g != r {
+		heap.Push(g, &item{Remote: r})
+	}
 	return g
 }
 
@@ -175,7 +186,9 @@ func (g *group) Swap(i, j int) {
 
 func (g *group) Less(i, j int) bool {
 	// TODO: incorporate more logic about open connections and failure rate
-	return g.remotes[i].p < g.remotes[j].p
+	pi, pj := g.remotes[i].p, g.remotes[j].p
+	errsi, errsj := len(g.remotes[i].errs), len(g.remotes[j].errs)
+	return pi < pj || pi == pj && errsi < errsj
 }
 
 func (g *group) Push(x interface{}) {
