@@ -109,36 +109,38 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 	defer keys.RUnlock()
 
 	ski := op.SKI
-	priv, ok = keys.skis[ski]
-
-	if !ok {
-		log.Debug("Couldn't look up key based on SKI, trying Digest.")
-		if ski, ok = keys.digests[op.Digest]; ok {
-			priv, ok = keys.skis[ski]
-		}
-	}
-
-	if !ok {
-		log.Debug("Couldn't look up key based on Digest, trying SNI.")
-		if ski, ok = keys.snis[op.SNI]; ok {
-			priv, ok = keys.skis[ski]
-		}
-	}
-
-	if !ok {
-		if op.ServerIP != nil {
-			log.Debug("Couldn't look up key based on SNI, trying Server IP.")
-			if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
+	if ski.Valid() {
+		priv, ok = keys.skis[ski]
+	} else {
+		if !ok {
+			log.Debug("Couldn't look up key based on SKI, trying Digest.")
+			if ski, ok = keys.digests[op.Digest]; ok {
 				priv, ok = keys.skis[ski]
 			}
 		}
-	}
 
-	if !ok {
-		if op.ClientIP != nil {
-			log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
-			if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
+		if !ok {
+			log.Debug("Couldn't look up key based on Digest, trying SNI.")
+			if ski, ok = keys.snis[op.SNI]; ok {
 				priv, ok = keys.skis[ski]
+			}
+		}
+
+		if !ok {
+			if op.ServerIP != nil {
+				log.Debug("Couldn't look up key based on SNI, trying Server IP.")
+				if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
+					priv, ok = keys.skis[ski]
+				}
+			}
+		}
+
+		if !ok {
+			if op.ClientIP != nil {
+				log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
+				if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
+					priv, ok = keys.skis[ski]
+				}
 			}
 		}
 	}
