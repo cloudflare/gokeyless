@@ -10,10 +10,10 @@ before_script:
   - go get github.com/mattn/goveralls
   - go get -v github.com/GeertJohan/fgt
 script:
-  - go get github.com/cloudflare/gokeyless/...
-  - go test github.com/cloudflare/gokeyless/...
-  - go vet github.com/cloudflare/gokeyless/...
-  - fgt golint github.com/cloudflare/gokeyless/...
+  - go get $(go list ./... | grep -v /vendor/)
+  - go test $(go list ./... | grep -v /vendor/)
+  - go vet $(go list ./... | grep -v /vendor/)
+  - for package in $(go list ./... | grep -v /vendor/); do fgt golint ${package}; done
 notifications:
   email:
     recipients:

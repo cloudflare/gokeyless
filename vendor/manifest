@@ -1,0 +1,78 @@
+{
+	"version": 0,
+	"dependencies": [
+		{
+			"importpath": "github.com/cloudflare/cfssl/crypto/pkcs7",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/crypto/pkcs7"
+		},
+		{
+			"importpath": "github.com/cloudflare/cfssl/csr",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/csr"
+		},
+		{
+			"importpath": "github.com/cloudflare/cfssl/errors",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/errors"
+		},
+		{
+			"importpath": "github.com/cloudflare/cfssl/helpers",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/helpers"
+		},
+		{
+			"importpath": "github.com/cloudflare/cfssl/helpers/derhelpers",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/helpers/derhelpers"
+		},
+		{
+			"importpath": "github.com/cloudflare/cfssl/log",
+			"repository": "https://github.com/cloudflare/cfssl",
+			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"branch": "master",
+			"path": "/log"
+		},
+		{
+			"importpath": "github.com/cloudflare/go-metrics",
+			"repository": "https://github.com/cloudflare/go-metrics",
+			"revision": "6a9aea36fb410b71add0d0e58438e0cfc44d3076",
+			"branch": "master"
+		},
+		{
+			"importpath": "github.com/miekg/dns",
+			"repository": "https://github.com/miekg/dns",
+			"revision": "297a77c2fb5ebf0f261733e3c03f0c3bb9fdd917",
+			"branch": "master"
+		},
+		{
+			"importpath": "github.com/rcrowley/go-metrics",
+			"repository": "https://github.com/rcrowley/go-metrics",
+			"revision": "51425a2415d21afadfd55cd93432c0bc69e9598d",
+			"branch": "master"
+		},
+		{
+			"importpath": "github.com/stathat/go",
+			"repository": "https://github.com/stathat/go",
+			"revision": "01d012b9ee2ecc107cb28b6dd32d9019ed5c1d77",
+			"branch": "master"
+		},
+		{
+			"importpath": "golang.org/x/crypto/pkcs12",
+			"repository": "https://go.googlesource.com/crypto",
+			"revision": "3760e016850398b85094c4c99e955b8c3dea5711",
+			"branch": "master",
+			"path": "/pkcs12"
+		}
+	]
+}
