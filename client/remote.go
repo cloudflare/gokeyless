@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
+	"github.com/miekg/dns"
 )
 
 // A Remote represents some number of remote keyless server(s)
@@ -35,6 +36,38 @@ func NewServer(addr net.Addr, serverName string) Remote {
 	}
 }
 
+func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
+	m := new(dns.Msg)
+	for _, resolver := range c.Resolvers {
+		m.SetQuestion(dns.Fqdn(host), dns.TypeA)
+		if in, err := dns.Exchange(m, resolver); err == nil {
+			for _, rr := range in.Answer {
+				if a, ok := rr.(*dns.A); ok {
+					ips = append(ips, a.A)
+				}
+			}
+		} else {
+			log.Debug(err)
+		}
+
+		m.SetQuestion(dns.Fqdn(host), dns.TypeAAAA)
+		if in, err := dns.Exchange(m, resolver); err == nil {
+			for _, rr := range in.Answer {
+				if aaaa, ok := rr.(*dns.AAAA); ok {
+					ips = append(ips, aaaa.AAAA)
+				}
+			}
+		} else {
+			log.Debug(err)
+		}
+	}
+	if len(ips) != 0 {
+		return ips, nil
+	}
+
+	return net.LookupIP(host)
+}
+
 // LookupServerWithName uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
 func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote, error) {
@@ -42,7 +75,7 @@ func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote
 		serverName = host
 	}
 
-	ips, err := net.LookupIP(host)
+	ips, err := c.lookupIPs(host)
 	if err != nil {
 		return nil, err
 	}
