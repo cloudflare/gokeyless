@@ -25,6 +25,8 @@ type Client struct {
 	Config *tls.Config
 	// Dialer used to manage connections.
 	Dialer *net.Dialer
+	// Resolvers is an ordered list of DNS servers used to look up remote servers.
+	Resolvers []string
 	// DefaultRemote is a default remote to dial and register keys to.
 	DefaultRemote Remote
 	// Blacklist is a list of addresses that this client won't dial.
