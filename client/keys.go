@@ -122,14 +122,21 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
 func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
-	switch opts := opts.(type) {
-	case *rsa.PKCS1v15DecryptOptions:
-		ptxt, decyptErr := key.execute(gokeyless.OpRSADecrypt, msg)
+	opts1v15, ok := opts.(*rsa.PKCS1v15DecryptOptions)
+	if opts != nil && !ok {
+		return nil, errors.New("invalid options for Decrypt")
+	}
 
+	ptxt, err := key.execute(gokeyless.OpRSADecrypt, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	if ok {
 		// If opts.SessionKeyLen is set, we must perform a variation of
 		// rsa.DecryptPKCS1v15SessionKey to ensure the entire operation
 		// is performed in constant time regardless of padding errors.
-		if l := opts.SessionKeyLen; l > 0 {
+		if l := opts1v15.SessionKeyLen; l > 0 {
 			plaintext := make([]byte, l)
 			if _, err := io.ReadFull(rand, plaintext); err != nil {
 				return nil, err
@@ -140,9 +147,6 @@ func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.Decrypter
 			subtle.ConstantTimeCopy(valid, plaintext[:l2], ptxt[:l2])
 			return plaintext, nil
 		}
-		// Otherwise, we can just return the error like rsa.DecryptPKCS1v15.
-		return ptxt, decyptErr
-	default:
-		return nil, errors.New("invalid options for Decrypt")
 	}
+	return ptxt, nil
 }
