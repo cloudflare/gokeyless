@@ -166,6 +166,11 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 	log.Debugf("Testing %s", in.Keyserver)
 	var err error
 	var certs []*x509.Certificate
+	if c == nil {
+		err = errors.New("invalid client")
+		log.Warning(err)
+		return nil, err
+	}
 
 	if len(in.CertsPEM) > 0 {
 		log.Debug("Parsing certificate PEM")

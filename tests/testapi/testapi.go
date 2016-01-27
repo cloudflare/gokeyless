@@ -9,14 +9,15 @@ import (
 
 // Input is a JSON struct representing a test suite to be run.
 type Input struct {
-	Keyserver          string `json:"keyserver"`
-	Domain             string `json:"domain,omitempty"`
-	CertsPEM           string `json:"certs,omitempty"`
-	HashedToken        []byte `json:"hashed_token,omitempty"`
-	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
-	ServerIP           string `json:"cf_ip,omitempty"`
-	TestLen            string `json:"testlen,omitempty"`
-	Workers            string `json:"workers,omitempty"`
+	Clients            []string `json:"clients"`
+	Keyserver          string   `json:"keyserver"`
+	Domain             string   `json:"domain,omitempty"`
+	CertsPEM           string   `json:"certs,omitempty"`
+	HashedToken        []byte   `json:"hashed_token,omitempty"`
+	InsecureSkipVerify bool     `json:"insecure_skip_verify,omitempty"`
+	ServerIP           string   `json:"cf_ip,omitempty"`
+	TestLen            string   `json:"testlen,omitempty"`
+	Workers            string   `json:"workers,omitempty"`
 }
 
 // Results is a registry of metrics representing the success stats of an entire test suite.
