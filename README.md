@@ -156,11 +156,8 @@ This is the keyserver for Keyless SSL. It consists of a single binary file
 - `--private-key-directory` Path to a directory containing private keys which
   the keyserver provides decoding service against. The key files must end with
   ".key" and be PEM-encoded. There should be no trailing / on the path.
-- `-loglevel` Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants).
-- `--num-workers` (optional) The number of worker threads to start. Each
-  worker thread will handle a single connection from a KSSL client.  Defaults
-  to 1.
-- `--pid-file` (optional) Path to a file into which the PID of the
+- `-loglevel` (optional) Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants). Defaults to `LevelInfo`.
+- `-pid-file` (optional) Path to a file into which the PID of the
   keyserver. This file is only written if the keyserver starts successfully.
 
 ## License
