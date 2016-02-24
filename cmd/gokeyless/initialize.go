@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
@@ -43,16 +44,14 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	initURL.RawQuery = form.Encode()
 
-	req, err := http.NewRequest("POST", initURL.String(), nil)
+	req, err := http.NewRequest("POST", initURL.String(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header = http.Header{
-		"X-Auth-Key": []string{token.Token},
-	}
+	req.Header.Set("X-Auth-Key", token.Token)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := new(http.Client).Do(req)
 	if err != nil {
