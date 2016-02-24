@@ -33,7 +33,7 @@ func init() {
 	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
 	flag.StringVar(&initCertFile, "init-cert", "default.pem", "Default certificate used for server initialization")
 	flag.StringVar(&initKeyFile, "init-key", "default-key.pem", "Default key used for server initialization")
-	flag.StringVar(&initEndpoint, "init-endpoint", "https://api.cloudflare.com/client/v4/certificate", "API endpoint for server initialization")
+	flag.StringVar(&initEndpoint, "init-endpoint", "https://api.cloudflare.com/client/v4/certificates", "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")

@@ -1,15 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strings"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
@@ -19,6 +19,24 @@ import (
 type v4apiError struct {
 	Code    json.Number `json:"code,omitempty"`
 	Message string      `json:"message,omitempty"`
+}
+
+type initAPIRequest struct {
+	Rqtype    string   `json:"request_type,omitempty"`
+	Hostnames []string `json:"hostnames,omitempty"`
+	CSR       string   `json:"csr,omitempty"`
+	//Days      int      `json:"requested_validity,omitempty"`
+}
+
+func newRequestBody(hostname, csr string) (io.Reader, error) {
+	apiReq := initAPIRequest{
+		Rqtype:    "keyless-certificate",
+		Hostnames: []string{hostname},
+		CSR:       csr,
+	}
+	body := new(bytes.Buffer)
+	err := json.NewEncoder(body).Encode(apiReq)
+	return body, err
 }
 
 type initAPIResponse struct {
@@ -35,23 +53,17 @@ type apiToken struct {
 }
 
 func initAPICall(token *apiToken, csr string) ([]byte, error) {
-	form := make(url.Values)
-	form.Set("request_type", "keyless-certificate")
-	form.Set("csr", csr)
-	form.Set("hostnames", token.Host)
-
-	initURL, err := url.Parse(initEndpoint)
+	body, err := newRequestBody(token.Host, csr)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", initURL.String(), strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", initEndpoint, body)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("X-Auth-Key", token.Token)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := new(http.Client).Do(req)
 	if err != nil {
@@ -60,7 +72,9 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	apiResp := new(initAPIResponse)
-	json.NewDecoder(resp.Body).Decode(apiResp)
+	if err := json.NewDecoder(resp.Body).Decode(apiResp); err != nil {
+		return nil, err
+	}
 	if !apiResp.Success {
 		errs, _ := json.Marshal(apiResp.Errors)
 		return nil, fmt.Errorf("api call failed: %s", errs)
@@ -75,7 +89,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 func initializeServer() *server.Server {
 	b, err := ioutil.ReadFile(initToken)
 	if err != nil {
-		log.Fatalf("Couldn't read %s: %v", initToken, err)
+		log.Fatalf("Couldn't read JSON token %s: %v", initToken, err)
 	}
 
 	token := new(apiToken)
