@@ -41,7 +41,8 @@ var formPage = `
           <input class="form-control" name="cf_ip" placeholder="198.41.215.163" type="text">
           <label for="certs">Certificate(s) (optional)</label>
           <textarea class="form-control" name="certs" placeholder="Paste PEM certificate" class="width-full" rows="25"></textarea>
-          <label for="testlen">Test Length</label><input type="text" name="testlen" value="%s">
+          <label for="clients">Clients</label><select name="clients" multiple>%s</select>
+          <label for="testlen">Test Length</label><input type="text" name="testlen" value="%v">
           <label for="workers">Num Workers</label><input type="number" name="workers" min="1" max="1024" value="%d">
           <label><input name="insecure_skip_verify" type="checkbox">Insecure Skip Verify</label>
         <button class="btn btn-primary" style="float: right;" type="submit">Scan</button>
@@ -62,22 +63,28 @@ var formPage = `
       $("#results").hide();
       var input = {};
       $($("#keyserver-test").serializeArray()).each(function(i, field) {
-        input[field.name] = (field.value === "on") ? true : field.value;
+        if (field.value === "on") {
+          field.value = true;
+        }
+        if (input[field.name]) {
+          if (!Array.isArray(input[field.name])) {
+            input[field.name] = [input[field.name]];
+          }
+          input[field.name].push(field.value);
+        } else {
+          input[field.name] = field.value;
+        }
       });
       var formData = JSON.stringify(input);
-      console.log("input: " + formData);
       $.post("/", formData, function(data) {
-      	  $("#results").empty()
+          $("#results").empty()
           $("#results").show();
-          console.log(data);
           $("#results").text(JSON.stringify(data, null, 2));
       }, "json").fail(function(error) {
           $("#results").empty()
           $("#results").show();
-          console.log(error);
           $("#results").html("<div class='alert alert-danger'>"+error.responseText+"</div>");
       });
-      console.log("Form Posted");
     });
   </script>
 </body>
@@ -85,13 +92,20 @@ var formPage = `
 `
 
 type apiHandler struct {
-	c       *client.Client
+	clients map[string]*client.Client
 	testLen time.Duration
 	workers int
 }
 
+func (api *apiHandler) httpClientOptions() (options string) {
+	for name := range api.clients {
+		options += fmt.Sprintf(`<option value="%s">%s</option>`, name, name)
+	}
+	return
+}
+
 func (api *apiHandler) ServeFormPage(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(w, formPage, api.testLen, api.workers)
+	fmt.Fprintf(w, formPage, api.httpClientOptions(), api.testLen, api.workers)
 }
 
 func (api *apiHandler) ServeFormResponse(w http.ResponseWriter, req *http.Request) {
@@ -107,10 +121,12 @@ func (api *apiHandler) ServeFormResponse(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	results, err := RunAPITests(in, api.c, api.testLen, api.workers)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	results := make(map[string]*testapi.Results)
+	for _, name := range in.Clients {
+		if results[name], err = RunAPITests(in, api.clients[name], api.testLen, api.workers); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -134,9 +150,9 @@ func (api *apiHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // ListenAndServeAPI creates an HTTP endpoint at addr.
-func ListenAndServeAPI(addr string, testLen time.Duration, workers int, c *client.Client) error {
+func ListenAndServeAPI(addr string, testLen time.Duration, workers int, clients map[string]*client.Client) error {
 	log.Infof("Serving Tester API at %s/\n", addr)
 
-	http.Handle("/", &apiHandler{c, testLen, workers})
+	http.Handle("/", &apiHandler{clients, testLen, workers})
 	return http.ListenAndServe(addr, nil)
 }
