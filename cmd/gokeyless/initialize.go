@@ -1,15 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
+	"os"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
@@ -21,6 +21,24 @@ type v4apiError struct {
 	Message string      `json:"message,omitempty"`
 }
 
+type initAPIRequest struct {
+	Rqtype    string   `json:"request_type,omitempty"`
+	Hostnames []string `json:"hostnames,omitempty"`
+	CSR       string   `json:"csr,omitempty"`
+	//Days      int      `json:"requested_validity,omitempty"`
+}
+
+func newRequestBody(hostname, csr string) (io.Reader, error) {
+	apiReq := initAPIRequest{
+		Rqtype:    "keyless-certificate",
+		Hostnames: []string{hostname},
+		CSR:       csr,
+	}
+	body := new(bytes.Buffer)
+	err := json.NewEncoder(body).Encode(apiReq)
+	return body, err
+}
+
 type initAPIResponse struct {
 	Success  bool              `json:"success,omitempty"`
 	Messages []string          `json:"messages,omitempty"`
@@ -28,33 +46,24 @@ type initAPIResponse struct {
 	Result   map[string]string `json:"result,omitempty"`
 }
 
-func initAPICall(hostnames []string, csr string) ([]byte, error) {
-	form := make(url.Values)
-	form.Set("request_type", "keyless-certificate")
-	form.Set("csr", csr)
-	for _, host := range hostnames {
-		if len(host) > 0 {
-			form.Add("hostnames", host)
-		}
-	}
-	if len(form["hostnames"]) == 0 {
-		return nil, errors.New("no hosts given")
-	}
+type apiToken struct {
+	Token string `json:"token"`
+	Host  string `json:"host"`
+	Port  string `json:"port"`
+}
 
-	initURL, err := url.Parse(initEndpoint)
-	if err != nil {
-		return nil, err
-	}
-	initURL.RawQuery = form.Encode()
-
-	req, err := http.NewRequest("POST", initURL.String(), nil)
+func initAPICall(token *apiToken, csr string) ([]byte, error) {
+	body, err := newRequestBody(token.Host, csr)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header = http.Header{
-		"X-Auth-Key": []string{initToken},
+	req, err := http.NewRequest("POST", initEndpoint, body)
+	if err != nil {
+		return nil, err
 	}
+
+	req.Header.Set("X-Auth-Key", token.Token)
 
 	resp, err := new(http.Client).Do(req)
 	if err != nil {
@@ -63,7 +72,9 @@ func initAPICall(hostnames []string, csr string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	apiResp := new(initAPIResponse)
-	json.NewDecoder(resp.Body).Decode(apiResp)
+	if err := json.NewDecoder(resp.Body).Decode(apiResp); err != nil {
+		return nil, err
+	}
 	if !apiResp.Success {
 		errs, _ := json.Marshal(apiResp.Errors)
 		return nil, fmt.Errorf("api call failed: %s", errs)
@@ -76,14 +87,18 @@ func initAPICall(hostnames []string, csr string) ([]byte, error) {
 }
 
 func initializeServer() *server.Server {
-	var hosts string
-	fmt.Print("Keyserver Hostnames/IPs (comma-seperated): ")
-	fmt.Scanln(&hosts)
-	hostnames := strings.Split(hosts, ",")
+	b, err := ioutil.ReadFile(initToken)
+	if err != nil {
+		log.Fatalf("Couldn't read JSON token %s: %v", initToken, err)
+	}
 
+	token := new(apiToken)
+	if err := json.Unmarshal(b, token); err != nil {
+		log.Fatalf("Couldn't unmarshal JSON token: %v", err)
+	}
 	csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
 		CN:    "Keyless Server Authentication Certificate",
-		Hosts: hostnames,
+		Hosts: []string{token.Host},
 		KeyRequest: &csr.BasicKeyRequest{
 			A: "ecdsa",
 			S: 384,
@@ -93,10 +108,13 @@ func initializeServer() *server.Server {
 		log.Fatal(err)
 	}
 
-	if err := ioutil.WriteFile(keyFile, key, 0400); err != nil {
+	if err := os.Remove(keyFile); err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
-	log.Infof("Key generated and saved to %s\n", keyFile)
+
+	if err := ioutil.WriteFile(keyFile, key, 0400); err == nil {
+		log.Infof("Key generated and saved to %s\n", keyFile)
+	}
 
 	log.Info("Server entering initialization state")
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
@@ -104,13 +122,17 @@ func initializeServer() *server.Server {
 	if err != nil {
 		log.Fatal(err)
 	}
-	s.ActivationToken = []byte(initToken)
+	s.ActivationToken = []byte(token.Token)
 	go func() {
 		log.Fatal(s.ListenAndServe())
 	}()
 
-	cert, err := initAPICall(hostnames, string(csr))
+	cert, err := initAPICall(token, string(csr))
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := os.Remove(certFile); err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
 

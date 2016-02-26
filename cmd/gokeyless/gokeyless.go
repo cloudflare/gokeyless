@@ -30,10 +30,10 @@ var (
 )
 
 func init() {
-	flag.StringVar(&initToken, "init-token", "", "API token used for server initialization")
+	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
 	flag.StringVar(&initCertFile, "init-cert", "default.pem", "Default certificate used for server initialization")
 	flag.StringVar(&initKeyFile, "init-key", "default-key.pem", "Default key used for server initialization")
-	flag.StringVar(&initEndpoint, "init-endpoint", "https://api.cloudflare.com/client/v4/certificate", "API endpoint for server initialization")
+	flag.StringVar(&initEndpoint, "init-endpoint", "https://api.cloudflare.com/client/v4/certificates", "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
@@ -46,26 +46,21 @@ func init() {
 }
 
 func main() {
-	var s *server.Server
-	if initToken != "" {
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
+		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
+	if err != nil {
+		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
 		s = initializeServer()
-	} else {
-		s, err := server.NewServerFromFile(certFile, keyFile, caFile,
-			net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
-		if err != nil {
-			log.Warningf("Could not create server. Run with `gokeyless -init-token=XXX` to get %s and %s", keyFile, certFile)
-			log.Fatal(err)
-		}
-
-		if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
-			log.Fatal(err)
-		}
-
-		// Start server in background, then listen for SIGHUPs to reload keys.
-		go func() {
-			log.Fatal(s.ListenAndServe())
-		}()
 	}
+
+	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
+		log.Fatal(err)
+	}
+
+	// Start server in background, then listen for SIGHUPs to reload keys.
+	go func() {
+		log.Fatal(s.ListenAndServe())
+	}()
 
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {
