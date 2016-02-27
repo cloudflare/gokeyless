@@ -49,7 +49,7 @@ type initAPIResponse struct {
 type apiToken struct {
 	Token string `json:"token"`
 	Host  string `json:"host"`
-	Port  string `json:"port"`
+	Port  string `json:"port,omitempty"`
 }
 
 func initAPICall(token *apiToken, csr string) ([]byte, error) {
@@ -116,16 +116,14 @@ func initializeServer() *server.Server {
 		log.Infof("Key generated and saved to %s\n", keyFile)
 	}
 
-	log.Info("Server entering initialization state")
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
 		log.Fatal(err)
 	}
 	s.ActivationToken = []byte(token.Token)
-	go func() {
-		log.Fatal(s.ListenAndServe())
-	}()
+	log.Info("Server entering initialization state")
+	go func() { log.Fatal(s.ListenAndServe()) }()
 
 	cert, err := initAPICall(token, string(csr))
 	if err != nil {
@@ -149,5 +147,6 @@ func initializeServer() *server.Server {
 	}
 
 	s.Config.Certificates = []tls.Certificate{tlsCert}
+	log.Info("Server exiting initialization state")
 	return s
 }

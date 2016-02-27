@@ -51,16 +51,13 @@ func main() {
 	if err != nil {
 		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
 		s = initializeServer()
+	} else {
+		go func() { log.Fatal(s.ListenAndServe()) }()
 	}
 
 	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 		log.Fatal(err)
 	}
-
-	// Start server in background, then listen for SIGHUPs to reload keys.
-	go func() {
-		log.Fatal(s.ListenAndServe())
-	}()
 
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {
