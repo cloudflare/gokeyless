@@ -39,8 +39,7 @@ func init() {
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
 	flag.StringVar(&keyDir, "private-key-directory", "keys/", "Directory in which private keys are stored with .key extension")
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
-	flag.StringVar(&metricsPort, "metrics-port", "2406", "Port where the metrics API is served")
-	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
+	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
 	flag.Parse()
 }
