@@ -41,10 +41,10 @@ func init() {
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
-	flag.Parse()
 }
 
 func main() {
+	flag.Parse()
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
