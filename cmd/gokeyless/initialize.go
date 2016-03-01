@@ -49,7 +49,7 @@ type initAPIResponse struct {
 type apiToken struct {
 	Token string `json:"token"`
 	Host  string `json:"host"`
-	Port  string `json:"port"`
+	Port  string `json:"port,omitempty"`
 }
 
 func initAPICall(token *apiToken, csr string) ([]byte, error) {
@@ -86,15 +86,35 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 	return nil, fmt.Errorf("no certificate in api response: %#v", apiResp)
 }
 
-func initializeServer() *server.Server {
-	b, err := ioutil.ReadFile(initToken)
+func getToken() (*apiToken, error) {
+	token := new(apiToken)
+	f, err := os.Open(initToken)
 	if err != nil {
-		log.Fatalf("Couldn't read JSON token %s: %v", initToken, err)
+		if f, err = os.Create(initToken); err != nil {
+			return nil, err
+		}
+	}
+	defer f.Close()
+
+	if err := json.NewDecoder(f).Decode(token); err != nil {
+		log.Errorf("couldn't read token from file %s: %v", initToken, err)
+		fmt.Print("Keyserver Hostname: ")
+		fmt.Scanln(&token.Host)
+		fmt.Print("API Key: ")
+		fmt.Scanln(&token.Token)
+
+		if err := json.NewEncoder(f).Encode(token); err != nil {
+			return nil, fmt.Errorf("couldn't write token to file %s: %v", initToken, err)
+		}
 	}
 
-	token := new(apiToken)
-	if err := json.Unmarshal(b, token); err != nil {
-		log.Fatalf("Couldn't unmarshal JSON token: %v", err)
+	return token, nil
+}
+
+func initializeServer() *server.Server {
+	token, err := getToken()
+	if err != nil {
+		log.Fatal(err)
 	}
 	csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
 		CN:    "Keyless Server Authentication Certificate",
@@ -116,16 +136,14 @@ func initializeServer() *server.Server {
 		log.Infof("Key generated and saved to %s\n", keyFile)
 	}
 
-	log.Info("Server entering initialization state")
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
 		log.Fatal(err)
 	}
 	s.ActivationToken = []byte(token.Token)
-	go func() {
-		log.Fatal(s.ListenAndServe())
-	}()
+	log.Info("Server entering initialization state")
+	go func() { log.Fatal(s.ListenAndServe()) }()
 
 	cert, err := initAPICall(token, string(csr))
 	if err != nil {
@@ -149,5 +167,6 @@ func initializeServer() *server.Server {
 	}
 
 	s.Config.Certificates = []tls.Certificate{tlsCert}
+	log.Info("Server exiting initialization state")
 	return s
 }

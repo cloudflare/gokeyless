@@ -27,23 +27,15 @@ pidfile="/var/run/$name.pid"
 
 # Optional
 PORT=2407
-METRICS_PORT=2406
+METRICS_PORT=2408
 LOG_LEVEL=0
 
 # Required
-CA_FILE=/etc/keyless/keyless_cacert.pem
-SERVER_CERT=/etc/keyless/server_cert.crt
-SERVER_KEY=/etc/keyless/server_cert.key
-PRIVATE_KEY_DIR=/etc/keyless/keys
+WORKDIR=/etc/keyless
 USER=keyless
 GROUP=keyless
 
-args="-cert=${SERVER_CERT} -key=${SERVER_KEY} -private-key-directory=${PRIVATE_KEY_DIR} -ca-file=${CA_FILE} -pid-file=${pidfile}"
-
-[ -n "${PORT}" ] && args="${args} -port=${PORT}"
-[ -n "${METRICS_PORT}" ] && args="${args} -metrics-port=${METRICS_PORT}"
-[ -n "${LOG_LEVEL}" ] && args="${args} -loglevel=${LOG_LEVEL}"
-
+args="-pid-file=${pidfile}"
 
 trace() {
   logger -t "/etc/init.d/gokeyless" "$@"
@@ -61,28 +53,14 @@ start() {
     return 1;
   fi
 
-  if [ ! -f "$SERVER_KEY" ]; then
-    if [ ! -d `dirname $SERVER_KEY` ]; then
-      mkdir `dirname $SERVER_KEY` || return 1
-    fi
-
-    if [ ! -d `dirname $SERVER_CERT` ]; then
-      mkdir `$dirname SERVER_CERT` || return 1
-    fi
-
-    $program -init -key="${SERVER_KEY}" -cert="${SERVER_CERT}"
-
-  fi
-
   [ -f $pidfile ] && rm -f $pidfile
 
+  cd $WORKDIR
   sh -c "
     exec \"$program\" $args
-  " >>/var/log/$name.log 2>>/var/log/$name.err &
+  " 2>>/var/log/$name.log &
 
-  wait $!
-
-  for i in 0 1 2 3 4 5; do
+  for i in 0 1 2 3 4 5 6 7 8 9 10; do
     [ -f $pidfile ] && break
 
     if [ $i -eq 5 ]; then
@@ -110,7 +88,7 @@ stop() {
     trace "Killing $name (pid $pid) with SIGTERM"
     kill -TERM $pid
     # Wait for it to exit.
-    for i in 1 2 3 4 5 ; do
+    for i in 1 2 3 4 5; do
       trace "Waiting $name (pid $pid) to die..."
       status || break
       sleep 1
