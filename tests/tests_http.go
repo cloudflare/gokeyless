@@ -61,7 +61,7 @@ var formPage = `
     $("#keyserver-test").submit(function(event) {
       event.preventDefault();
       $("#results").hide();
-      var input = {};
+      var input = {"clients":[]};
       $($("#keyserver-test").serializeArray()).each(function(i, field) {
         if (field.value === "on") {
           field.value = true;
@@ -99,7 +99,7 @@ type apiHandler struct {
 
 func (api *apiHandler) httpClientOptions() (options string) {
 	for name := range api.clients {
-		options += fmt.Sprintf(`<option value="%s">%s</option>`, name, name)
+		options += fmt.Sprintf(`<option value="%s" selected>%s</option>`, name, name)
 	}
 	return
 }
