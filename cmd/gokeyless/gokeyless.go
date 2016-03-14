@@ -27,6 +27,7 @@ var (
 	caFile       string
 	keyDir       string
 	pidFile      string
+	manualMode   bool
 )
 
 func init() {
@@ -41,18 +42,34 @@ func init() {
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
+	flag.BoolVar(&manualMode, "manual-activation", false, "Manually activate the keyserver by writing the CSR to stderr")
 }
 
 func main() {
 	flag.Parse()
+
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
 		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
 	if err != nil {
 		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
-		s = initializeServer()
-	} else {
-		go func() { log.Fatal(s.ListenAndServe()) }()
+
+		// Allow manual activation (bypassing the certificate API).
+		if manualMode {
+			token := tokenPrompt()
+			csr, _, err := generateCSR(token.Host)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			log.Infof("CSR generated (requires manual signing) \n%s", csr)
+			os.Exit(0)
+		} else {
+			// Automatically activate against the certificate API.
+			s = initializeServer()
+		}
 	}
+
+	go func() { log.Fatal(s.ListenAndServe()) }()
 
 	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 		log.Fatal(err)
