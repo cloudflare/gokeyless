@@ -65,6 +65,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 
 	req.Header.Set("X-Auth-Key", token.Token)
 
+	log.Infof("making API call: %s", initEndpoint)
 	resp, err := new(http.Client).Do(req)
 	if err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 
 	if !apiResp.Success {
 		errs, _ := json.Marshal(apiResp.Errors)
-		return nil, fmt.Errorf("certificate API call failed: %s", errs)
+		return nil, fmt.Errorf("certificate API call returned HTTP %d | %s", resp.StatusCode, errs)
 	}
 
 	if cert, ok := apiResp.Result["certificate"]; ok {
