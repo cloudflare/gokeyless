@@ -71,19 +71,27 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	apiResp := new(initAPIResponse)
-	if err := json.NewDecoder(resp.Body).Decode(apiResp); err != nil {
-		return nil, err
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("certificate API returned an invalid response body for HTTP %d", resp.StatusCode)
 	}
+
+	apiResp := &initAPIResponse{}
+	if err := json.Unmarshal(bodyBytes, apiResp); err != nil {
+		log.Debugf("invalid JSON response: %s", bodyBytes)
+		return nil, fmt.Errorf("certificate API returned HTTP %d", resp.StatusCode)
+	}
+
 	if !apiResp.Success {
 		errs, _ := json.Marshal(apiResp.Errors)
-		return nil, fmt.Errorf("api call failed: %s", errs)
+		return nil, fmt.Errorf("certificate API call failed: %s", errs)
 	}
 
 	if cert, ok := apiResp.Result["certificate"]; ok {
 		return []byte(cert), nil
 	}
-	return nil, fmt.Errorf("no certificate in api response: %#v", apiResp)
+
+	return nil, fmt.Errorf("no certificate in API response: %#v", apiResp)
 }
 
 func getToken() (*apiToken, error) {
@@ -157,7 +165,7 @@ func initializeServer() *server.Server {
 	if err := ioutil.WriteFile(certFile, cert, 0644); err != nil {
 		log.Fatal(err)
 	}
-	log.Infof("Cert saved to %s\n", certFile)
+	log.Infof("Certificate saved to %s\n", certFile)
 
 	// Remove server from activation state and initialize issued certificate.
 	s.ActivationToken = s.ActivationToken[:0]
