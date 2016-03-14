@@ -106,11 +106,7 @@ func getToken() (*apiToken, error) {
 
 	if err := json.NewDecoder(f).Decode(token); err != nil {
 		log.Errorf("couldn't read token from file %s: %v", initToken, err)
-		fmt.Print("Keyserver Hostname: ")
-		fmt.Scanln(&token.Host)
-		fmt.Print("API Key: ")
-		fmt.Scanln(&token.Token)
-
+		token = tokenPrompt()
 		if err := json.NewEncoder(f).Encode(token); err != nil {
 			return nil, fmt.Errorf("couldn't write token to file %s: %v", initToken, err)
 		}
@@ -124,24 +120,10 @@ func initializeServer() *server.Server {
 	if err != nil {
 		log.Fatal(err)
 	}
-	csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
-		CN:    "Keyless Server Authentication Certificate",
-		Hosts: []string{token.Host},
-		KeyRequest: &csr.BasicKeyRequest{
-			A: "ecdsa",
-			S: 384,
-		},
-	})
+
+	csr, _, err := generateCSR(token.Host)
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	if err := os.Remove(keyFile); err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
-	}
-
-	if err := ioutil.WriteFile(keyFile, key, 0400); err == nil {
-		log.Infof("Key generated and saved to %s\n", keyFile)
 	}
 
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
@@ -177,4 +159,37 @@ func initializeServer() *server.Server {
 	s.Config.Certificates = []tls.Certificate{tlsCert}
 	log.Info("Server exiting initialization state")
 	return s
+}
+
+// generateCSR generates a private key and a CSR for the given host. The
+// generated key is persisted to file.
+func generateCSR(host string) ([]byte, []byte, error) {
+	csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
+		CN:    "Keyless Server Authentication Certificate",
+		Hosts: []string{host},
+		KeyRequest: &csr.BasicKeyRequest{
+			A: "ecdsa",
+			S: 384,
+		},
+	})
+
+	if err := ioutil.WriteFile(keyFile, key, 0400); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Infof("Key generated and saved to %s\n", keyFile)
+
+	return csr, key, err
+}
+
+// tokenPrompt populates the Host and Token fields of a new *apiToken.
+func tokenPrompt() *apiToken {
+	token := &apiToken{}
+
+	fmt.Print("Keyserver Hostname: ")
+	fmt.Scanln(&token.Host)
+	fmt.Print("Origin CA Key: ")
+	fmt.Scanln(&token.Token)
+
+	return token
 }
