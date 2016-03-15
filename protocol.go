@@ -186,7 +186,6 @@ func (e Error) Error() string {
 		errStr = "disk read failure"
 	case ErrVersionMismatch:
 		errStr = "version mismatch"
-	// ErrBadOpcode indicates use of unknown opcode in request.
 	case ErrBadOpcode:
 		errStr = "bad opcode"
 	case ErrUnexpectedOpcode:
@@ -245,12 +244,12 @@ func GetSKI(pub crypto.PublicKey) (SKI, error) {
 	return sha1.Sum(subPKI.SubjectPublicKey.Bytes), nil
 }
 
-// GetSKICert returns the SKI of a parsed X.509 Certificate
+// GetSKICert returns the SKI of a parsed X.509 Certificate.
 func GetSKICert(cert *x509.Certificate) (SKI, error) {
 	return GetSKI(cert.PublicKey)
 }
 
-// GetSKICertPEM returns the SKI of a PEM encoded X.509 Certificate
+// GetSKICertPEM returns the SKI of a PEM encoded X.509 Certificate.
 func GetSKICertPEM(certPEM []byte) (SKI, error) {
 	cert, err := helpers.ParseCertificatePEM(certPEM)
 	if err != nil {
@@ -259,7 +258,7 @@ func GetSKICertPEM(certPEM []byte) (SKI, error) {
 	return GetSKICert(cert)
 }
 
-// Digest represents a SHA-256 digest of an RSA public key modulus
+// Digest represents a SHA-256 digest of an RSA public key modulus.
 type Digest [sha256.Size]byte
 
 var nilDigest Digest
@@ -355,7 +354,8 @@ func tlvBytes(tag Tag, data []byte) []byte {
 	return append(b, data...)
 }
 
-// MarshalBinary returns a binary
+// MarshalBinary serialises the operation into a byte slice using a
+// TLV encoding.
 func (o *Operation) MarshalBinary() ([]byte, error) {
 	var b []byte
 
