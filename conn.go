@@ -18,7 +18,7 @@ type Conn struct {
 	listeners map[uint32]chan *Header
 }
 
-// NewConn initializes a new Conn
+// NewConn initializes a new Conn.
 func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
 		Conn:      inner,
@@ -27,8 +27,9 @@ func NewConn(inner *tls.Conn) *Conn {
 	}
 }
 
-// Use marks conn as used by the current goroutine, returning ok if the Conn is open.
-// This should be accompanied by a later Close() call.
+// Use marks conn as used by the current goroutine, returning ok if
+// the Conn is open. This should be accompanied by a later Close()
+// call.
 func (c *Conn) Use() bool {
 	c.Lock()
 	defer c.Unlock()
@@ -39,7 +40,8 @@ func (c *Conn) Use() bool {
 	return true
 }
 
-// Close marks conn as closed and closed the inner net.Conn.
+// Close marks conn as closed and closes the inner net.Conn if it is
+// no longer in use.
 func (c *Conn) Close() {
 	c.Lock()
 	defer c.Unlock()
@@ -68,7 +70,8 @@ func (c *Conn) WriteHeader(h *Header) error {
 	return err
 }
 
-// ReadHeader unmarhals a header from the wire into the internal Header structure.
+// ReadHeader unmarshals a header from the wire into an internal
+// Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
 	c.Lock()
 	defer c.Unlock()
@@ -135,7 +138,8 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 	return <-c.listeners[id], nil
 }
 
-// DoOperation excutes an entire keyless operation, returning its result.
+// DoOperation executes an entire keyless operation, returning its
+// result.
 func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 	req := NewHeader(operation)
 	if err := c.WriteHeader(req); err != nil {
