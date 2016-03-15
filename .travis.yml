@@ -17,6 +17,7 @@ script:
 notifications:
   email:
     recipients:
-    - jacob@cloudflare.com
+      - kyle@cloudflare.com
+      - msilverlock@cloudflare.com
     on_success: never
     on_failure: change
