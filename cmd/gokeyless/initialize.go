@@ -63,7 +63,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 		return nil, err
 	}
 
-	req.Header.Set("X-Auth-Key", token.Token)
+	req.Header.Set("X-Auth-User-Service-Key", token.Token)
 
 	log.Infof("making API call: %s", initEndpoint)
 	resp, err := new(http.Client).Do(req)
