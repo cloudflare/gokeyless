@@ -189,7 +189,7 @@ func tokenPrompt() *apiToken {
 
 	fmt.Print("Keyserver Hostname: ")
 	fmt.Scanln(&token.Host)
-	fmt.Print("Origin CA Key: ")
+	fmt.Print("Certificates API Key: ")
 	fmt.Scanln(&token.Token)
 
 	return token
