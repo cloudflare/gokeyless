@@ -15,7 +15,10 @@ import (
 	"github.com/cloudflare/gokeyless/server"
 )
 
-var defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
+var (
+	defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
+	csrFile         = "server.csr"
+)
 
 var (
 	initToken    string
@@ -55,15 +58,20 @@ func main() {
 	if err != nil {
 		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
 
-		// Allow manual activation (bypassing the certificate API).
+		// If an existing CSR (and associated key) exists, don't
+		// proceed/overwrite the key.
+		if _, err := os.Stat(csrFile); !os.IsNotExist(err) {
+			log.Fatalf("an existing CSR was found at %q: remove once a signed certificate has been installed.", csrFile)
+		}
+
+		// Allow manual activation (requires the CSR to be manually signed).
 		if manualMode {
-			token := tokenPrompt()
-			csr, _, err := generateCSR(token.Host)
-			if err != nil {
+			if err := manualActivation(); err != nil {
 				log.Fatal(err)
 			}
 
-			log.Infof("CSR generated (requires manual signing) \n%s", csr)
+			log.Infof("CSR generated (requires manual signing) and written to %q",
+				csrFile)
 			os.Exit(0)
 		} else {
 			// Automatically activate against the certificate API.
@@ -107,4 +115,21 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	}
 
 	return derhelpers.ParsePrivateKeyDER(in)
+}
+
+func manualActivation() error {
+	token := tokenPrompt()
+	csr, _, err := generateCSR(token.Host)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Create(csrFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.Write(csr)
+	return err
 }
