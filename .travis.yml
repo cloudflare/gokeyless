@@ -1,21 +1,26 @@
 language: go
-go:
-  - tip
-before_script:
+sudo: false
+
+matrix:
+  include:
+    - go: 1.5
+    - go: 1.6
+    - go: tip
+  allow_failures:
+    - go: tip
+
+install:
   - go get golang.org/x/tools/cmd/goimports
   - go get -u github.com/golang/lint/golint
-  - go get github.com/modocache/gover
-  - go get github.com/mattn/goveralls
-  - go get -v github.com/GeertJohan/fgt
+
 script:
   - go get $(go list ./... | grep -v /vendor/)
-  - go test $(go list ./... | grep -v /vendor/)
   - go vet $(go list ./... | grep -v /vendor/)
-  - for package in $(go list ./... | grep -v /vendor/); do fgt golint ${package}; done
+  - for i in `go list ./... | grep -v /vendor/`; do golint $i; done
+  - go test -v -race $(go list ./... | grep -v /vendor/)
+
 notifications:
   email:
     recipients:
       - kyle@cloudflare.com
       - msilverlock@cloudflare.com
-    on_success: never
-    on_failure: change
