@@ -124,18 +124,22 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 	}
 	c.Unlock()
 
-	defer func() {
+	shutdown := func() {
 		c.Lock()
 		close(c.listeners[id])
 		delete(c.listeners, id)
 		c.Unlock()
-	}()
+	}
 
 	if err := c.doRead(); err != nil {
+		shutdown()
 		return nil, err
 	}
 
-	return <-c.listeners[id], nil
+	l := c.listeners[id]
+	header := <-l
+	shutdown()
+	return header, nil
 }
 
 // DoOperation executes an entire keyless operation, returning its
