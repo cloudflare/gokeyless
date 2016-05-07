@@ -115,10 +115,10 @@ func (s *server) Dial(c *Client) (*gokeyless.Conn, error) {
 		return s.conn, nil
 	}
 
-	config := *c.Config
+	config := copyTLSConfig(c.Config)
 	config.ServerName = s.ServerName
 	log.Debugf("Dialing %s at %s\n", s.ServerName, s.String())
-	inner, err := tls.DialWithDialer(c.Dialer, s.Network(), s.String(), &config)
+	inner, err := tls.DialWithDialer(c.Dialer, s.Network(), s.String(), config)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +130,28 @@ func (s *server) Dial(c *Client) (*gokeyless.Conn, error) {
 func (s *server) Add(r Remote) Remote {
 	g, _ := NewGroup([]Remote{s, r})
 	return g
+}
+
+func copyTLSConfig(c *tls.Config) *tls.Config {
+	return &tls.Config{
+		Certificates:             c.Certificates,
+		NameToCertificate:        c.NameToCertificate,
+		GetCertificate:           c.GetCertificate,
+		RootCAs:                  c.RootCAs,
+		NextProtos:               c.NextProtos,
+		ServerName:               c.ServerName,
+		ClientAuth:               c.ClientAuth,
+		ClientCAs:                c.ClientCAs,
+		InsecureSkipVerify:       c.InsecureSkipVerify,
+		CipherSuites:             c.CipherSuites,
+		PreferServerCipherSuites: c.PreferServerCipherSuites,
+		SessionTicketsDisabled:   c.SessionTicketsDisabled,
+		SessionTicketKey:         c.SessionTicketKey,
+		ClientSessionCache:       c.ClientSessionCache,
+		MinVersion:               c.MinVersion,
+		MaxVersion:               c.MaxVersion,
+		CurvePreferences:         c.CurvePreferences,
+	}
 }
 
 type priority float64
