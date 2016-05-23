@@ -229,7 +229,7 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 				i.latency = 0 // latency of 0 treated as maximum latency
 				i.errs = append(i.errs, err)
 			} else {
-				i.latency.Update(1 / float64(duration))
+				i.latency.Update(float64(duration))
 			}
 			heap.Fix(g, i.index)
 			g.Unlock()
