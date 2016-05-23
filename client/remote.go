@@ -154,18 +154,18 @@ func copyTLSConfig(c *tls.Config) *tls.Config {
 	}
 }
 
-type priority float64
+type ewma float64
 
-func (p *priority) Update(val float64) {
-	*p /= 2
-	*p += priority(val / 2)
+func (latency *ewma) Update(val float64) {
+	*latency /= 2
+	*latency += ewma(val / 2)
 }
 
 type item struct {
 	Remote
-	index int
-	p     priority
-	errs  []error
+	index   int
+	latency ewma
+	errs    []error
 }
 
 // A group is a Remote consisting of a load-balanced set of external servers.
@@ -205,7 +205,7 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 			break
 		}
 
-		i.p = 0
+		i.latency = 0 // latency of 0 treated as maximum latency
 		i.errs = append(i.errs, err)
 	}
 
@@ -226,10 +226,10 @@ func (g *group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 
 			g.Lock()
 			if err != nil {
-				i.p = 0
+				i.latency = 0 // latency of 0 treated as maximum latency
 				i.errs = append(i.errs, err)
 			} else {
-				i.p.Update(1 / float64(duration))
+				i.latency.Update(float64(duration))
 			}
 			heap.Fix(g, i.index)
 			g.Unlock()
@@ -264,9 +264,17 @@ func (g *group) Swap(i, j int) {
 
 func (g *group) Less(i, j int) bool {
 	// TODO: incorporate more logic about open connections and failure rate
-	pi, pj := g.remotes[i].p, g.remotes[j].p
+	pi, pj := g.remotes[i].latency, g.remotes[j].latency
 	errsi, errsj := len(g.remotes[i].errs), len(g.remotes[j].errs)
-	return pi < pj || pi == pj && errsi < errsj
+
+	// latency of 0 means not-measured or connection failure, make it the
+	// the maximum value of latency
+	// latency of non-zero always smaller than latency of 0
+	less := pi < pj
+	if pi == 0 {
+		less = false
+	}
+	return less || pi == pj && errsi < errsj
 }
 
 func (g *group) Push(x interface{}) {
