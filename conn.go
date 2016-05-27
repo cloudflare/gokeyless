@@ -119,14 +119,16 @@ func (c *Conn) doRead() error {
 // listenResponse attempts to read a response with the appropriate ID, blocking until it is available.
 func (c *Conn) listenResponse(id uint32) (*Header, error) {
 	c.Lock()
-	if _, ok := c.listeners[id]; !ok {
-		c.listeners[id] = make(chan *Header, 1)
+	ch, ok := c.listeners[id]
+	if !ok {
+		ch = make(chan *Header, 1)
+		c.listeners[id] = ch
 	}
 	c.Unlock()
 
 	defer func() {
 		c.Lock()
-		close(c.listeners[id])
+		close(ch)
 		delete(c.listeners, id)
 		c.Unlock()
 	}()
@@ -135,7 +137,7 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 		return nil, err
 	}
 
-	return <-c.listeners[id], nil
+	return <-ch, nil
 }
 
 // DoOperation executes an entire keyless operation, returning its
