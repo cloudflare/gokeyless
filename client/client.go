@@ -123,7 +123,7 @@ func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
 	r, ok := c.remotes[ski]
 	c.m.RUnlock()
 	if !ok {
-		if c.DefaultRemote != nil {
+		if c.DefaultRemote == nil {
 			return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
 		}
 
@@ -228,7 +228,7 @@ func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*Privat
 
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
 func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
-	return c.RegisterPublicKey(server, cert.PublicKey)
+	return c.RegisterPublicKeyTemplate(server, cert.PublicKey, "", nil)
 }
 
 // RegisterCertPEM registers a single PEM cert (possibly the leaf of a chain of certs).
@@ -243,7 +243,7 @@ func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (*PrivateKey, e
 		return nil, err
 	}
 
-	return c.RegisterCert(server, cert)
+	return c.RegisterPublicKeyTemplate(server, cert.PublicKey, "", nil)
 }
 
 var (
@@ -275,7 +275,7 @@ func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto
 					return err
 				}
 
-				if priv, err = c.RegisterPublicKey(server, pub); err != nil {
+				if priv, err = c.RegisterPublicKeyTemplate(server, pub, "", nil); err != nil {
 					return err
 				}
 			} else {

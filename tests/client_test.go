@@ -11,6 +11,8 @@ import (
 	"log"
 	"math/big"
 	"testing"
+
+	"github.com/cloudflare/gokeyless/client"
 )
 
 func TestConnect(t *testing.T) {
@@ -30,6 +32,13 @@ func TestConnect(t *testing.T) {
 }
 
 func TestBlacklist(t *testing.T) {
+	// create a new client with blacklist
+	blc, err := client.NewClientFromFile(clientCert, clientKey, keyserverCA)
+	if err != nil {
+		log.Fatal(err)
+	}
+	blc.ClearBlacklist()
+	// add server certificate to blacklist
 	for _, cert := range s.Config.Certificates {
 		if cert.Leaf == nil {
 			if len(cert.Certificate) == 0 {
@@ -40,13 +49,12 @@ func TestBlacklist(t *testing.T) {
 				log.Fatal(err)
 			}
 		}
-		c.PopulateBlacklist(cert.Leaf, 3407)
+		blc.PopulateBlacklist(cert.Leaf, 3407)
 	}
 
-	if _, err := remote.Dial(c); err == nil {
+	if _, err := remote.Dial(blc); err == nil {
 		t.Fatal("was able to dial blacklisted server")
 	}
-	c.ClearBlacklist()
 }
 
 var (

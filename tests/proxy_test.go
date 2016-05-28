@@ -46,6 +46,9 @@ func clientFunc(conn *tls.Conn) error {
 	return nil
 }
 
+// TestTLSProxy tests a real TLS keyless server which
+// uses gokeyless client to finish TLS hanshake with a
+// real TLS client.
 func TestTLSProxy(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()

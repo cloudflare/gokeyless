@@ -13,7 +13,7 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
-// PrivateKey represents a keyless-backed RSA private key.
+// PrivateKey represents a keyless-backed RSA/ECDSA private key.
 type PrivateKey struct {
 	public   crypto.PublicKey
 	client   *Client
@@ -79,6 +79,7 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 
 	result, err := conn.DoOperation(&gokeyless.Operation{
 		Opcode:   op,
