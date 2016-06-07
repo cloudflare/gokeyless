@@ -38,10 +38,6 @@ func NewResults() *Results {
 	return results
 }
 
-// func (results *Results) MarshalJSON() {
-
-// }
-
 // TestFunc represents generic test to be run.
 type TestFunc func() error
 
