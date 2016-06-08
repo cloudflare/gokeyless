@@ -90,7 +90,8 @@ On an error, these are the possible 1-byte payloads:
     0x07 - format error - malformed message
     0x08 - internal error - memory or other internal error
 
-Defines and further details of the protocol can be found in [kssl.h](kssl.h)
+Defines and further details of the protocol can be found in [kssl.h](https://github.com/cloudflare/keyless/blob/master/kssl.h)
+from the C implementation.
 
 ![Image](docs/keyless_exchange_diagram.png)
 
