@@ -46,7 +46,7 @@
 		{
 			"importpath": "github.com/cloudflare/cfssl/log",
 			"repository": "https://github.com/cloudflare/cfssl",
-			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
+			"revision": "737cb1da8f508eb43b50bde3c3ccbbf2f8050deb",
 			"branch": "master",
 			"path": "/log"
 		},

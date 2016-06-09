@@ -36,6 +36,7 @@ var (
 )
 
 func init() {
+	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
 	flag.StringVar(&initCertFile, "init-cert", "default.pem", "Default certificate used for server initialization")
 	flag.StringVar(&initKeyFile, "init-key", "default-key.pem", "Default key used for server initialization")
