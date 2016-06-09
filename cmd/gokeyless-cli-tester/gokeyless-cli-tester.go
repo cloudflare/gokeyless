@@ -25,7 +25,7 @@ var (
 )
 
 func init() {
-	flag.IntVar(&log.Level, "loglevel", 1, "Degree of logging")
+	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&certFile, "cert", "client.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyserver_cacert.pem", "Keyless server certificate authority")
