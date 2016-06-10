@@ -112,12 +112,6 @@
 			"branch": "master"
 		},
 		{
-			"importpath": "github.com/stathat/go",
-			"repository": "https://github.com/stathat/go",
-			"revision": "01d012b9ee2ecc107cb28b6dd32d9019ed5c1d77",
-			"branch": "master"
-		},
-		{
 			"importpath": "golang.org/x/crypto/pkcs12",
 			"repository": "https://go.googlesource.com/crypto",
 			"revision": "3760e016850398b85094c4c99e955b8c3dea5711",
