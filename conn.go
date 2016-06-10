@@ -106,12 +106,14 @@ func (c *Conn) doRead() error {
 	}
 
 	c.Lock()
-	if _, ok := c.listeners[h.ID]; !ok {
-		c.listeners[h.ID] = make(chan *Header, 1)
+	ch, ok := c.listeners[h.ID]
+	if !ok {
+		ch = make(chan *Header, 1)
+		c.listeners[h.ID] = ch
 	}
 	c.Unlock()
 
-	c.listeners[h.ID] <- h
+	ch <- h
 
 	return nil
 }
