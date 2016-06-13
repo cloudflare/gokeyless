@@ -118,7 +118,7 @@ func (c *Client) ClearBlacklist() {
 
 // Dial smartly establishes a connection to a registered keyless server
 // or reuses an existing connection if possible.
-func (c *Client) Dial(ski gokeyless.SKI) (*gokeyless.Conn, error) {
+func (c *Client) Dial(ski gokeyless.SKI) (*Conn, error) {
 	c.m.RLock()
 	r, ok := c.remotes[ski]
 	c.m.RUnlock()

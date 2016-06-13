@@ -16,17 +16,113 @@ import (
 	"github.com/miekg/dns"
 )
 
+// connPoolType is a async safe pool of established gokeyless Conn
+// so we don't need to do TLS handshake unnecessarily.
+type connPoolType struct {
+	pool map[string]*Conn
+	sync.RWMutex
+}
+
+// connPool keeps all active Conn
+var connPool connPoolType
+
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
-	Dial(*Client) (*gokeyless.Conn, error)
+	Dial(*Client) (*Conn, error)
 	Add(Remote) Remote
+}
+
+// A Conn represents a long-lived client connection to a keyserver.
+type Conn struct {
+	*gokeyless.Conn
+	addr string
+	ch   chan bool // a channel that will be read by health-check goroutine
 }
 
 // A singleRemote is an individual remote server
 type singleRemote struct {
-	net.Addr
-	ServerName string
-	conn       *gokeyless.Conn
+	net.Addr          // actual address
+	ServerName string // hostname for TLS verification
+}
+
+func init() {
+	connPool = connPoolType{
+		pool: make(map[string]*Conn),
+	}
+}
+
+// NewConn creates a new Conn based on a gokeyless.Conn
+func NewConn(addr string, conn *gokeyless.Conn) *Conn {
+	ch := make(chan bool)
+	c := Conn{
+		Conn: conn,
+		addr: addr,
+		ch:   ch,
+	}
+
+	go healthchecker(&c, ch, 1*time.Second)
+	ch <- true
+	return &c
+}
+
+// Close closes a Conn
+func (conn *Conn) Close() {
+	close(conn.ch)
+	conn.Conn.Close()
+	connPool.Remove(conn.addr)
+}
+
+// healthchecker is a recurrent timer function that tests the connections
+func healthchecker(conn *Conn, ch chan bool, after time.Duration) {
+	select {
+	case start, ok := <-ch:
+		if ok && start {
+			time.Sleep(after)
+			if !conn.Conn.IsClosed() {
+				err := conn.Ping(nil)
+				if err != nil {
+					log.Debug("health check ping failed:", err)
+					// shut down the conn
+					conn.Close()
+					return
+				}
+				log.Debug("start a new health check timer")
+				// start a new timer
+				go healthchecker(conn, ch, after)
+				ch <- true
+			}
+		}
+	}
+}
+
+// Get returns a Conn from the pool if there is any.
+func (p connPoolType) Get(key string) *Conn {
+	p.RLock()
+	defer p.RUnlock()
+
+	conn, ok := p.pool[key]
+	if ok {
+		return conn
+	}
+	return nil
+}
+
+// Add adds a Conn to the pool.
+func (p connPoolType) Add(key string, conn *Conn) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.pool[key] = conn
+	log.Debug("add conn with key:", key)
+}
+
+// Remove removes a Conn keyed by key.
+func (p connPoolType) Remove(key string) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.pool[key] = nil
+	log.Debug("remove conn with key:", key)
 }
 
 // NewServer creates a new remote based a given addr and server name.
@@ -107,13 +203,14 @@ func (c *Client) LookupServer(hostport string) (Remote, error) {
 }
 
 // Dial dials a remote server, returning an existing connection if possible.
-func (s *singleRemote) Dial(c *Client) (*gokeyless.Conn, error) {
+func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	if c.Blacklist.Contains(s) {
 		return nil, fmt.Errorf("server %s on client blacklist", s.String())
 	}
 
-	if s.conn != nil && s.conn.Use() {
-		return s.conn, nil
+	conn := connPool.Get(s.String())
+	if conn != nil && !conn.IsClosed() {
+		return conn, nil
 	}
 
 	config := copyTLSConfig(c.Config)
@@ -124,8 +221,10 @@ func (s *singleRemote) Dial(c *Client) (*gokeyless.Conn, error) {
 		return nil, err
 	}
 
-	s.conn = gokeyless.NewConn(inner)
-	return s.conn, nil
+	gconn := gokeyless.NewConn(inner)
+	conn = NewConn(s.String(), gconn)
+	connPool.Add(s.String(), conn)
+	return conn, nil
 }
 
 func (s *singleRemote) Add(r Remote) Remote {
@@ -214,7 +313,7 @@ func NewGroup(remotes []Remote) (*Group, error) {
 }
 
 // Dial returns a connection with best latency measurement.
-func (g *Group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
+func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 	g.Lock()
 	defer g.Unlock()
 
@@ -266,6 +365,7 @@ func (g *Group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 			duration := time.Since(start)
 
 			if err != nil {
+				defer conn.Close()
 				i.latency.Reset()
 				i.errorCount++
 				log.Infof("Ping failed: %v", err)
@@ -273,7 +373,6 @@ func (g *Group) Dial(c *Client) (conn *gokeyless.Conn, err error) {
 				log.Debug("ping duration:", duration)
 				i.latency.Update(duration)
 			}
-			defer conn.Close()
 		}
 		sort.Sort(g)
 
