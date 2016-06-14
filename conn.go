@@ -47,6 +47,8 @@ func (c *Conn) IsClosed() bool {
 
 // WriteHeader marshals and header and writes it to the conn.
 func (c *Conn) WriteHeader(h *Header) error {
+	c.Lock()
+	defer c.Unlock()
 	b, err := h.MarshalBinary()
 	if err != nil {
 		return err
