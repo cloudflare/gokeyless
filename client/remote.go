@@ -24,7 +24,7 @@ type connPoolType struct {
 }
 
 // connPool keeps all active Conn
-var connPool connPoolType
+var connPool *connPoolType
 
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
@@ -35,8 +35,8 @@ type Remote interface {
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
 	*gokeyless.Conn
-	addr string
-	ch   chan bool // a channel that will be read by health-check goroutine
+	addr      string
+	hcTimerCh chan bool // a channel that will be read by health-check goroutine
 }
 
 // A singleRemote is an individual remote server
@@ -46,7 +46,7 @@ type singleRemote struct {
 }
 
 func init() {
-	connPool = connPoolType{
+	connPool = &connPoolType{
 		pool: make(map[string]*Conn),
 	}
 }
@@ -55,9 +55,9 @@ func init() {
 func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 	ch := make(chan bool)
 	c := Conn{
-		Conn: conn,
-		addr: addr,
-		ch:   ch,
+		Conn:      conn,
+		addr:      addr,
+		hcTimerCh: ch,
 	}
 
 	go healthchecker(&c, ch, 1*time.Second)
@@ -65,38 +65,41 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 	return &c
 }
 
-// Close closes a Conn
+// Close closes a Conn and remove it from the conn pool
 func (conn *Conn) Close() {
-	close(conn.ch)
+	close(conn.hcTimerCh)
 	conn.Conn.Close()
 	connPool.Remove(conn.addr)
 }
 
 // healthchecker is a recurrent timer function that tests the connections
 func healthchecker(conn *Conn, ch chan bool, after time.Duration) {
-	select {
-	case start, ok := <-ch:
-		if ok && start {
-			time.Sleep(after)
-			if !conn.Conn.IsClosed() {
-				err := conn.Ping(nil)
-				if err != nil {
-					log.Debug("health check ping failed:", err)
-					// shut down the conn
-					conn.Close()
-					return
+	for {
+		select {
+		case start, ok := <-ch:
+			if ok && start {
+				time.Sleep(after)
+				if !conn.Conn.IsClosed() {
+					err := conn.Ping(nil)
+					if err != nil {
+						log.Debug("health check ping failed:", err)
+						// shut down the conn and remove it from the
+						// conn pool.
+						conn.Close()
+						return
+					}
+					log.Debug("start a new health check timer")
+					ch <- true
 				}
-				log.Debug("start a new health check timer")
-				// start a new timer
-				go healthchecker(conn, ch, after)
-				ch <- true
+			} else { // channel is closed, i.e. the connection is closed.
+				return
 			}
 		}
 	}
 }
 
 // Get returns a Conn from the pool if there is any.
-func (p connPoolType) Get(key string) *Conn {
+func (p *connPoolType) Get(key string) *Conn {
 	p.RLock()
 	defer p.RUnlock()
 
@@ -108,7 +111,7 @@ func (p connPoolType) Get(key string) *Conn {
 }
 
 // Add adds a Conn to the pool.
-func (p connPoolType) Add(key string, conn *Conn) {
+func (p *connPoolType) Add(key string, conn *Conn) {
 	p.Lock()
 	defer p.Unlock()
 
@@ -117,7 +120,7 @@ func (p connPoolType) Add(key string, conn *Conn) {
 }
 
 // Remove removes a Conn keyed by key.
-func (p connPoolType) Remove(key string) {
+func (p *connPoolType) Remove(key string) {
 	p.Lock()
 	defer p.Unlock()
 
