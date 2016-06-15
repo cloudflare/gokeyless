@@ -49,12 +49,19 @@ func (c *Conn) IsClosed() bool {
 func (c *Conn) WriteHeader(h *Header) error {
 	c.Lock()
 	defer c.Unlock()
+
+	if c.Conn == nil {
+		return fmt.Errorf("connection is closed or not yet ready")
+	}
+
 	b, err := h.MarshalBinary()
 	if err != nil {
 		return err
 	}
+
 	_, err = c.Write(b)
 	return err
+
 }
 
 // ReadHeader unmarshals a header from the wire into an internal
@@ -62,6 +69,11 @@ func (c *Conn) WriteHeader(h *Header) error {
 func (c *Conn) ReadHeader() (*Header, error) {
 	c.Lock()
 	defer c.Unlock()
+
+	if c.Conn == nil {
+		return nil, fmt.Errorf("connection is closed or not yet ready")
+	}
+
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
