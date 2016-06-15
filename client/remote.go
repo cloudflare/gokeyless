@@ -35,8 +35,7 @@ type Remote interface {
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
 	*gokeyless.Conn
-	addr      string
-	hcTimerCh chan bool // a channel that will be read by health-check goroutine
+	addr string
 }
 
 // A singleRemote is an individual remote server
@@ -53,47 +52,35 @@ func init() {
 
 // NewConn creates a new Conn based on a gokeyless.Conn
 func NewConn(addr string, conn *gokeyless.Conn) *Conn {
-	ch := make(chan bool)
 	c := Conn{
-		Conn:      conn,
-		addr:      addr,
-		hcTimerCh: ch,
+		Conn: conn,
+		addr: addr,
 	}
 
-	go healthchecker(&c, ch, 1*time.Second)
-	ch <- true
+	go healthchecker(&c, 1*time.Second)
 	return &c
 }
 
 // Close closes a Conn and remove it from the conn pool
 func (conn *Conn) Close() {
-	close(conn.hcTimerCh)
 	conn.Conn.Close()
 	connPool.Remove(conn.addr)
 }
 
 // healthchecker is a recurrent timer function that tests the connections
-func healthchecker(conn *Conn, ch chan bool, after time.Duration) {
+func healthchecker(conn *Conn, after time.Duration) {
 	for {
-		select {
-		case start, ok := <-ch:
-			if ok && start {
-				time.Sleep(after)
-				if !conn.Conn.IsClosed() {
-					err := conn.Ping(nil)
-					if err != nil {
-						log.Debug("health check ping failed:", err)
-						// shut down the conn and remove it from the
-						// conn pool.
-						conn.Close()
-						return
-					}
-					log.Debug("start a new health check timer")
-					ch <- true
-				}
-			} else { // channel is closed, i.e. the connection is closed.
+		time.Sleep(after)
+		if !conn.Conn.IsClosed() {
+			err := conn.Ping(nil)
+			if err != nil {
+				log.Debug("health check ping failed:", err)
+				// shut down the conn and remove it from the
+				// conn pool.
+				conn.Close()
 				return
 			}
+			log.Debug("start a new health check timer")
 		}
 	}
 }
