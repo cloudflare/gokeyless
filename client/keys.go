@@ -79,9 +79,8 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
-	result, err := conn.DoOperation(&gokeyless.Operation{
+	result, err := conn.Conn.DoOperation(&gokeyless.Operation{
 		Opcode:   op,
 		Payload:  msg,
 		SKI:      key.ski,
@@ -91,6 +90,7 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 		SNI:      key.sni,
 	})
 	if err != nil {
+		defer conn.Close()
 		return nil, err
 	}
 

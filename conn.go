@@ -14,7 +14,6 @@ import (
 type Conn struct {
 	*tls.Conn
 	sync.Mutex
-	users     uint32
 	listeners map[uint32]chan *Header
 }
 
@@ -22,22 +21,8 @@ type Conn struct {
 func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
 		Conn:      inner,
-		users:     1,
 		listeners: make(map[uint32]chan *Header),
 	}
-}
-
-// Use marks conn as used by the current goroutine, returning ok if
-// the Conn is open. This should be accompanied by a later Close()
-// call.
-func (c *Conn) Use() bool {
-	c.Lock()
-	defer c.Unlock()
-	if c.users == 0 {
-		return false
-	}
-	c.users++
-	return true
 }
 
 // Close marks conn as closed and closes the inner net.Conn if it is
@@ -45,23 +30,25 @@ func (c *Conn) Use() bool {
 func (c *Conn) Close() {
 	c.Lock()
 	defer c.Unlock()
-	c.users--
-	if c.users == 0 {
+	if c.Conn != nil {
 		if err := c.Conn.Close(); err != nil {
 			log.Errorf("Unable to close connection: %v", err)
 		}
 	}
+	c.Conn = nil
 }
 
 // IsClosed returns true if the connection has been closed.
 func (c *Conn) IsClosed() bool {
 	c.Lock()
 	defer c.Unlock()
-	return c.users == 0
+	return c.Conn == nil
 }
 
 // WriteHeader marshals and header and writes it to the conn.
 func (c *Conn) WriteHeader(h *Header) error {
+	c.Lock()
+	defer c.Unlock()
 	b, err := h.MarshalBinary()
 	if err != nil {
 		return err
