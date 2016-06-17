@@ -13,7 +13,7 @@ type statistics struct {
 	requestsInvalid prometheus.Counter
 }
 
-func newStatistics(metricsAddr string) *statistics {
+func newStatistics() *statistics {
 	stats := &statistics{
 		requests: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "requests",
@@ -26,10 +26,6 @@ func newStatistics(metricsAddr string) *statistics {
 	}
 	prometheus.MustRegister(stats.requests)
 	prometheus.MustRegister(stats.requestsInvalid)
-
-	if metricsAddr != "" {
-		go stats.ListenAndServe(metricsAddr)
-	}
 
 	return stats
 }
@@ -45,9 +41,12 @@ func (stats *statistics) logRequest(requestBegin time.Time) {
 	stats.requests.Observe(float64(time.Now().Sub(requestBegin)))
 }
 
-func (stats *statistics) ListenAndServe(addr string) {
-	http.Handle("/metrics", prometheus.Handler())
+func (s *Server) MetricsListenAndServe() error {
+	if s.MetricsAddr != "" {
+		http.Handle("/metrics", prometheus.Handler())
 
-	log.Infof("Serving metrics endpoint at %s/metrics\n", addr)
-	log.Critical(http.ListenAndServe(addr, nil))
+		log.Infof("Serving metrics endpoint at %s/metrics\n", s.MetricsAddr)
+		return http.ListenAndServe(s.MetricsAddr, nil)
+	}
+	return nil
 }

@@ -159,6 +159,8 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 type Server struct {
 	// TCP address to listen on
 	Addr string
+	// metrics address
+	MetricsAddr string
 	// Config is initialized with the auth configuration used for communicating with keyless clients.
 	Config *tls.Config
 	// keys contains the private keys for the server
@@ -172,7 +174,8 @@ type Server struct {
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr string) *Server {
 	return &Server{
-		Addr: addr,
+		Addr:        addr,
+		MetricsAddr: metricsAddr,
 		Config: &tls.Config{
 			ClientCAs:    keylessCA,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -183,7 +186,7 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr
 			},
 		},
 		Keys:  NewKeystore(),
-		stats: newStatistics(metricsAddr),
+		stats: newStatistics(),
 	}
 }
 

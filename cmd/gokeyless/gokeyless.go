@@ -81,6 +81,7 @@ func main() {
 	}
 
 	go func() { log.Fatal(s.ListenAndServe()) }()
+	go func() { log.Critical(s.MetricsListenAndServe()) }()
 
 	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 		log.Fatal(err)
