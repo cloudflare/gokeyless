@@ -346,7 +346,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 			if err != nil {
 				i.latency.Reset()
 				i.errorCount++
-				log.Infof("Dial failed: %v", err)
+				log.Infof("ping failed: %v", err)
 				continue
 			}
 
@@ -358,7 +358,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 				defer conn.Close()
 				i.latency.Reset()
 				i.errorCount++
-				log.Infof("Ping failed: %v", err)
+				log.Infof("ping failed: %v", err)
 			} else {
 				log.Debug("ping duration:", duration)
 				i.latency.Update(duration)
