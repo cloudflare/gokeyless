@@ -24,9 +24,6 @@ func newStatistics() *statistics {
 			Help: "Number of invalid requests.",
 		}),
 	}
-	prometheus.MustRegister(stats.requests)
-	prometheus.MustRegister(stats.requestsInvalid)
-
 	return stats
 }
 
@@ -42,6 +39,9 @@ func (stats *statistics) logRequest(requestBegin time.Time) {
 }
 
 func (s *Server) MetricsListenAndServe() error {
+	prometheus.MustRegister(s.stats.requests)
+	prometheus.MustRegister(s.stats.requestsInvalid)
+
 	if s.MetricsAddr != "" {
 		http.Handle("/metrics", prometheus.Handler())
 
