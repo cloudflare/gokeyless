@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"io/ioutil"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +17,7 @@ const (
 	serverCert   = "testdata/server.pem"
 	serverKey    = "testdata/server-key.pem"
 	keylessCA    = "testdata/ca.pem"
-	serverAddr   = "localhost:3407"
-	slowAddr     = "localhost:5103"
+	serverAddr   = "localhost:0"
 	rsaPrivKey   = "testdata/rsa.key"
 	ecdsaPrivKey = "testdata/ecdsa.key"
 
@@ -89,7 +87,8 @@ func TestMain(t *testing.T) {
 	}
 
 	// start a remote server at serverAddr
-	remote, err = c.LookupServer(serverAddr)
+	host, port, _ := net.SplitHostPort(s.Addr)
+	remote, err = c.LookupServerWithName("localhost", host, port)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,14 +138,14 @@ func TestBadRemote(t *testing.T) {
 }
 
 func TestSlowServer(t *testing.T) {
-	// Setup keyless server
+	// Setup a slow keyless server
 	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA,
-		slowAddr, slowAddr)
+		serverAddr, serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	l, err := net.Listen("tcp", slowAddr)
+	l, err := net.Listen("tcp", serverAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,42 +160,42 @@ func TestSlowServer(t *testing.T) {
 	// wait for server to come up
 	time.Sleep(100 * time.Millisecond)
 
-	// clear cached remotes and set a remote group of slowAddr and serverAddr
-	remote, err := c.LookupServer(serverAddr)
+	// clear cached remotes and set a remote group of normal and slow servers
+	host, p, _ := net.SplitHostPort(s.Addr)
+	remote, err = c.LookupServerWithName("localhost", host, p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	slowRemote, err := c.LookupServer(slowAddr)
+
+	s2host, s2port, _ := net.SplitHostPort(sl.Addr().String())
+	slowRemote, err := c.LookupServerWithName("localhost", s2host, s2port)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("slow server is at %s:%s", s2host, s2port)
 
 	c.DefaultRemote = remote.Add(slowRemote)
-
 	c.servers = map[string]Remote{}
 	c.remotes = map[gokeyless.SKI]Remote{}
+	t.Log("c.DefaultRemote size:", len(c.DefaultRemote.(*Group).remotes))
 
 	// register the ECDDSA certificate again with the default broken remote
 	registerCertFile(ecdsaPubKey, t)
 
-	conn, err := c.Dial(ecdsaSKI)
+	// Initially picked a random server
+	_, err = c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	// Initially picked the slow-down server at port 5103
-	if !strings.HasSuffix(conn.addr, ":5103") {
-		t.Fatal("bad remote addr:", conn.addr)
 	}
 
 	time.Sleep(200 * time.Millisecond)
 
-	// After a few health check, must pick the normal server at port 3407
-	conn, err = c.Dial(ecdsaSKI)
+	// After a few health checks, must pick the normal server
+	conn, err := c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(conn.addr, ":3407") {
+	if conn.addr != s.Addr {
 		t.Fatal("bad remote addr:", conn.addr)
 	}
 }

@@ -157,7 +157,7 @@ func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 
 // LookupServerWithName uses DNS to look up an a group of Remote servers with
 // optional TLS server name.
-func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote, error) {
+func (c *Client) LookupServerWithName(serverName, host, port string) (Remote, error) {
 	if serverName == "" {
 		serverName = host
 	}
@@ -167,9 +167,14 @@ func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote
 		return nil, err
 	}
 
+	portNumber, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, err
+	}
+
 	var servers []Remote
 	for _, ip := range ips {
-		addr := &net.TCPAddr{IP: ip, Port: port}
+		addr := &net.TCPAddr{IP: ip, Port: portNumber}
 		if !c.Blacklist.Contains(addr) {
 			servers = append(servers, NewServer(addr, serverName))
 		}
@@ -179,12 +184,7 @@ func (c *Client) LookupServerWithName(serverName, host string, port int) (Remote
 
 // LookupServer with default ServerName.
 func (c *Client) LookupServer(hostport string) (Remote, error) {
-	host, p, err := net.SplitHostPort(hostport)
-	if err != nil {
-		return nil, err
-	}
-
-	port, err := strconv.Atoi(p)
+	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
 		return nil, err
 	}
@@ -250,17 +250,18 @@ type ewmaLatency struct {
 	measured bool
 }
 
-func (l ewmaLatency) Update(val time.Duration) {
+func (l *ewmaLatency) Update(val time.Duration) {
+	l.measured = true
 	l.val /= 2
 	l.val += (val / 2)
 }
 
-func (l ewmaLatency) Reset() {
+func (l *ewmaLatency) Reset() {
 	l.val = 0
 	l.measured = false
 }
 
-func (l ewmaLatency) Better(r ewmaLatency) bool {
+func (l *ewmaLatency) Better(r *ewmaLatency) bool {
 	// if l is not measured (it also means last measurement was
 	// a failure), any updated/measured latency is better than
 	// l. Also if neither l or r is measured, l can't be better
@@ -279,7 +280,7 @@ func (l ewmaLatency) Better(r ewmaLatency) bool {
 type item struct {
 	Remote
 	index      int
-	latency    ewmaLatency
+	latency    *ewmaLatency
 	errorCount int
 }
 
@@ -296,7 +297,7 @@ func NewGroup(remotes []Remote) (*Group, error) {
 	}
 	g := new(Group)
 	for _, r := range remotes {
-		heap.Push(g, &item{Remote: r})
+		heap.Push(g, &item{Remote: r, latency: &ewmaLatency{}})
 	}
 
 	return g, nil
@@ -360,7 +361,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 				i.errorCount++
 				log.Infof("ping failed: %v", err)
 			} else {
-				log.Debug("ping duration:", duration)
+				log.Debug(conn.addr, " ping duration:", duration)
 				i.latency.Update(duration)
 			}
 		}
@@ -375,7 +376,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 // Add adds r into the underlying Remote list
 func (g *Group) Add(r Remote) Remote {
 	if g != r {
-		heap.Push(g, &item{Remote: r})
+		heap.Push(g, &item{Remote: r, latency: &ewmaLatency{}})
 	}
 	return g
 }

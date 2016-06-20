@@ -393,7 +393,8 @@ func (s *Server) ListenAndServe() error {
 		return err
 	}
 
-	log.Infof("Listenting at %s\n", l.Addr())
+	s.Addr = l.Addr().String()
+	log.Infof("Listening at %s\n", l.Addr())
 
 	return s.Serve(l)
 }
