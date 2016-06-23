@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/asn1"
+	"io/ioutil"
 	"log"
 	"math/big"
 	"testing"
@@ -143,5 +144,30 @@ func TestRSADecrypt(t *testing.T) {
 	if bytes.Compare(ptxt, m) == 0 {
 		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
 		t.Fatal("rsa decrypt suceeded despite incorrect SessionKeyLen")
+	}
+}
+
+func TestCertLoad(t *testing.T) {
+	certChainBytes, _ := ioutil.ReadFile(tlsChain)
+
+	var chain []byte
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	conn, err := remote.Dial(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Send sigalgs, expect correct cert
+	sigAlgs := make([]byte, 2)
+	if chain, err = conn.GetCertificate(sigAlgs, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(certChainBytes, chain) != 0 {
+		t.Logf("m: %dB\tcertChain: %dB", len(certChainBytes), len(chain))
+		t.Fatal("certificate chain mismatch")
 	}
 }
