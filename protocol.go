@@ -33,6 +33,8 @@ const (
 	TagSubjectKeyIdentifier = 0x04
 	// TagServerIP implies an IPv4/6 address of the proxying server.
 	TagServerIP = 0x05
+	// TagSigAlgs informs proxying server of the client's supported signature algorithms.
+	TagSigAlgs = 0x06
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
@@ -53,6 +55,8 @@ func (t Tag) String() string {
 		return "TagSubjectKeyIdentifier"
 	case TagServerIP:
 		return "TagServerIP"
+	case TagSigAlgs:
+		return "TagSigAlgs"
 	case TagOpcode:
 		return "TagOpcode"
 	case TagPayload:
@@ -96,6 +100,9 @@ const (
 	// OpECDSASignSHA512 requests an ECDSA signature on an SHA512 hash payload.
 	OpECDSASignSHA512 = 0x17
 
+	// OpCertificateRequest requests a certificate
+	OpCertificateRequest = 0x20
+
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing = 0xF1
 	// OpPong indicates a response echoed from an OpPing test message.
@@ -138,6 +145,8 @@ func (o Op) String() string {
 		return "OpECDSASignSHA384"
 	case OpECDSASignSHA512:
 		return "OpECDSASignSHA512"
+	case OpCertificateRequest:
+		return "OpCertificateRequest"
 	case OpPing:
 		return "OpPing"
 	case OpPong:
@@ -173,6 +182,8 @@ const (
 	ErrFormat
 	// ErrInternal indicates an internal error.
 	ErrInternal
+	// ErrCertNotFound indicates missing certificate.
+	ErrCertNotFound
 )
 
 func (e Error) Error() string {
@@ -258,7 +269,15 @@ func GetSKICertPEM(certPEM []byte) (SKI, error) {
 	return GetSKICert(cert)
 }
 
-// Digest represents a SHA-256 digest of an RSA public key modulus.
+// SigAlgs represents an array of two-byte sigalgs
+type SigAlgs []byte
+
+// Valid checks to see if it is even length.
+func (sigAlgs SigAlgs) Valid() bool {
+	return len(sigAlgs)%2 == 0
+}
+
+// Digest represents a SHA-256 digest of an RSA public key modulus
 type Digest [sha256.Size]byte
 
 var nilDigest Digest
@@ -331,17 +350,19 @@ type Operation struct {
 	Digest   Digest
 	ClientIP net.IP
 	ServerIP net.IP
+	SigAlgs  SigAlgs
 	SNI      string
 	AKI      SKI
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %s, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
+	return fmt.Sprintf("[Opcode: %s, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SigAlgs: %02x, SNI: %s]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
 		o.ClientIP,
 		o.ServerIP,
+		o.SigAlgs,
 		o.SNI,
 	)
 }
@@ -391,6 +412,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 
 	if o.SNI != "" {
 		b = append(b, tlvBytes(TagServerName, []byte(o.SNI))...)
+	}
+
+	if o.SigAlgs.Valid() {
+		b = append(b, tlvBytes(TagSigAlgs, o.SigAlgs[:])...)
 	}
 
 	if len(b)+headerSize < paddedLength {
@@ -447,6 +472,11 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		case TagServerName:
 			o.SNI = string(data)
+
+		case TagSigAlgs:
+			if len(data)%2 == 0 {
+				o.SigAlgs = data
+			}
 
 		case TagPadding:
 			// ignore padding

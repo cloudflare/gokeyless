@@ -2,6 +2,7 @@ package tests
 
 import (
 	"crypto"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
@@ -71,6 +72,8 @@ func init() {
 		log.Fatal(err)
 	}
 
+	s.CertLoader = dummyCertLoader
+
 	listening := make(chan bool)
 	go func() {
 		listening <- true
@@ -108,6 +111,17 @@ func init() {
 		log.Fatal(err)
 	}
 	if ecdsaKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
+		log.Fatal(err)
+	}
+
+	getCert, err := c.NewGetCertificate(nil, serverAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	hello := new(tls.ClientHelloInfo)
+	_, err = getCert(hello)
+	if err != nil {
 		log.Fatal(err)
 	}
 }

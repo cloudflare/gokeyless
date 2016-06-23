@@ -169,7 +169,12 @@ type Server struct {
 	ActivationToken []byte
 	// stats stores statistics about keyless requests.
 	stats *statistics
+	// CertLoader is used for loading certificates
+	CertLoader CertLoader
 }
+
+// CertLoader is a function that returns a certificate given SigAlgs, Server IP, SNI
+type CertLoader func(sigAlgs gokeyless.SigAlgs, serverIP net.IP, sni string) (certChain []byte, err error)
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr string) *Server {
@@ -233,6 +238,22 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		case gokeyless.OpPing:
 			connError = conn.RespondPong(h.ID, h.Body.Payload)
 			s.stats.logRequest(requestBegin)
+			continue
+
+		case gokeyless.OpCertificateRequest:
+			if s.CertLoader == nil {
+				log.Error(gokeyless.ErrCertNotFound)
+				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
+				continue
+			} else {
+				certChain, err := s.CertLoader(h.Body.SigAlgs, h.Body.ServerIP, h.Body.SNI)
+				if err != nil {
+					connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
+					continue
+				}
+				connError = conn.Respond(h.ID, certChain)
+			}
+
 			continue
 
 		case gokeyless.OpRSADecrypt:

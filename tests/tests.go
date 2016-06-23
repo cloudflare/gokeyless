@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"errors"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"strconv"
@@ -22,9 +23,18 @@ import (
 	"github.com/cloudflare/gokeyless/tests/testapi"
 )
 
+const (
+	tlsChain = "testdata/tlschain.pem"
+)
+
 // hashPtxt hashes the plaintext with the given hash algorithm.
 func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 	return h.New().Sum(ptxt)[len(ptxt):]
+}
+
+// dummyCertLoader loads a TLS chain from disk
+func dummyCertLoader(sigAlgs gokeyless.SigAlgs, clientIP net.IP, sni string) (chain []byte, err error) {
+	return ioutil.ReadFile(tlsChain)
 }
 
 // NewPingTest generates a TestFunc to connect and perform a ping.
