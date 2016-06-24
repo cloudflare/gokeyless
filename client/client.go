@@ -395,7 +395,7 @@ func (c *Client) NewGetCertificate(sigAlgSort sigAlgSort, server string) (func(c
 			return nil, err
 		}
 
-		cert.PrivateKey, err = c.RegisterCert(server, cert.Leaf)
+		cert.PrivateKey, err = c.RegisterPublicKeyTemplate(server, cert.Leaf.PublicKey, hello.ServerName, nil)
 		if err != nil {
 			return nil, err
 		}
