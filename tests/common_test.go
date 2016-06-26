@@ -30,7 +30,7 @@ const (
 var (
 	s        *server.Server
 	c        *client.Client
-	rsaKey   *client.PrivateKey
+	rsaKey   *client.RSAPrivateKey
 	ecdsaKey *client.PrivateKey
 	remote   client.Remote
 )
@@ -99,9 +99,11 @@ func init() {
 	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if rsaKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
+	var privKey *client.PrivateKey
+	if privKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
 		log.Fatal(err)
 	}
+	rsaKey = &client.RSAPrivateKey{PrivateKey: *privKey}
 
 	if pemBytes, err = ioutil.ReadFile(ecdsaPubKey); err != nil {
 		log.Fatal(err)

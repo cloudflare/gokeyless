@@ -224,9 +224,14 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
 
 	for _, cert := range certs {
+		var privRSA *client.RSAPrivateKey
 		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
 		if err != nil {
 			return nil, err
+		}
+
+		if _, ok := cert.PublicKey.(*rsa.PublicKey); ok {
+			privRSA = &client.RSAPrivateKey{PrivateKey: *priv}
 		}
 
 		ski, err := gokeyless.GetSKICert(cert)
@@ -234,8 +239,8 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 			return nil, err
 		}
 
-		if _, ok := priv.Public().(*rsa.PublicKey); ok {
-			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(priv))
+		if privRSA != nil {
+			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(privRSA))
 		}
 
 		for name, test := range NewSignTests(priv) {

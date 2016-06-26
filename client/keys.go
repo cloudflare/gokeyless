@@ -22,13 +22,20 @@ type PrivateKey struct {
 	clientIP net.IP
 	serverIP net.IP
 	sni      string
-	crypto.Signer
-	crypto.Decrypter
 }
 
-// Public returns the public key corresponding to the opaque, private key.
+type RSAPrivateKey struct {
+	PrivateKey
+}
+
+// Public returns the public key corresponding to the opaque private key.
 func (key *PrivateKey) Public() crypto.PublicKey {
 	return key.public
+}
+
+// Public returns the public key corresponding to the opaque private key.
+func (key *RSAPrivateKey) Public() crypto.PublicKey {
+	return key.PrivateKey.public
 }
 
 func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
@@ -121,8 +128,13 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	return key.execute(op, msg)
 }
 
+// Sign implements the crypto.Signer operation for the given key.
+func (key *RSAPrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
+	return key.PrivateKey.Sign(r, msg, opts)
+}
+
 // Decrypt implements the crypto.Decrypter operation for the given key.
-func (key *PrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
+func (key *RSAPrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
 	opts1v15, ok := opts.(*rsa.PKCS1v15DecryptOptions)
 	if opts != nil && !ok {
 		return nil, errors.New("invalid options for Decrypt")
