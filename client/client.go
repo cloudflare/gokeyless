@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -395,10 +396,17 @@ func (c *Client) NewGetCertificate(sigAlgSort sigAlgSort, server string) (func(c
 			return nil, err
 		}
 
-		cert.PrivateKey, err = c.RegisterPublicKeyTemplate(server, cert.Leaf.PublicKey, hello.ServerName, nil)
+		priv, err := c.RegisterPublicKeyTemplate(server, cert.Leaf.PublicKey, hello.ServerName, nil)
 		if err != nil {
 			return nil, err
 		}
+
+		if _, ok := cert.Leaf.PublicKey.(*rsa.PublicKey); ok {
+			cert.PrivateKey = RSAPrivateKey{PrivateKey: *priv}
+		} else {
+			cert.PrivateKey = priv
+		}
+
 		return
 	}, nil
 }
