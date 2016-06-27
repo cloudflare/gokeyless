@@ -39,14 +39,18 @@ func (stats *statistics) logRequest(requestBegin time.Time) {
 }
 
 func (s *Server) MetricsListenAndServe() error {
-	prometheus.MustRegister(s.stats.requests)
-	prometheus.MustRegister(s.stats.requestsInvalid)
-
 	if s.MetricsAddr != "" {
+		s.RegisterMetrics()
 		http.Handle("/metrics", prometheus.Handler())
 
 		log.Infof("Serving metrics endpoint at %s/metrics\n", s.MetricsAddr)
 		return http.ListenAndServe(s.MetricsAddr, nil)
 	}
 	return nil
+}
+
+// RegisterMetrics registers server metrics with global prometheus handler
+func (s *Server) RegisterMetrics() {
+	prometheus.MustRegister(s.stats.requests)
+	prometheus.MustRegister(s.stats.requestsInvalid)
 }
