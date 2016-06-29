@@ -402,7 +402,7 @@ func (c *Client) NewGetCertificate(sigAlgSort sigAlgSort, server string) (func(c
 		}
 
 		if _, ok := cert.Leaf.PublicKey.(*rsa.PublicKey); ok {
-			cert.PrivateKey = RSAPrivateKey{PrivateKey: *priv}
+			cert.PrivateKey = &RSAPrivateKey{PrivateKey: *priv}
 		} else {
 			cert.PrivateKey = priv
 		}
