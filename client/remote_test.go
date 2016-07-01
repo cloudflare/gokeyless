@@ -72,15 +72,14 @@ func TestMain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listening := make(chan bool)
 	go func() {
-		listening <- true
 		if err := s.ListenAndServe(); err != nil {
 			t.Fatal(err)
 		}
 	}()
-	<-listening
 
+	// wait for server to start
+	time.Sleep(100 * time.Millisecond)
 	// Setup keyless client
 	if c, err = NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
 		t.Fatal(err)
