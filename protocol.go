@@ -205,6 +205,8 @@ func (e Error) Error() string {
 		errStr = "malformed message"
 	case ErrInternal:
 		errStr = "internal error"
+	case ErrCertNotFound:
+		errStr = "certificate not found"
 	default:
 		errStr = "unknown error"
 	}
