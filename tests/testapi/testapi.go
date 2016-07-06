@@ -1,6 +1,7 @@
 package testapi
 
 import (
+	"sync"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
@@ -99,4 +100,39 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 			}
 		}
 	}
+}
+
+// RunBenchmarkTests runs each tests repetitively with multiple goroutines.
+func (results *Results) RunBenchmarkTests(repeats, workers int) {
+	log.Debugf("Running each test for %d times with %d workers", repeats, workers)
+
+	var wg sync.WaitGroup
+	for name := range results.Tests {
+		log.Debugf("Running %s", name)
+		test := results.Tests[name]
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < repeats; i++ {
+					testStart := time.Now()
+					err := test.run()
+					test.Get("latency").(metrics.Timer).UpdateSince(testStart)
+					results.Get("latency").(metrics.Timer).UpdateSince(testStart)
+					if err != nil {
+						results.Get("failure").(metrics.Counter).Inc(1)
+						test.Get("failure").(metrics.Counter).Inc(1)
+						errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
+						errCount.Inc(1)
+						log.Debugf("%s: %d", err, errCount.Count())
+					} else {
+						test.Get("success").(metrics.Counter).Inc(1)
+						results.Get("success").(metrics.Counter).Inc(1)
+					}
+				}
+			}()
+		}
+	}
+
+	wg.Wait()
 }
