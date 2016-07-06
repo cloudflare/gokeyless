@@ -20,7 +20,9 @@ var (
 	keyserver          string
 	certDir            string
 	insecureSkipVerify bool
+	benchmark          bool
 	workers            int
+	repeats            int
 	testLen            time.Duration
 )
 
@@ -31,8 +33,10 @@ func init() {
 	flag.StringVar(&caFile, "ca-file", "keyserver_cacert.pem", "Keyless server certificate authority")
 	flag.StringVar(&keyserver, "keyserver", "", "Keyless server, in the form [host:port]")
 	flag.BoolVar(&insecureSkipVerify, "no-verify", false, "Don't verify server certificate against Keyserver CA")
+	flag.BoolVar(&benchmark, "benchmark", false, "run test in benchmark mode")
 	flag.StringVar(&certDir, "cert-directory", "certs/", "Directory in which certificates are stored with .crt extension")
 	flag.IntVar(&workers, "workers", 8, "Number of concurrent connections to keyserver")
+	flag.IntVar(&repeats, "repeats", 0, "Number of test repeats")
 	flag.DurationVar(&testLen, "testlen", 5*time.Second, "test length in seconds")
 	flag.Parse()
 }
@@ -57,7 +61,11 @@ func main() {
 		}
 	}
 
-	results.RunTests(testLen, workers)
+	if benchmark {
+		results.RunBenchmarkTests(repeats, workers)
+	} else {
+		results.RunTests(testLen, workers)
+	}
 	resultsJSON, err := json.MarshalIndent(results, "", "\t")
 	if err != nil {
 		log.Fatal("failed to marshal results:", err)
