@@ -61,6 +61,31 @@ func NewActivateTest(c *client.Client, server string, hashedToken []byte) testap
 	}
 }
 
+// NewCertificateLoadTest generates a TestFunc to connect and perform a certificate load.
+func NewCertificateLoadTest(c *client.Client, keyserver string, sigAlgs gokeyless.SigAlgs, serverIP net.IP, sni, expected string) testapi.TestFunc {
+	return func() error {
+		r, err := c.LookupServer(keyserver)
+		if err != nil {
+			return err
+		}
+
+		conn, err := r.Dial(c)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		got, err := conn.GetCertificate(sigAlgs, serverIP, sni)
+		if err != nil {
+			return err
+		}
+		if string(got) != expected {
+			return errors.New("certificate loading failed: returned certificate is not the same as expected")
+		}
+
+		return nil
+	}
+}
+
 // NewSignTests generates a map of test name to TestFunc that performs an opaque sign and verify.
 func NewSignTests(priv crypto.Signer) map[string]testapi.TestFunc {
 	tests := make(map[string]testapi.TestFunc)
