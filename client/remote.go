@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/cfssl/transport/core"
 	"github.com/cloudflare/gokeyless"
 	"github.com/miekg/dns"
 )
@@ -35,7 +36,8 @@ type Remote interface {
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
 	*gokeyless.Conn
-	addr string
+	addr     string
+	workload int // number of non-ping keyless operations between health checks
 }
 
 // A singleRemote is an individual remote server
@@ -57,7 +59,7 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 		addr: addr,
 	}
 
-	go healthchecker(&c, 1*time.Second)
+	go healthchecker(&c)
 	return &c
 }
 
@@ -68,9 +70,14 @@ func (conn *Conn) Close() {
 }
 
 // healthchecker is a recurrent timer function that tests the connections
-func healthchecker(conn *Conn, after time.Duration) {
+func healthchecker(conn *Conn) {
+	backoff := &core.Backoff{
+		MaxDuration: 1 * time.Hour,
+		Interval:    1 * time.Second,
+		Jitter:      true,
+	}
 	for {
-		time.Sleep(after)
+		time.Sleep(backoff.Duration())
 		if !conn.Conn.IsClosed() {
 			err := conn.Ping(nil)
 			if err != nil {
@@ -80,6 +87,14 @@ func healthchecker(conn *Conn, after time.Duration) {
 				conn.Close()
 				return
 			}
+
+			// reset backoff if there is work
+			// and reset workload after health check
+			if conn.workload > 0 {
+				backoff.Reset()
+				conn.workload = 0
+			}
+
 			log.Debug("start a new health check timer")
 		}
 	}
