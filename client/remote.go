@@ -59,12 +59,7 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 		addr: addr,
 	}
 
-	backoff := &core.Backoff{
-		MaxDuration: 1 * time.Hour,
-		Interval:    1 * time.Second,
-		Jitter:      true,
-	}
-	go healthchecker(&c, backoff)
+	go healthchecker(&c)
 	return &c
 }
 
@@ -75,7 +70,12 @@ func (conn *Conn) Close() {
 }
 
 // healthchecker is a recurrent timer function that tests the connections
-func healthchecker(conn *Conn, backoff *core.Backoff) {
+func healthchecker(conn *Conn) {
+	backoff := &core.Backoff{
+		MaxDuration: 1 * time.Hour,
+		Interval:    1 * time.Second,
+		Jitter:      true,
+	}
 	for {
 		time.Sleep(backoff.Duration())
 		if !conn.Conn.IsClosed() {
