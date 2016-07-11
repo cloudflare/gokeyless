@@ -11,6 +11,7 @@ import (
 type statistics struct {
 	requests        prometheus.Summary
 	requestsInvalid prometheus.Counter
+	connFailures    prometheus.Counter
 }
 
 func newStatistics() *statistics {
@@ -23,6 +24,10 @@ func newStatistics() *statistics {
 			Name: "requests_invalid",
 			Help: "Number of invalid requests.",
 		}),
+		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "failed_connection",
+			Help: "Number of connection/transport failure, in tls handshake and etc..",
+		}),
 	}
 	return stats
 }
@@ -31,6 +36,11 @@ func newStatistics() *statistics {
 func (stats *statistics) logInvalid(requestBegin time.Time) {
 	stats.requestsInvalid.Inc()
 	stats.logRequest(requestBegin)
+}
+
+// logConnFailure increments the error count of connFailures.
+func (stats *statistics) logConnFailure() {
+	stats.connFailures.Inc()
 }
 
 // logRequest increments the request count and updates the error percentage.

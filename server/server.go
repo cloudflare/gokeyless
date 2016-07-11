@@ -225,6 +225,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 
 		var h *gokeyless.Header
 		if h, connError = conn.ReadHeader(); connError != nil {
+			s.stats.logConnFailure()
 			continue
 		}
 
