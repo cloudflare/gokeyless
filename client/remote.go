@@ -138,6 +138,16 @@ func NewServer(addr net.Addr, serverName string) Remote {
 	}
 }
 
+// UnixRemote returns a Remote constructed from the Unix address
+func UnixRemote(unixAddr, serverName string) (Remote, error) {
+	addr, err := net.ResolveUnixAddr("unix", unixAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewServer(addr, serverName), nil
+}
+
 func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 	m := new(dns.Msg)
 	for _, resolver := range c.Resolvers {

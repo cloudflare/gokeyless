@@ -24,6 +24,7 @@ type PrivateKey struct {
 	sni      string
 }
 
+// RSAPrivateKey represents remote RSA private key, which crypto.Decryptor and crypto.Signer
 type RSAPrivateKey struct {
 	PrivateKey
 }

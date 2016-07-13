@@ -26,7 +26,7 @@ var (
 	initKeyFile  string
 	initEndpoint string
 	port         string
-	metricsPort  string
+	metricsAddr  string
 	certFile     string
 	keyFile      string
 	caFile       string
@@ -46,7 +46,7 @@ func init() {
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
 	flag.StringVar(&keyDir, "private-key-directory", "keys/", "Directory in which private keys are stored with .key extension")
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
-	flag.StringVar(&metricsPort, "metrics-port", "2408", "Port where the metrics API is served")
+	flag.StringVar(&metricsAddr, "metrics-addr", "localhost:2406", "address where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
 	flag.BoolVar(&manualMode, "manual-activation", false, "Manually activate the keyserver by writing the CSR to stderr")
 }
@@ -54,8 +54,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile,
-		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
 	if err != nil {
 		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
 
@@ -81,7 +80,7 @@ func main() {
 	}
 
 	go func() { log.Fatal(s.ListenAndServe()) }()
-	go func() { log.Critical(s.MetricsListenAndServe()) }()
+	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
 
 	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 		log.Fatal(err)

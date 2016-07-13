@@ -159,8 +159,8 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 type Server struct {
 	// TCP address to listen on
 	Addr string
-	// metrics address
-	MetricsAddr string
+	// Unix socket to listen on
+	UnixAddr string
 	// Config is initialized with the auth configuration used for communicating with keyless clients.
 	Config *tls.Config
 	// keys contains the private keys for the server
@@ -177,10 +177,10 @@ type Server struct {
 type CertLoader func(sigAlgs gokeyless.SigAlgs, serverIP net.IP, sni string) (certChain []byte, err error)
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
-func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, metricsAddr string) *Server {
+func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
 	return &Server{
-		Addr:        addr,
-		MetricsAddr: metricsAddr,
+		Addr:     addr,
+		UnixAddr: unixAddr,
 		Config: &tls.Config{
 			ClientCAs:    keylessCA,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -416,7 +416,20 @@ func (s *Server) ListenAndServe() error {
 	}
 
 	s.Addr = l.Addr().String()
-	log.Infof("Listening at %s\n", l.Addr())
-
+	log.Infof("Listening at tcp://%s\n", l.Addr())
 	return s.Serve(l)
+}
+
+// UnixListenAndServe listens on the Unix socket address and handles keyless requests.
+func (s *Server) UnixListenAndServe() error {
+	if s.UnixAddr != "" {
+		l, err := net.Listen("unix", s.UnixAddr)
+		if err != nil {
+			return err
+		}
+
+		log.Infof("Listening at unix://%s\n", l.Addr())
+		return s.Serve(l)
+	}
+	return errors.New("can't listen on empty path")
 }

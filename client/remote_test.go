@@ -18,6 +18,7 @@ const (
 	serverKey    = "testdata/server-key.pem"
 	keylessCA    = "testdata/ca.pem"
 	serverAddr   = "localhost:0"
+	socketAddr   = "/tmp/keyless.socket"
 	rsaPrivKey   = "testdata/rsa.key"
 	ecdsaPrivKey = "testdata/ecdsa.key"
 
@@ -45,7 +46,7 @@ func TestMain(t *testing.T) {
 	var priv crypto.Signer
 
 	// Setup keyless server
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, "")
+	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, socketAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +75,12 @@ func TestMain(t *testing.T) {
 
 	go func() {
 		if err := s.ListenAndServe(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	go func() {
+		if err := s.UnixListenAndServe(); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -115,6 +122,24 @@ func TestRemoteGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	_, err = c.Dial(ecdsaSKI)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnixRemote(t *testing.T) {
+	r, err := UnixRemote(socketAddr, "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// clear cached remotes and set a unix remote for the client
+	c.DefaultRemote = r
+	c.servers = map[string]Remote{}
+	c.remotes = map[gokeyless.SKI]Remote{}
+
+	// register the ECDDSA certificate again with the default remote
+	registerCertFile(ecdsaPubKey, t)
 	_, err = c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
