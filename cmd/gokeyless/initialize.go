@@ -128,7 +128,7 @@ func initializeServer() *server.Server {
 	}
 
 	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
-		net.JoinHostPort("", port), net.JoinHostPort("", metricsPort))
+		net.JoinHostPort("", port), "")
 	if err != nil {
 		log.Fatal(err)
 	}
