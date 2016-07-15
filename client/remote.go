@@ -36,8 +36,8 @@ type Remote interface {
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
 	*gokeyless.Conn
-	addr     string
-	workload int // number of non-ping keyless operations between health checks
+	addr    string
+	backoff *core.Backoff // a backoff timer used by a health check goroutine
 }
 
 // A singleRemote is an individual remote server
@@ -52,32 +52,38 @@ func init() {
 	}
 }
 
-// NewConn creates a new Conn based on a gokeyless.Conn
+// NewConn creates a new Conn based on a gokeyless.Conn.
 func NewConn(addr string, conn *gokeyless.Conn) *Conn {
+	backoff := &core.Backoff{
+		MaxDuration: 1 * time.Hour,
+		Interval:    1 * time.Second,
+		Jitter:      true,
+	}
 	c := Conn{
-		Conn: conn,
-		addr: addr,
+		Conn:    conn,
+		addr:    addr,
+		backoff: backoff,
 	}
 
 	go healthchecker(&c)
 	return &c
 }
 
-// Close closes a Conn and remove it from the conn pool
+// Close closes a Conn and remove it from the conn pool.
 func (conn *Conn) Close() {
 	conn.Conn.Close()
 	connPool.Remove(conn.addr)
 }
 
-// healthchecker is a recurrent timer function that tests the connections
+// resetBackoff resets the health check backoff timer of conn.
+func (conn *Conn) resetBackoff() {
+	conn.backoff.Reset()
+}
+
+// healthchecker is a recurrent timer function that tests the connections.
 func healthchecker(conn *Conn) {
-	backoff := &core.Backoff{
-		MaxDuration: 1 * time.Hour,
-		Interval:    1 * time.Second,
-		Jitter:      true,
-	}
 	for {
-		time.Sleep(backoff.Duration())
+		time.Sleep(conn.backoff.Duration())
 		if !conn.Conn.IsClosed() {
 			err := conn.Ping(nil)
 			if err != nil {
@@ -86,13 +92,6 @@ func healthchecker(conn *Conn) {
 				// conn pool.
 				conn.Close()
 				return
-			}
-
-			// reset backoff if there is work
-			// and reset workload after health check
-			if conn.workload > 0 {
-				backoff.Reset()
-				conn.workload = 0
 			}
 
 			log.Debug("start a new health check timer")

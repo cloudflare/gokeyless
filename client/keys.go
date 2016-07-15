@@ -88,7 +88,7 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	conn.workload++
+	conn.resetBackoff()
 
 	result, err := conn.Conn.DoOperation(&gokeyless.Operation{
 		Opcode:   op,
