@@ -64,4 +64,5 @@ func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 func (s *Server) RegisterMetrics() {
 	prometheus.MustRegister(s.stats.requests)
 	prometheus.MustRegister(s.stats.requestsInvalid)
+	prometheus.MustRegister(s.stats.connFailures)
 }
