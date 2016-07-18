@@ -36,8 +36,7 @@ type Remote interface {
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
 	*gokeyless.Conn
-	addr     string
-	workload int // number of non-ping keyless operations between health checks
+	addr string
 }
 
 // A singleRemote is an individual remote server
@@ -71,11 +70,10 @@ func (conn *Conn) Close() {
 
 // healthchecker is a recurrent timer function that tests the connections
 func healthchecker(conn *Conn) {
-	backoff := &core.Backoff{
-		MaxDuration: 1 * time.Hour,
-		Interval:    1 * time.Second,
-		Jitter:      true,
-	}
+	backoff := core.NewWithoutJitter(1*time.Hour, 1*time.Second)
+	// automatic reset timer to 1*second,  if backoff is greater than 20 minutes.
+	backoff.SetDecay(20 * time.Minute)
+
 	for {
 		time.Sleep(backoff.Duration())
 		if !conn.Conn.IsClosed() {
@@ -86,13 +84,6 @@ func healthchecker(conn *Conn) {
 				// conn pool.
 				conn.Close()
 				return
-			}
-
-			// reset backoff if there is work
-			// and reset workload after health check
-			if conn.workload > 0 {
-				backoff.Reset()
-				conn.workload = 0
 			}
 
 			log.Debug("start a new health check timer")
