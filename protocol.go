@@ -9,8 +9,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
-	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -223,9 +223,9 @@ type SKI [sha1.Size]byte
 
 var nilSKI SKI
 
-// String returns a canonical Base 64 encoded SKI string.
+// String returns a hex encoded SKI string.
 func (ski SKI) String() string {
-	return base64.StdEncoding.EncodeToString(ski[:])
+	return hex.EncodeToString(ski[:])
 }
 
 // Equal compares two SKIs for equality.
