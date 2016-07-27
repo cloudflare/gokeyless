@@ -64,6 +64,13 @@ const (
 	// OpRSASignSHA512 requests an RSA signature on an SHA512 hash payload.
 	OpRSASignSHA512 Op = 0x07
 
+	// OpRSAPSSSignSHA256 requests an RSASSA-PSS signature on an SHA256 hash payload.
+	OpRSAPSSSignSHA256 Op = 0x35
+	// OpRSAPSSSignSHA384 requests an RSASSA-PSS signature on an SHA384 hash payload.
+	OpRSAPSSSignSHA384 Op = 0x36
+	// OpRSAPSSSignSHA512 requests an RSASSA-PSS signature on an SHA512 hash payload.
+	OpRSAPSSSignSHA512 Op = 0x37
+
 	// OpECDSASignMD5SHA1 requests an ECDSA signature on an MD5SHA1 hash payload.
 	OpECDSASignMD5SHA1 Op = 0x12
 	// OpECDSASignSHA1 requests an ECDSA signature on an SHA1 hash payload.

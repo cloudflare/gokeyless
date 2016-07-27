@@ -297,11 +297,11 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			opts = crypto.SHA1
 		case gokeyless.OpRSASignSHA224, gokeyless.OpECDSASignSHA224:
 			opts = crypto.SHA224
-		case gokeyless.OpRSASignSHA256, gokeyless.OpECDSASignSHA256:
+		case gokeyless.OpRSASignSHA256, gokeyless.OpECDSASignSHA256, gokeyless.OpRSAPSSSignSHA256:
 			opts = crypto.SHA256
-		case gokeyless.OpRSASignSHA384, gokeyless.OpECDSASignSHA384:
+		case gokeyless.OpRSASignSHA384, gokeyless.OpECDSASignSHA384, gokeyless.OpRSAPSSSignSHA384:
 			opts = crypto.SHA384
-		case gokeyless.OpRSASignSHA512, gokeyless.OpECDSASignSHA512:
+		case gokeyless.OpRSASignSHA512, gokeyless.OpECDSASignSHA512, gokeyless.OpRSAPSSSignSHA512:
 			opts = crypto.SHA512
 		case gokeyless.OpActivate:
 			if len(s.ActivationToken) > 0 {
@@ -324,6 +324,11 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			continue
 		}
 
+		switch h.Body.Opcode {
+		case gokeyless.OpRSAPSSSignSHA256, gokeyless.OpRSAPSSSignSHA384, gokeyless.OpRSAPSSSignSHA512:
+			opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
+		}
+
 		if key, ok = s.Keys.Get(h.Body); !ok {
 			log.Error(gokeyless.ErrKeyNotFound)
 			connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
@@ -338,7 +343,10 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			gokeyless.OpRSASignSHA224,
 			gokeyless.OpRSASignSHA256,
 			gokeyless.OpRSASignSHA384,
-			gokeyless.OpRSASignSHA512:
+			gokeyless.OpRSASignSHA512,
+			gokeyless.OpRSAPSSSignSHA256,
+			gokeyless.OpRSAPSSSignSHA384,
+			gokeyless.OpRSAPSSSignSHA512:
 			if _, ok := key.Public().(*rsa.PublicKey); !ok {
 				log.Errorf("%s: request is RSA, but key isn't\n", gokeyless.ErrCrypto)
 				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)

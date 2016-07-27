@@ -39,10 +39,28 @@ func (key *RSAPrivateKey) Public() crypto.PublicKey {
 	return key.PrivateKey.public
 }
 
-func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
+func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op {
+	if opts, ok := opts.(*rsa.PSSOptions); ok {
+		if _, ok := key.Public().(*rsa.PublicKey); !ok {
+			return gokeyless.OpError
+		}
+		if opts.SaltLength != rsa.PSSSaltLengthEqualsHash {
+			return gokeyless.OpError
+		}
+		switch opts.Hash {
+		case crypto.SHA256:
+			return gokeyless.OpRSAPSSSignSHA256
+		case crypto.SHA384:
+			return gokeyless.OpRSAPSSSignSHA384
+		case crypto.SHA512:
+			return gokeyless.OpRSAPSSSignSHA512
+		default:
+			return gokeyless.OpError
+		}
+	}
 	switch key.Public().(type) {
 	case *rsa.PublicKey:
-		switch h {
+		switch opts.HashFunc() {
 		case crypto.MD5SHA1:
 			return gokeyless.OpRSASignMD5SHA1
 		case crypto.SHA1:
@@ -59,7 +77,7 @@ func signOpFromKeyHash(key *PrivateKey, h crypto.Hash) gokeyless.Op {
 			return gokeyless.OpError
 		}
 	case *ecdsa.PublicKey:
-		switch h {
+		switch opts.HashFunc() {
 		case crypto.MD5SHA1:
 			return gokeyless.OpECDSASignMD5SHA1
 		case crypto.SHA1:
@@ -122,9 +140,9 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 		return nil, errors.New("input must be hashed message")
 	}
 
-	op := signOpFromKeyHash(key, opts.HashFunc())
+	op := signOpFromSignerOpts(key, opts)
 	if op == gokeyless.OpError {
-		return nil, errors.New("invalid key type or hash")
+		return nil, errors.New("invalid key type, hash or options")
 	}
 	return key.execute(op, msg)
 }
