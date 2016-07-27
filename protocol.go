@@ -19,6 +19,8 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 )
 
+//go:generate stringer -type=Tag,Op -output=protocol_string.go
+
 // Tag marks the type of an Item.
 type Tag byte
 
@@ -28,45 +30,20 @@ const (
 	// TagServerName implies an SNI string.
 	TagServerName Tag = 0x02
 	// TagClientIP implies an IPv4/6 address of the client connecting.
-	TagClientIP = 0x03
+	TagClientIP Tag = 0x03
 	// TagSubjectKeyIdentifier implies the Subject Key Identifier for the given key.
-	TagSubjectKeyIdentifier = 0x04
+	TagSubjectKeyIdentifier Tag = 0x04
 	// TagServerIP implies an IPv4/6 address of the proxying server.
-	TagServerIP = 0x05
+	TagServerIP Tag = 0x05
 	// TagSigAlgs informs proxying server of the client's supported signature algorithms.
-	TagSigAlgs = 0x06
+	TagSigAlgs Tag = 0x06
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
-	TagOpcode = 0x11
+	TagOpcode Tag = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
-	TagPayload = 0x12
+	TagPayload Tag = 0x12
 	// TagPadding implies an item with a meaningless payload added for padding.
-	TagPadding = 0x20
+	TagPadding Tag = 0x20
 )
-
-func (t Tag) String() string {
-	switch t {
-	case TagCertificateDigest:
-		return "TagCertificateDigest"
-	case TagServerName:
-		return "TagServerName"
-	case TagClientIP:
-		return "TagClientIP"
-	case TagSubjectKeyIdentifier:
-		return "TagSubjectKeyIdentifier"
-	case TagServerIP:
-		return "TagServerIP"
-	case TagSigAlgs:
-		return "TagSigAlgs"
-	case TagOpcode:
-		return "TagOpcode"
-	case TagPayload:
-		return "TagPayload"
-	case TagPadding:
-		return "TagPadding"
-	default:
-		return fmt.Sprintf("Invalid (%02x)", byte(t))
-	}
-}
 
 // Op describing operation to be performed OR operation status.
 type Op byte
@@ -75,92 +52,54 @@ const (
 	// OpRSADecrypt requests an RSA decrypted payload.
 	OpRSADecrypt Op = 0x01
 	// OpRSASignMD5SHA1 requests an RSA signature on an MD5SHA1 hash payload.
-	OpRSASignMD5SHA1 = 0x02
+	OpRSASignMD5SHA1 Op = 0x02
 	// OpRSASignSHA1 requests an RSA signature on an SHA1 hash payload.
-	OpRSASignSHA1 = 0x03
+	OpRSASignSHA1 Op = 0x03
 	// OpRSASignSHA224 requests an RSA signature on an SHA224 hash payload.
-	OpRSASignSHA224 = 0x04
+	OpRSASignSHA224 Op = 0x04
 	// OpRSASignSHA256 requests an RSA signature on an SHA256 hash payload.
-	OpRSASignSHA256 = 0x05
+	OpRSASignSHA256 Op = 0x05
 	// OpRSASignSHA384 requests an RSA signature on an SHA384 hash payload.
-	OpRSASignSHA384 = 0x06
+	OpRSASignSHA384 Op = 0x06
 	// OpRSASignSHA512 requests an RSA signature on an SHA512 hash payload.
-	OpRSASignSHA512 = 0x07
+	OpRSASignSHA512 Op = 0x07
+
+	// OpRSAPSSSignSHA256 requests an RSASSA-PSS signature on an SHA256 hash payload.
+	OpRSAPSSSignSHA256 Op = 0x35
+	// OpRSAPSSSignSHA384 requests an RSASSA-PSS signature on an SHA384 hash payload.
+	OpRSAPSSSignSHA384 Op = 0x36
+	// OpRSAPSSSignSHA512 requests an RSASSA-PSS signature on an SHA512 hash payload.
+	OpRSAPSSSignSHA512 Op = 0x37
 
 	// OpECDSASignMD5SHA1 requests an ECDSA signature on an MD5SHA1 hash payload.
-	OpECDSASignMD5SHA1 = 0x12
+	OpECDSASignMD5SHA1 Op = 0x12
 	// OpECDSASignSHA1 requests an ECDSA signature on an SHA1 hash payload.
-	OpECDSASignSHA1 = 0x13
+	OpECDSASignSHA1 Op = 0x13
 	// OpECDSASignSHA224 requests an ECDSA signature on an SHA224 hash payload.
-	OpECDSASignSHA224 = 0x14
+	OpECDSASignSHA224 Op = 0x14
 	// OpECDSASignSHA256 requests an ECDSA signature on an SHA256 hash payload.
-	OpECDSASignSHA256 = 0x15
+	OpECDSASignSHA256 Op = 0x15
 	// OpECDSASignSHA384 requests an ECDSA signature on an SHA384 hash payload.
-	OpECDSASignSHA384 = 0x16
+	OpECDSASignSHA384 Op = 0x16
 	// OpECDSASignSHA512 requests an ECDSA signature on an SHA512 hash payload.
-	OpECDSASignSHA512 = 0x17
+	OpECDSASignSHA512 Op = 0x17
 
 	// OpCertificateRequest requests a certificate
-	OpCertificateRequest = 0x20
+	OpCertificateRequest Op = 0x20
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
-	OpPing = 0xF1
+	OpPing Op = 0xF1
 	// OpPong indicates a response echoed from an OpPing test message.
-	OpPong = 0xF2
+	OpPong Op = 0xF2
 
 	// OpActivate indicates a test message to verify a keyserver in an initialization state.
-	OpActivate = 0xF3
+	OpActivate Op = 0xF3
 
 	// OpResponse is used to send a block of data back to the client.
-	OpResponse = 0xF0
+	OpResponse Op = 0xF0
 	// OpError indicates some error has occurred, explanation is single byte in payload.
-	OpError = 0xFF
+	OpError Op = 0xFF
 )
-
-func (o Op) String() string {
-	switch o {
-	case OpRSADecrypt:
-		return "OpRSADecrypt"
-	case OpRSASignMD5SHA1:
-		return "OpRSASignMD5SHA1"
-	case OpRSASignSHA1:
-		return "OpRSASignSHA1"
-	case OpRSASignSHA224:
-		return "OpRSASignSHA224"
-	case OpRSASignSHA256:
-		return "OpRSASignSHA256"
-	case OpRSASignSHA384:
-		return "OpRSASignSHA384"
-	case OpRSASignSHA512:
-		return "OpRSASignSHA512"
-	case OpECDSASignMD5SHA1:
-		return "OpECDSASignMD5SHA1"
-	case OpECDSASignSHA1:
-		return "OpECDSASignSHA1"
-	case OpECDSASignSHA224:
-		return "OpECDSASignSHA224"
-	case OpECDSASignSHA256:
-		return "OpECDSASignSHA256"
-	case OpECDSASignSHA384:
-		return "OpECDSASignSHA384"
-	case OpECDSASignSHA512:
-		return "OpECDSASignSHA512"
-	case OpCertificateRequest:
-		return "OpCertificateRequest"
-	case OpPing:
-		return "OpPing"
-	case OpPong:
-		return "OpPong"
-	case OpActivate:
-		return "OpActivate"
-	case OpResponse:
-		return "OpResponse"
-	case OpError:
-		return "OpError"
-	default:
-		return fmt.Sprintf("Invalid (%02x)", byte(o))
-	}
-}
 
 // Error defines a 1-byte error payload.
 type Error byte
