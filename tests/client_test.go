@@ -8,10 +8,14 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/asn1"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math/big"
 	"testing"
+
+	"go4.org/testing/functest"
 
 	"github.com/cloudflare/gokeyless/client"
 )
@@ -58,51 +62,71 @@ func TestBlacklist(t *testing.T) {
 	}
 }
 
-var (
-	h    = crypto.SHA256
-	r    = rand.Reader
-	ptxt = []byte("Hello!")
-	msg  = h.New().Sum(ptxt)[len(ptxt):]
-)
+var ptxt = []byte("Hello!")
 
-func TestECDSASign(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
-	}
+func hashMsg(h crypto.Hash) []byte {
+	msgHash := h.New()
+	msgHash.Write(ptxt)
+	return msgHash.Sum(nil)
+}
 
-	sig, err := ecdsaKey.Sign(r, msg, h)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if ecdsaPub, ok := ecdsaKey.Public().(*ecdsa.PublicKey); ok {
-		ecdsaSig := new(struct{ R, S *big.Int })
-		asn1.Unmarshal(sig, ecdsaSig)
-		if !ecdsa.Verify(ecdsaPub, msg, ecdsaSig.R, ecdsaSig.S) {
-			t.Log("ecdsa verify failed")
+func checkSignature(pub crypto.PublicKey, h crypto.Hash, pss bool) func(res functest.Result) error {
+	return func(res functest.Result) error {
+		if res.Panicked {
+			return fmt.Errorf("%v", res.Panic)
 		}
-	} else {
-		t.Fatal("couldn't use public key as ECDSA key")
+		if res.Result[1] != nil {
+			return res.Result[1].(error)
+		}
+		sig := res.Result[0].([]byte)
+
+		if rsaPub, ok := pub.(*rsa.PublicKey); ok {
+			if pss {
+				pssOpts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: h}
+				if err := rsa.VerifyPSS(rsaPub, pssOpts.Hash, hashMsg(h), sig, pssOpts); err != nil {
+					return err
+				}
+			} else {
+				if err := rsa.VerifyPKCS1v15(rsaPub, h, hashMsg(h), sig); err != nil {
+					return err
+				}
+			}
+		} else if ecdsaPub, ok := pub.(*ecdsa.PublicKey); ok {
+			ecdsaSig := new(struct{ R, S *big.Int })
+			asn1.Unmarshal(sig, ecdsaSig)
+			if !ecdsa.Verify(ecdsaPub, hashMsg(h), ecdsaSig.R, ecdsaSig.S) {
+				return errors.New("failed to verify")
+			}
+		}
+		return nil
 	}
 }
 
-func TestRSASign(t *testing.T) {
+func TestSign(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
 
-	sig, err := rsaKey.Sign(r, msg, h)
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := functest.New((*client.PrivateKey).Sign)
+	f.Test(t,
+		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
+			checkSignature(rsaKey.Public(), crypto.SHA1, false)),
+		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
+			checkSignature(rsaKey.Public(), crypto.SHA256, false)),
+		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
+			checkSignature(rsaKey.Public(), crypto.SHA384, false)),
+		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
+			checkSignature(rsaKey.Public(), crypto.SHA512, false)),
 
-	if rsaPub, ok := rsaKey.Public().(*rsa.PublicKey); ok {
-		if err := rsa.VerifyPKCS1v15(rsaPub, h, msg, sig); err != nil {
-			t.Log("rsa verify failed")
-		}
-	} else {
-		t.Fatal("couldn't use public key as RSA key")
-	}
+		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
+			checkSignature(ecdsaKey.Public(), crypto.SHA1, false)),
+		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
+			checkSignature(ecdsaKey.Public(), crypto.SHA256, false)),
+		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
+			checkSignature(ecdsaKey.Public(), crypto.SHA384, false)),
+		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
+			checkSignature(ecdsaKey.Public(), crypto.SHA512, false)),
+	)
 }
 
 func TestRSADecrypt(t *testing.T) {
@@ -118,19 +142,11 @@ func TestRSADecrypt(t *testing.T) {
 
 	var err error
 	var c, m []byte
-	if c, err = rsa.EncryptPKCS1v15(r, pub, ptxt); err != nil {
+	if c, err = rsa.EncryptPKCS1v15(rand.Reader, pub, ptxt); err != nil {
 		t.Fatal(err)
 	}
 
-	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Compare(ptxt, m) != 0 {
-		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
-		t.Fatal("rsa decrypt failed")
-	}
-
-	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)}); err != nil {
+	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Compare(ptxt, m) != 0 {
@@ -138,7 +154,15 @@ func TestRSADecrypt(t *testing.T) {
 		t.Fatal("rsa decrypt failed")
 	}
 
-	if m, err = rsaKey.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1}); err != nil {
+	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(ptxt, m) != 0 {
+		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
+		t.Fatal("rsa decrypt failed")
+	}
+
+	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1}); err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Compare(ptxt, m) == 0 {
