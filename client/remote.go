@@ -183,6 +183,10 @@ func (c *Client) LookupServerWithName(serverName, host, port string) (Remote, er
 		return nil, err
 	}
 
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("fail to resolve %s", host)
+	}
+
 	portNumber, err := strconv.Atoi(port)
 	if err != nil {
 		return nil, err
