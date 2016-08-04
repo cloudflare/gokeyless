@@ -150,7 +150,7 @@ func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 				}
 			}
 		} else {
-			log.Debug(err)
+			log.Warningf("fail to get A records for %s with %s: %v", host, resolver, err)
 		}
 
 		m.SetQuestion(dns.Fqdn(host), dns.TypeAAAA)
@@ -161,7 +161,7 @@ func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 				}
 			}
 		} else {
-			log.Debug(err)
+			log.Warningf("fail to get AAAA records for %s with %s: %v", host, resolver, err)
 		}
 	}
 	if len(ips) != 0 {
