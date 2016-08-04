@@ -48,7 +48,7 @@ func (stats *statistics) logRequest(requestBegin time.Time) {
 	stats.requests.Observe(float64(time.Now().Sub(requestBegin)))
 }
 
-// MetricsListenAndServer serves Prometheus metrics at metricsAddr
+// MetricsListenAndServe serves Prometheus metrics at metricsAddr
 func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 	if metricsAddr != "" {
 		s.RegisterMetrics()
