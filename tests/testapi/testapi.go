@@ -69,7 +69,6 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 	for i := 0; i < workers; i++ {
 		go func() {
 			for name := range tests {
-				log.Debugf("Running %s", name)
 				test := results.Tests[name]
 				testStart := time.Now()
 				if err := test.run(); err != nil {
@@ -77,10 +76,11 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 					test.Get("failure").(metrics.Counter).Inc(1)
 					errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
 					errCount.Inc(1)
-					log.Debugf("%s: %d", err, errCount.Count())
+					log.Infof("--- %s - Running %s: %v", "FAIL", name, err)
 				} else {
 					test.Get("success").(metrics.Counter).Inc(1)
 					results.Get("success").(metrics.Counter).Inc(1)
+					log.Infof("--- %s - Running %s", "PASS", name)
 				}
 				test.Get("latency").(metrics.Timer).UpdateSince(testStart)
 				results.Get("latency").(metrics.Timer).UpdateSince(testStart)
@@ -108,7 +108,6 @@ func (results *Results) RunBenchmarkTests(repeats, workers int) {
 
 	var wg sync.WaitGroup
 	for name := range results.Tests {
-		log.Debugf("Running %s", name)
 		test := results.Tests[name]
 		for w := 0; w < workers; w++ {
 			wg.Add(1)
@@ -124,10 +123,11 @@ func (results *Results) RunBenchmarkTests(repeats, workers int) {
 						test.Get("failure").(metrics.Counter).Inc(1)
 						errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
 						errCount.Inc(1)
-						log.Debugf("%s: %d", err, errCount.Count())
+						log.Infof("--- %s - Running %s: %v", "FAIL", name, err)
 					} else {
 						test.Get("success").(metrics.Counter).Inc(1)
 						results.Get("success").(metrics.Counter).Inc(1)
+						log.Infof("--- %s - Running %s", "PASS", name)
 					}
 				}
 			}()
