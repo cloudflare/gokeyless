@@ -99,11 +99,16 @@ func init() {
 	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	var privKey *client.PrivateKey
+	var privKey crypto.Signer
+	var ok bool
 	if privKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
 		log.Fatal(err)
 	}
-	rsaKey = &client.RSAPrivateKey{PrivateKey: *privKey}
+
+	rsaKey, ok = privKey.(*client.RSAPrivateKey)
+	if !ok {
+		log.Fatal("bad RSA key registration")
+	}
 
 	if pemBytes, err = ioutil.ReadFile(ecdsaPubKey); err != nil {
 		log.Fatal(err)
@@ -112,8 +117,14 @@ func init() {
 	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if ecdsaKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
+
+	if privKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
 		log.Fatal(err)
+	}
+
+	ecdsaKey, ok = privKey.(*client.PrivateKey)
+	if !ok {
+		log.Fatal("bad ECDSA key registration")
 	}
 
 	getCert, err := c.NewGetCertificate(nil, serverAddr)

@@ -200,7 +200,7 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
-func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (*PrivateKey, error) {
+func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	ski, err := gokeyless.GetSKI(pub)
 	if err != nil {
 		return nil, err
@@ -210,30 +210,36 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 		return nil, err
 	}
 
+	// digest is being deprecated, so it's ok to ignore error here
 	digest, _ := gokeyless.GetDigest(pub)
 
-	return &PrivateKey{
+	priv := PrivateKey{
 		public:   pub,
 		client:   c,
 		ski:      ski,
 		digest:   digest,
 		sni:      sni,
 		serverIP: serverIP,
-	}, nil
+	}
+	if _, ok := pub.(*rsa.PublicKey); ok {
+		return &RSAPrivateKey{priv}, nil
+	}
+
+	return &priv, nil
 }
 
 // RegisterPublicKey SKIs and registers a public key as being held by a server.
-func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (*PrivateKey, error) {
+func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (crypto.Signer, error) {
 	return c.RegisterPublicKeyTemplate(server, pub, "", nil)
 }
 
 // RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
-func (c *Client) RegisterCert(server string, cert *x509.Certificate) (*PrivateKey, error) {
+func (c *Client) RegisterCert(server string, cert *x509.Certificate) (crypto.Signer, error) {
 	return c.RegisterPublicKeyTemplate(server, cert.PublicKey, "", nil)
 }
 
 // RegisterCertPEM registers a single PEM cert (possibly the leaf of a chain of certs).
-func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (*PrivateKey, error) {
+func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(certsPEM)
 	if block == nil {
 		return nil, errors.New("couldn't parse PEM bytes")
@@ -253,7 +259,7 @@ var (
 )
 
 // RegisterDir reads all .pubkey and .crt files from a directory and returns associated PublicKey structs.
-func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []*PrivateKey, err error) {
+func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []crypto.Signer, err error) {
 	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -269,7 +275,7 @@ func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto
 				return err
 			}
 
-			var priv *PrivateKey
+			var priv crypto.Signer
 			if isPubKey {
 				var pub crypto.PublicKey
 				if pub, err = LoadPubKey(in); err != nil {
@@ -401,11 +407,7 @@ func (c *Client) NewGetCertificate(sigAlgSort sigAlgSort, server string) (func(c
 			return nil, err
 		}
 
-		if _, ok := cert.Leaf.PublicKey.(*rsa.PublicKey); ok {
-			cert.PrivateKey = &RSAPrivateKey{PrivateKey: *priv}
-		} else {
-			cert.PrivateKey = priv
-		}
+		cert.PrivateKey = priv
 
 		return
 	}, nil

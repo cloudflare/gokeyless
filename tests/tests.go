@@ -256,7 +256,7 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 		}
 
 		if _, ok := cert.PublicKey.(*rsa.PublicKey); ok {
-			privRSA = &client.RSAPrivateKey{PrivateKey: *priv}
+			privRSA = priv.(*client.RSAPrivateKey)
 		}
 
 		ski, err := gokeyless.GetSKICert(cert)
