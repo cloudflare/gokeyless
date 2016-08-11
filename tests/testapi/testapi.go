@@ -111,7 +111,7 @@ func (results *Results) RunBenchmarkTests(repeats, workers int) {
 		test := results.Tests[name]
 		for w := 0; w < workers; w++ {
 			wg.Add(1)
-			go func() {
+			go func(name string, test *Test) {
 				defer wg.Done()
 				for i := 0; i < repeats; i++ {
 					testStart := time.Now()
@@ -130,7 +130,7 @@ func (results *Results) RunBenchmarkTests(repeats, workers int) {
 						log.Infof("--- %s - Running %s", "PASS", name)
 					}
 				}
-			}()
+			}(name, test)
 		}
 	}
 
