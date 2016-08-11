@@ -35,8 +35,6 @@ const (
 	TagSubjectKeyIdentifier Tag = 0x04
 	// TagServerIP implies an IPv4/6 address of the proxying server.
 	TagServerIP Tag = 0x05
-	// TagSigAlgs informs proxying server of the client's supported signature algorithms.
-	TagSigAlgs Tag = 0x06
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode Tag = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
@@ -84,8 +82,8 @@ const (
 	// OpECDSASignSHA512 requests an ECDSA signature on an SHA512 hash payload.
 	OpECDSASignSHA512 Op = 0x17
 
-	// OpCertificateRequest requests a certificate
-	OpCertificateRequest Op = 0x20
+	// OpGetCertificate requests a certificate
+	OpGetCertificate Op = 0x20
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
@@ -210,14 +208,6 @@ func GetSKICertPEM(certPEM []byte) (SKI, error) {
 	return GetSKICert(cert)
 }
 
-// SigAlgs represents an array of two-byte sigalgs
-type SigAlgs []byte
-
-// Valid checks to see if it is even length.
-func (sigAlgs SigAlgs) Valid() bool {
-	return len(sigAlgs)%2 == 0
-}
-
 // Digest represents a SHA-256 digest of an RSA public key modulus
 type Digest [sha256.Size]byte
 
@@ -291,19 +281,17 @@ type Operation struct {
 	Digest   Digest
 	ClientIP net.IP
 	ServerIP net.IP
-	SigAlgs  SigAlgs
 	SNI      string
 	AKI      SKI
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %s, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SigAlgs: %02x, SNI: %s]",
+	return fmt.Sprintf("[Opcode: %s, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
 		o.ClientIP,
 		o.ServerIP,
-		o.SigAlgs,
 		o.SNI,
 	)
 }
@@ -353,10 +341,6 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 
 	if o.SNI != "" {
 		b = append(b, tlvBytes(TagServerName, []byte(o.SNI))...)
-	}
-
-	if o.SigAlgs.Valid() {
-		b = append(b, tlvBytes(TagSigAlgs, o.SigAlgs[:])...)
 	}
 
 	if len(b)+headerSize < paddedLength {
@@ -413,11 +397,6 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		case TagServerName:
 			o.SNI = string(data)
-
-		case TagSigAlgs:
-			if len(data)%2 == 0 {
-				o.SigAlgs = data
-			}
 
 		case TagPadding:
 			// ignore padding

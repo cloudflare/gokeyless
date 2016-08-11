@@ -21,6 +21,8 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
+var keyExt = regexp.MustCompile(`.+\.key`)
+
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
@@ -50,24 +52,6 @@ type defaultKeystore struct {
 	serverIPs map[string]gokeyless.SKI
 	clientIPs map[string]gokeyless.SKI
 	validAKIs map[gokeyless.SKI]akiSet
-}
-
-type akiSet []gokeyless.SKI
-
-func (akis akiSet) Contains(a gokeyless.SKI) bool {
-	for _, aki := range akis {
-		if aki.Equal(a) {
-			return true
-		}
-	}
-	return false
-}
-
-func (akis akiSet) Add(a gokeyless.SKI) akiSet {
-	if akis.Contains(a) {
-		return akis
-	}
-	return append(akis, a)
 }
 
 // Add adds a new key to the server's internal repertoire.
@@ -155,6 +139,24 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 	return
 }
 
+type akiSet []gokeyless.SKI
+
+func (akis akiSet) Contains(a gokeyless.SKI) bool {
+	for _, aki := range akis {
+		if aki.Equal(a) {
+			return true
+		}
+	}
+	return false
+}
+
+func (akis akiSet) Add(a gokeyless.SKI) akiSet {
+	if akis.Contains(a) {
+		return akis
+	}
+	return append(akis, a)
+}
+
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
 	// TCP address to listen on
@@ -163,18 +165,18 @@ type Server struct {
 	UnixAddr string
 	// Config is initialized with the auth configuration used for communicating with keyless clients.
 	Config *tls.Config
-	// keys contains the private keys for the server
+	// Keys contains the private keys and certificates for the server.
 	Keys Keystore
-	// ActivationToken is the token used to prove an activating keyeserver's identity.
+	// ActivationToken is the token used to prove an activating keyserver's identity.
 	ActivationToken []byte
 	// stats stores statistics about keyless requests.
 	stats *statistics
-	// CertLoader is used for loading certificates
-	CertLoader CertLoader
+	// GetCertificate is used for loading certificates.
+	GetCertificate GetCertificate
 }
 
-// CertLoader is a function that returns a certificate given SigAlgs, Server IP, SNI
-type CertLoader func(sigAlgs gokeyless.SigAlgs, serverIP net.IP, sni string) (certChain []byte, err error)
+// GetCertificate is a function that returns a certificate given a request.
+type GetCertificate func(op *gokeyless.Operation) (certChain []byte, err error)
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
@@ -241,14 +243,15 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			s.stats.logRequest(requestBegin)
 			continue
 
-		case gokeyless.OpCertificateRequest:
-			if s.CertLoader == nil {
-				log.Error(gokeyless.ErrCertNotFound)
+		case gokeyless.OpGetCertificate:
+			if s.GetCertificate == nil {
+				log.Error("GetCertificate is nil")
 				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
 				continue
 			} else {
-				certChain, err := s.CertLoader(h.Body.SigAlgs, h.Body.ServerIP, h.Body.SNI)
+				certChain, err := s.GetCertificate(h.Body)
 				if err != nil {
+					log.Errorf("GetCertificate: %v", err)
 					connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
 					continue
 				}
@@ -373,8 +376,6 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		log.Errorf("connection error: %v\n", connError)
 	}
 }
-
-var keyExt = regexp.MustCompile(`.+\.key`)
 
 // LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
 // to parse the file into crypto.Signer for loading into the server Keystore.

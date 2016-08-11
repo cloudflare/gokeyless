@@ -5,13 +5,13 @@ package gokeyless
 import "fmt"
 
 const (
-	_Tag_name_0 = "TagCertificateDigestTagServerNameTagClientIPTagSubjectKeyIdentifierTagServerIPTagSigAlgs"
+	_Tag_name_0 = "TagCertificateDigestTagServerNameTagClientIPTagSubjectKeyIdentifierTagServerIP"
 	_Tag_name_1 = "TagOpcodeTagPayload"
 	_Tag_name_2 = "TagPadding"
 )
 
 var (
-	_Tag_index_0 = [...]uint8{0, 20, 33, 44, 67, 78, 88}
+	_Tag_index_0 = [...]uint8{0, 20, 33, 44, 67, 78}
 	_Tag_index_1 = [...]uint8{0, 9, 19}
 	_Tag_index_2 = [...]uint8{0, 10}
 )
@@ -34,7 +34,7 @@ func (i Tag) String() string {
 const (
 	_Op_name_0 = "OpRSADecryptOpRSASignMD5SHA1OpRSASignSHA1OpRSASignSHA224OpRSASignSHA256OpRSASignSHA384OpRSASignSHA512"
 	_Op_name_1 = "OpECDSASignMD5SHA1OpECDSASignSHA1OpECDSASignSHA224OpECDSASignSHA256OpECDSASignSHA384OpECDSASignSHA512"
-	_Op_name_2 = "OpCertificateRequest"
+	_Op_name_2 = "OpGetCertificate"
 	_Op_name_3 = "OpRSAPSSSignSHA256OpRSAPSSSignSHA384OpRSAPSSSignSHA512"
 	_Op_name_4 = "OpResponseOpPingOpPongOpActivate"
 	_Op_name_5 = "OpError"
@@ -43,7 +43,7 @@ const (
 var (
 	_Op_index_0 = [...]uint8{0, 12, 28, 41, 56, 71, 86, 101}
 	_Op_index_1 = [...]uint8{0, 18, 33, 50, 67, 84, 101}
-	_Op_index_2 = [...]uint8{0, 20}
+	_Op_index_2 = [...]uint8{0, 16}
 	_Op_index_3 = [...]uint8{0, 18, 36, 54}
 	_Op_index_4 = [...]uint8{0, 10, 16, 22, 32}
 	_Op_index_5 = [...]uint8{0, 7}

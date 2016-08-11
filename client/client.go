@@ -123,14 +123,18 @@ func (c *Client) Dial(ski gokeyless.SKI) (*Conn, error) {
 	c.m.RLock()
 	r, ok := c.remotes[ski]
 	c.m.RUnlock()
-	if !ok {
-		if c.DefaultRemote == nil {
-			return nil, fmt.Errorf("no servers registered for SKI %02x", ski)
-		}
-
-		r = c.DefaultRemote
+	if ok {
+		return r.Dial(c)
 	}
-	return r.Dial(c)
+	return c.DialDefault()
+}
+
+// DialDefault establishes a connection to the default keyless server.
+func (c *Client) DialDefault() (*Conn, error) {
+	if c.DefaultRemote == nil {
+		return nil, fmt.Errorf("default remote is nil")
+	}
+	return c.DefaultRemote.Dial(c)
 }
 
 // ActivateServer dials a server and sends an activation request.
@@ -221,10 +225,12 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 		sni:      sni,
 		serverIP: serverIP,
 	}
-	if _, ok := pub.(*rsa.PublicKey); ok {
-		return &RSAPrivateKey{priv}, nil
-	}
 
+	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
+	// implement Decrypt.
+	if _, ok := pub.(*rsa.PublicKey); ok {
+		return &Decrypter{priv}, nil
+	}
 	return &priv, nil
 }
 
@@ -338,77 +344,4 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 	}
 
 	return cert, nil
-}
-
-type sigAlgSort func(clientHello *tls.ClientHelloInfo) gokeyless.SigAlgs
-
-func defaultSigAlgs(clientHello *tls.ClientHelloInfo) gokeyless.SigAlgs {
-	// ECDSA SHA-384, ECDSA SHA-256, RSA SHA-384, RSA SHA-256, RSA SHA-1
-	return []byte{0x04, 0x03, 0x05, 0x03, 0x01, 0x05, 0x01, 0x04, 0x01, 0x02}
-}
-
-// NewGetCertificate fetches a crypto/tls GetCertificate function from server using
-// a clientHello to sigAlgs translation function
-func (c *Client) NewGetCertificate(sigAlgSort sigAlgSort, server string) (func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error), error) {
-	if sigAlgSort == nil {
-		sigAlgSort = defaultSigAlgs
-	}
-
-	return func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
-		var certDERBlock *pem.Block
-
-		cert = new(tls.Certificate)
-		sigAlgs := sigAlgSort(hello)
-
-		// Pick the correct remote
-		remote, ok := c.servers[server]
-		if !ok {
-			remote = c.DefaultRemote
-		}
-		if remote == nil {
-			return nil, errors.New("no remote servers")
-		}
-
-		conn, err := remote.Dial(c)
-		if err != nil {
-			return nil, errors.New("unable to contact remote server")
-		}
-
-		// NOTE: there is no way to get ServerIP out of the client hello,
-		// so we don't use it for GetCertificate. If the intention is to provide
-		// different certificates for different IPs, this will not work.
-		// Only SNI-based indexing is possible in tls.GetCertificate.
-		certPEMBlock, err := conn.GetCertificate(sigAlgs, nil, hello.ServerName)
-		if err != nil {
-			return nil, errors.New("no matching certificate found")
-		}
-
-		for {
-			certDERBlock, certPEMBlock = pem.Decode(certPEMBlock)
-			if certDERBlock == nil {
-				break
-			}
-
-			if certDERBlock.Type == "CERTIFICATE" {
-				cert.Certificate = append(cert.Certificate, certDERBlock.Bytes)
-			}
-		}
-
-		if len(cert.Certificate) == 0 {
-			return nil, errors.New("crypto/tls: failed to parse certificate PEM data")
-		}
-
-		if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
-			return nil, err
-		}
-
-		priv, err := c.RegisterPublicKeyTemplate(server, cert.Leaf.PublicKey, hello.ServerName, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		cert.PrivateKey = priv
-
-		return
-	}, nil
 }
