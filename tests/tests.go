@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"errors"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"strconv"
@@ -30,11 +29,6 @@ const (
 // hashPtxt hashes the plaintext with the given hash algorithm.
 func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 	return h.New().Sum(ptxt)[len(ptxt):]
-}
-
-// dummyCertLoader loads a TLS chain from disk
-func dummyCertLoader(sigAlgs gokeyless.SigAlgs, clientIP net.IP, sni string) (chain []byte, err error) {
-	return ioutil.ReadFile(tlsChain)
 }
 
 // NewPingTest generates a TestFunc to connect and perform a ping.
@@ -61,8 +55,8 @@ func NewActivateTest(c *client.Client, server string, hashedToken []byte) testap
 	}
 }
 
-// NewCertificateLoadTest generates a TestFunc to connect and perform a certificate load.
-func NewCertificateLoadTest(c *client.Client, keyserver string, sigAlgs gokeyless.SigAlgs, serverIP net.IP, sni, expected string) testapi.TestFunc {
+// NewGetCertificateTest generates a TestFunc to connect and perform a certificate load.
+func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net.IP, payload, expected []byte) testapi.TestFunc {
 	return func() error {
 		r, err := c.LookupServer(keyserver)
 		if err != nil {
@@ -74,11 +68,16 @@ func NewCertificateLoadTest(c *client.Client, keyserver string, sigAlgs gokeyles
 			return err
 		}
 		defer conn.Close()
-		got, err := conn.GetCertificate(sigAlgs, serverIP, sni)
+
+		got, err := conn.DoOperation(&gokeyless.Operation{
+			Opcode:   gokeyless.OpGetCertificate,
+			SNI:      sni,
+			ServerIP: serverIP,
+			Payload:  payload,
+		})
 		if err != nil {
 			return err
-		}
-		if string(got) != expected {
+		} else if bytes.Equal(got.Payload, expected) {
 			return errors.New("certificate loading failed: returned certificate is not the same as expected")
 		}
 
@@ -249,14 +248,14 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
 
 	for _, cert := range certs {
-		var privRSA *client.RSAPrivateKey
+		var privDec *client.Decrypter
 		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
 		if err != nil {
 			return nil, err
 		}
 
 		if _, ok := cert.PublicKey.(*rsa.PublicKey); ok {
-			privRSA = priv.(*client.RSAPrivateKey)
+			privDec = priv.(*client.Decrypter)
 		}
 
 		ski, err := gokeyless.GetSKICert(cert)
@@ -264,8 +263,8 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 			return nil, err
 		}
 
-		if privRSA != nil {
-			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(privRSA))
+		if privDec != nil {
+			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(privDec))
 		}
 
 		for name, test := range NewSignTests(priv) {

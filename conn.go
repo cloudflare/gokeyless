@@ -3,10 +3,8 @@ package gokeyless
 import (
 	"bytes"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"sync"
 
 	"github.com/cloudflare/cfssl/log"
@@ -241,30 +239,4 @@ func (c *Conn) RespondError(id uint32, err Error) error {
 			Opcode:  OpError,
 			Payload: []byte{byte(err)},
 		})
-}
-
-// GetCertificate fetches a certificate from a remote keyserver.
-func (c *Conn) GetCertificate(sigAlgs SigAlgs, serverIP net.IP, sni string) ([]byte, error) {
-	result, err := c.DoOperation(&Operation{
-		Opcode:   OpCertificateRequest,
-		SNI:      sni,
-		ServerIP: serverIP,
-		SigAlgs:  sigAlgs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if result.Opcode != OpResponse {
-		if result.Opcode == OpError {
-			return nil, result.GetError()
-		}
-		return nil, fmt.Errorf("wrong response opcode: %v", result.Opcode)
-	}
-
-	if len(result.Payload) == 0 {
-		return nil, errors.New("empty payload")
-	}
-
-	return result.Payload, nil
 }

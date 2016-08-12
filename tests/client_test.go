@@ -17,6 +17,7 @@ import (
 
 	"go4.org/testing/functest"
 
+	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
 )
 
@@ -171,10 +172,9 @@ func TestRSADecrypt(t *testing.T) {
 	}
 }
 
-func TestCertLoad(t *testing.T) {
+func TestGetCertificate(t *testing.T) {
 	certChainBytes, _ := ioutil.ReadFile(tlsChain)
 
-	var chain []byte
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -185,13 +185,13 @@ func TestCertLoad(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Send sigalgs, expect correct cert
-	sigAlgs := make([]byte, 2)
-	if chain, err = conn.GetCertificate(sigAlgs, nil, ""); err != nil {
+	resp, err := conn.DoOperation(&gokeyless.Operation{
+		Opcode: gokeyless.OpGetCertificate,
+	})
+	if err != nil {
 		t.Fatal(err)
-	}
-	if bytes.Compare(certChainBytes, chain) != 0 {
-		t.Logf("m: %dB\tcertChain: %dB", len(certChainBytes), len(chain))
+	} else if bytes.Compare(certChainBytes, resp.Payload) != 0 {
+		t.Logf("m: %dB\tcertChain: %dB", len(certChainBytes), len(resp.Payload))
 		t.Fatal("certificate chain mismatch")
 	}
 }

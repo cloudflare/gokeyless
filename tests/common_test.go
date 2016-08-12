@@ -2,12 +2,12 @@ package tests
 
 import (
 	"crypto"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
 
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/server"
 )
@@ -30,7 +30,7 @@ const (
 var (
 	s        *server.Server
 	c        *client.Client
-	rsaKey   *client.RSAPrivateKey
+	rsaKey   *client.Decrypter
 	ecdsaKey *client.PrivateKey
 	remote   client.Remote
 )
@@ -50,6 +50,7 @@ func init() {
 		log.Fatal(err)
 	}
 
+	// Import RSA private key into server's keystore.
 	if pemBytes, err = ioutil.ReadFile(rsaPrivKey); err != nil {
 		log.Fatal(err)
 	}
@@ -61,6 +62,7 @@ func init() {
 		log.Fatal(err)
 	}
 
+	// Import ECDSA private key into server's keystore.
 	if pemBytes, err = ioutil.ReadFile(ecdsaPrivKey); err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +74,10 @@ func init() {
 		log.Fatal(err)
 	}
 
-	s.CertLoader = dummyCertLoader
+	// Create a dummy GetCertificate function which reads a static cert from disk.
+	s.GetCertificate = func(op *gokeyless.Operation) ([]byte, error) {
+		return ioutil.ReadFile(tlsChain)
+	}
 
 	listening := make(chan bool)
 	go func() {
@@ -105,7 +110,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	rsaKey, ok = privKey.(*client.RSAPrivateKey)
+	rsaKey, ok = privKey.(*client.Decrypter)
 	if !ok {
 		log.Fatal("bad RSA key registration")
 	}
@@ -125,16 +130,5 @@ func init() {
 	ecdsaKey, ok = privKey.(*client.PrivateKey)
 	if !ok {
 		log.Fatal("bad ECDSA key registration")
-	}
-
-	getCert, err := c.NewGetCertificate(nil, serverAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	hello := new(tls.ClientHelloInfo)
-	_, err = getCert(hello)
-	if err != nil {
-		log.Fatal(err)
 	}
 }

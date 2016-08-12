@@ -13,32 +13,6 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
-// PrivateKey represents a keyless-backed RSA/ECDSA private key.
-type PrivateKey struct {
-	public   crypto.PublicKey
-	client   *Client
-	ski      gokeyless.SKI
-	digest   gokeyless.Digest
-	clientIP net.IP
-	serverIP net.IP
-	sni      string
-}
-
-// RSAPrivateKey represents remote RSA private key, which crypto.Decryptor and crypto.Signer
-type RSAPrivateKey struct {
-	PrivateKey
-}
-
-// Public returns the public key corresponding to the opaque private key.
-func (key *PrivateKey) Public() crypto.PublicKey {
-	return key.public
-}
-
-// Public returns the public key corresponding to the opaque private key.
-func (key *RSAPrivateKey) Public() crypto.PublicKey {
-	return key.PrivateKey.public
-}
-
 func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op {
 	if opts, ok := opts.(*rsa.PSSOptions); ok {
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
@@ -98,8 +72,24 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 	}
 }
 
-// execute performs an opaque cryptographic operation
-// on a server associated with the key.
+// PrivateKey represents a keyless-backed RSA/ECDSA private key.
+type PrivateKey struct {
+	public   crypto.PublicKey
+	client   *Client
+	ski      gokeyless.SKI
+	digest   gokeyless.Digest
+	clientIP net.IP
+	serverIP net.IP
+	sni      string
+}
+
+// Public returns the public key corresponding to the opaque private key.
+func (key *PrivateKey) Public() crypto.PublicKey {
+	return key.public
+}
+
+// execute performs an opaque cryptographic operation on a server associated
+// with the key.
 func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 	conn, err := key.client.Dial(key.ski)
 	if err != nil {
@@ -147,13 +137,13 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	return key.execute(op, msg)
 }
 
-// Sign implements the crypto.Signer operation for the given key.
-func (key *RSAPrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
-	return key.PrivateKey.Sign(r, msg, opts)
+// Decrypter implements the Decrypt method on a PrivateKey.
+type Decrypter struct {
+	PrivateKey
 }
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
-func (key *RSAPrivateKey) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
+func (key *Decrypter) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
 	opts1v15, ok := opts.(*rsa.PKCS1v15DecryptOptions)
 	if opts != nil && !ok {
 		return nil, errors.New("invalid options for Decrypt")
