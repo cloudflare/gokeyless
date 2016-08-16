@@ -20,6 +20,7 @@ import (
 
 const (
 	connPoolSize = 512
+	defaultTTL   = 1 * time.Hour
 )
 
 // connPoolType is a async safe pool of established gokeyless Conn
@@ -58,7 +59,7 @@ func init() {
 		}
 	}
 	connPool = &connPoolType{
-		pool: ttlcache.NewLRU(connPoolSize, 1*time.Hour, poolEvict),
+		pool: ttlcache.NewLRU(connPoolSize, defaultTTL, poolEvict),
 	}
 }
 
@@ -128,7 +129,7 @@ func (p *connPoolType) Add(key string, conn *Conn) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.pool.Set(key, conn, 0)
+	p.pool.Set(key, conn, defaultTTL)
 	log.Debug("add conn with key:", key)
 }
 
