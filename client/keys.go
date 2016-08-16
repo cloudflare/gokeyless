@@ -109,6 +109,7 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 		defer conn.Close()
 		return nil, err
 	}
+	conn.KeepAlive()
 
 	if result.Opcode != gokeyless.OpResponse {
 		if result.Opcode == gokeyless.OpError {
