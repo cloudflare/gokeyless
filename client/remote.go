@@ -162,11 +162,14 @@ func UnixRemote(unixAddr, serverName string) (Remote, error) {
 
 func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 	m := new(dns.Msg)
+	dnsClient := new(dns.Client)
+	dnsClient.Net = "tcp"
 	for _, resolver := range c.Resolvers {
 		m.SetQuestion(dns.Fqdn(host), dns.TypeA)
-		if in, err := dns.Exchange(m, resolver); err == nil {
+		if in, _, err := dnsClient.Exchange(m, resolver); err == nil {
 			for _, rr := range in.Answer {
 				if a, ok := rr.(*dns.A); ok {
+					log.Debugf("resolve %s to %s", host, a)
 					ips = append(ips, a.A)
 				}
 			}
@@ -175,9 +178,10 @@ func (c *Client) lookupIPs(host string) (ips []net.IP, err error) {
 		}
 
 		m.SetQuestion(dns.Fqdn(host), dns.TypeAAAA)
-		if in, err := dns.Exchange(m, resolver); err == nil {
+		if in, _, err := dnsClient.Exchange(m, resolver); err == nil {
 			for _, rr := range in.Answer {
 				if aaaa, ok := rr.(*dns.AAAA); ok {
+					log.Debugf("resolve %s to %s", host, aaaa)
 					ips = append(ips, aaaa.AAAA)
 				}
 			}
