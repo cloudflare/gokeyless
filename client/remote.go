@@ -14,13 +14,18 @@ import (
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport/core"
 	"github.com/cloudflare/gokeyless"
+	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
+)
+
+const (
+	connPoolSize = 512
 )
 
 // connPoolType is a async safe pool of established gokeyless Conn
 // so we don't need to do TLS handshake unnecessarily.
 type connPoolType struct {
-	pool map[string]*Conn
+	pool *ttlcache.LRU
 	sync.RWMutex
 }
 
@@ -46,8 +51,14 @@ type singleRemote struct {
 }
 
 func init() {
+	poolEvict := func(key string, value interface{}) {
+		conn, ok := value.(*Conn)
+		if ok && !conn.Conn.IsClosed() {
+			conn.Close()
+		}
+	}
 	connPool = &connPoolType{
-		pool: make(map[string]*Conn),
+		pool: ttlcache.NewLRU(connPoolSize, 1*time.Hour, poolEvict),
 	}
 }
 
@@ -66,6 +77,11 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 func (conn *Conn) Close() {
 	conn.Conn.Close()
 	connPool.Remove(conn.addr)
+}
+
+// KeepAlive keeps Conn reusable in the conn pool
+func (conn *Conn) KeepAlive() {
+	connPool.Add(conn.addr, conn)
 }
 
 // healthchecker is a recurrent timer function that tests the connections
@@ -98,7 +114,9 @@ func (p *connPoolType) Get(key string) *Conn {
 	p.RLock()
 	defer p.RUnlock()
 
-	conn, ok := p.pool[key]
+	// ignore stale indicator
+	value, _ := p.pool.Get(key)
+	conn, ok := value.(*Conn)
 	if ok {
 		return conn
 	}
@@ -110,7 +128,7 @@ func (p *connPoolType) Add(key string, conn *Conn) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.pool[key] = conn
+	p.pool.Set(key, conn, 0)
 	log.Debug("add conn with key:", key)
 }
 
@@ -119,7 +137,7 @@ func (p *connPoolType) Remove(key string) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.pool[key] = nil
+	p.pool.Remove(key)
 	log.Debug("remove conn with key:", key)
 }
 
