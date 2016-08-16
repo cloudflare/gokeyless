@@ -87,6 +87,8 @@ func healthchecker(conn *Conn) {
 			}
 
 			log.Debug("start a new health check timer")
+		} else { // bail out
+			return
 		}
 	}
 }
