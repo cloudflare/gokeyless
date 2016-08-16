@@ -43,7 +43,6 @@ func NewPingTest(c *client.Client, server string) testapi.TestFunc {
 		if err != nil {
 			return err
 		}
-		defer conn.Close()
 		return conn.Ping(nil)
 	}
 }
@@ -67,7 +66,6 @@ func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net
 		if err != nil {
 			return err
 		}
-		defer conn.Close()
 
 		got, err := conn.DoOperation(&gokeyless.Operation{
 			Opcode:   gokeyless.OpGetCertificate,
