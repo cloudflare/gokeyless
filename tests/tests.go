@@ -75,7 +75,7 @@ func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net
 		})
 		if err != nil {
 			return err
-		} else if bytes.Equal(got.Payload, expected) {
+		} else if !bytes.Equal(got.Payload, expected) {
 			return errors.New("certificate loading failed: returned certificate is not the same as expected")
 		}
 
