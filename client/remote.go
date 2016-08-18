@@ -160,11 +160,11 @@ func UnixRemote(unixAddr, serverName string) (Remote, error) {
 	return NewServer(addr, serverName), nil
 }
 
-func (c *Client) LookupIPs(host string) (ips []net.IP, err error) {
+func LookupIPs(resolvers []string, host string) (ips []net.IP, err error) {
 	m := new(dns.Msg)
 	dnsClient := new(dns.Client)
 	dnsClient.Net = "tcp"
-	for _, resolver := range c.Resolvers {
+	for _, resolver := range resolvers {
 		m.SetQuestion(dns.Fqdn(host), dns.TypeA)
 		if in, _, err := dnsClient.Exchange(m, resolver); err == nil {
 			for _, rr := range in.Answer {
@@ -203,7 +203,7 @@ func (c *Client) LookupServerWithName(serverName, host, port string) (Remote, er
 		serverName = host
 	}
 
-	ips, err := c.LookupIPs(host)
+	ips, err := LookupIPs(c.Resolvers, host)
 	if err != nil {
 		return nil, err
 	}
