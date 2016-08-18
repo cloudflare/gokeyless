@@ -55,7 +55,7 @@ func TestBlacklist(t *testing.T) {
 				log.Fatal(err)
 			}
 		}
-		blc.PopulateBlacklist(cert.Leaf, 3407)
+		blc.PopulateBlacklistFromCert(cert.Leaf, 3407)
 	}
 
 	if _, err := remote.Dial(blc); err == nil {

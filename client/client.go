@@ -92,8 +92,22 @@ func (as AddrSet) Contains(addr net.Addr) bool {
 	return ok && contains
 }
 
-// PopulateBlacklist populates the client blacklist using an x509 certificate.
-func (c *Client) PopulateBlacklist(cert *x509.Certificate, port int) {
+// PopulateBlacklistFromHostname populates the client blacklist using an hostname.
+// All ips resolved from that hostname, appended with port are blacklisted.
+func (c *Client) PopulateBlacklistFromHostname(host string, port int) {
+	if ips, err := LookupIPs(c.Resolvers, host); err == nil {
+		for _, ip := range ips {
+			c.Blacklist.Add(&net.TCPAddr{
+				IP:   ip,
+				Port: port,
+			})
+		}
+	}
+}
+
+// PopulateBlacklistFromCert populates the client blacklist using an x509 certificate.
+// IPs resolved from domain SANs and IP SANs are put together with port and blacklisted.
+func (c *Client) PopulateBlacklistFromCert(cert *x509.Certificate, port int) {
 	for _, ip := range cert.IPAddresses {
 		c.Blacklist.Add(&net.TCPAddr{
 			IP:   ip,
@@ -101,14 +115,7 @@ func (c *Client) PopulateBlacklist(cert *x509.Certificate, port int) {
 		})
 	}
 	for _, host := range cert.DNSNames {
-		if ips, err := net.LookupIP(host); err == nil {
-			for _, ip := range ips {
-				c.Blacklist.Add(&net.TCPAddr{
-					IP:   ip,
-					Port: port,
-				})
-			}
-		}
+		c.PopulateBlacklistFromHostname(host, port)
 	}
 }
 
