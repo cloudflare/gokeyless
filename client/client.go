@@ -83,6 +83,7 @@ type AddrSet map[string]bool
 
 // Add adds an addr to the set of addresses.
 func (as AddrSet) Add(addr net.Addr) {
+	log.Infof("add to blacklist addr set: %s", addr)
 	as[addr.String()] = true
 }
 
