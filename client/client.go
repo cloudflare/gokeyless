@@ -184,7 +184,7 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 	log.Debugf("registering key @%s with SKI: %02x", server, ski)
 	cachedRemote := false
 	v, stale := c.remoteCache.Get(server)
-	if !stale {
+	if v != nil && !stale {
 		if r, ok := v.(Remote); ok {
 			c.remotes[ski] = r
 			cachedRemote = true
