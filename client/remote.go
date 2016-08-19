@@ -36,7 +36,6 @@ var connPool *connPoolType
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
 	Dial(*Client) (*Conn, error)
-	Add(Remote) Remote
 }
 
 // A Conn represents a long-lived client connection to a keyserver.
@@ -263,11 +262,6 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	return conn, nil
 }
 
-func (s *singleRemote) Add(r Remote) Remote {
-	g, _ := NewGroup([]Remote{s, r})
-	return g
-}
-
 func copyTLSConfig(c *tls.Config) *tls.Config {
 	return &tls.Config{
 		Certificates:             c.Certificates,
@@ -369,7 +363,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 			break
 		}
 
-		log.Debug(err)
+		log.Infof("fail to connect to %v:%v", *i, err)
 		i.latency.Reset()
 		i.errorCount++
 	}
@@ -417,14 +411,6 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 	}()
 
 	return conn, nil
-}
-
-// Add adds r into the underlying Remote list
-func (g *Group) Add(r Remote) Remote {
-	if g != r {
-		heap.Push(g, &item{Remote: r, latency: &ewmaLatency{}})
-	}
-	return g
 }
 
 // Len(), Less(i, j) and Swap(i,j) implements sort.Interface

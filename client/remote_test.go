@@ -106,7 +106,7 @@ func TestMain(t *testing.T) {
 
 	// Make a remote group containing a good server and a bad one.
 	// Setup default remote to be the above group
-	c.DefaultRemote = remote.Add(deadRemote)
+	c.DefaultRemote, _ = NewGroup([]Remote{remote, deadRemote})
 
 	// register both public keys with empty remote server so
 	// DefaultRemote will be used
@@ -135,7 +135,6 @@ func TestUnixRemote(t *testing.T) {
 	}
 	// clear cached remotes and set a unix remote for the client
 	c.DefaultRemote = r
-	c.servers = map[string]Remote{}
 	c.remotes = map[gokeyless.SKI]Remote{}
 
 	// register the ECDDSA certificate again with the default remote
@@ -149,7 +148,6 @@ func TestUnixRemote(t *testing.T) {
 func TestBadRemote(t *testing.T) {
 	// clear cached remotes and set a bad remote for the client
 	c.DefaultRemote = deadRemote
-	c.servers = map[string]Remote{}
 	c.remotes = map[gokeyless.SKI]Remote{}
 
 	// register the ECDDSA certificate again with the default broken remote
@@ -198,8 +196,7 @@ func TestSlowServer(t *testing.T) {
 	}
 	t.Logf("slow server is at %s:%s", s2host, s2port)
 
-	c.DefaultRemote = remote.Add(slowRemote)
-	c.servers = map[string]Remote{}
+	c.DefaultRemote, _ = NewGroup([]Remote{remote, slowRemote})
 	c.remotes = map[gokeyless.SKI]Remote{}
 	t.Log("c.DefaultRemote size:", len(c.DefaultRemote.(*Group).remotes))
 

@@ -14,10 +14,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
+	"github.com/lziest/ttlcache"
+)
+
+const (
+	remoteCacheSize = 512
+	remoteCacheTTL  = time.Minute * 5
 )
 
 // Client is a Keyless Client capable of connecting to servers and performing keyless operations.
@@ -29,13 +36,15 @@ type Client struct {
 	// Resolvers is an ordered list of DNS servers used to look up remote servers.
 	Resolvers []string
 	// DefaultRemote is a default remote to dial and register keys to.
+	// TODO: DefaultRemote needs to deal with default server DNS changes automatically.
+	// NOTE: For now DefaultRemote is very static to save dns lookup overhead
 	DefaultRemote Remote
 	// Blacklist is a list of addresses that this client won't dial.
 	Blacklist AddrSet
 	// m is a Read/Write lock to protect against conccurrent accesses to maps.
 	m sync.RWMutex
-	// servers maps all known server names to their servers.
-	servers map[string]Remote
+	// remoteCache maps all known server names to corresponding remote.
+	remoteCache *ttlcache.LRU
 	// remotes maps all known certificate SKIs to their Remote.
 	remotes map[gokeyless.SKI]Remote
 }
@@ -51,10 +60,10 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Dialer:    &net.Dialer{},
-		Blacklist: make(AddrSet),
-		servers:   make(map[string]Remote),
-		remotes:   make(map[gokeyless.SKI]Remote),
+		Dialer:      &net.Dialer{},
+		Blacklist:   make(AddrSet),
+		remoteCache: ttlcache.NewLRU(remoteCacheSize, remoteCacheTTL, nil),
+		remotes:     make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -161,54 +170,39 @@ func (c *Client) ActivateServer(server string, token []byte) error {
 	return conn.Activate(token)
 }
 
-// AddRemote adds a remote for the given SKI, optionally registering it
-// under the given server name.
-func (c *Client) AddRemote(server string, r Remote, ski gokeyless.SKI) {
+// registerSKI associates the SKI of a public key with a particular keyserver.
+func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 	c.m.Lock()
 	defer c.m.Unlock()
+	// empty server means always associate ski with DefaultRemote
+	if server == "" {
+		log.Debugf("registering key @default_remote with SKI: %02x", ski)
+		c.remotes[ski] = c.DefaultRemote
+		return nil
+	}
 
-	if server != "" {
-		if oldServer, ok := c.servers[server]; ok {
-			oldServer.Add(r)
+	log.Debugf("registering key @%s with SKI: %02x", server, ski)
+	cachedRemote := false
+	v, stale := c.remoteCache.Get(server)
+	if !stale {
+		if r, ok := v.(Remote); ok {
+			c.remotes[ski] = r
+			cachedRemote = true
 		} else {
-			c.servers[server] = r
+			log.Error("failed to convert cached remote")
 		}
 	}
 
-	if oldRemote, ok := c.remotes[ski]; ok {
-		oldRemote.Add(r)
-	} else {
+	if !cachedRemote {
+		r, err := c.LookupServer(server)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+		c.remoteCache.Set(server, r, 0) // use default timeout
 		c.remotes[ski] = r
 	}
-}
-
-// registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) (err error) {
-	log.Debugf("Registering key @ %s with SKI: %02x", server, ski)
-	var r Remote
-	if server == "" {
-		r = c.DefaultRemote
-		if r == nil {
-			err = errors.New("no default remote")
-			log.Error(err)
-			return
-		}
-	} else {
-		var ok bool
-		c.m.RLock()
-		r, ok = c.servers[server]
-		c.m.RUnlock()
-		if ok {
-			server = ""
-		} else {
-			if r, err = c.LookupServer(server); err != nil {
-				return
-			}
-		}
-	}
-
-	c.AddRemote(server, r, ski)
-	return
+	return nil
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
