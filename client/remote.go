@@ -27,7 +27,6 @@ const (
 // so we don't need to do TLS handshake unnecessarily.
 type connPoolType struct {
 	pool *ttlcache.LRU
-	sync.RWMutex
 }
 
 // connPool keeps all active Conn
@@ -111,9 +110,6 @@ func healthchecker(conn *Conn) {
 
 // Get returns a Conn from the pool if there is any.
 func (p *connPoolType) Get(key string) *Conn {
-	p.RLock()
-	defer p.RUnlock()
-
 	// ignore stale indicator
 	value, _ := p.pool.Get(key)
 	conn, ok := value.(*Conn)
@@ -125,18 +121,12 @@ func (p *connPoolType) Get(key string) *Conn {
 
 // Add adds a Conn to the pool.
 func (p *connPoolType) Add(key string, conn *Conn) {
-	p.Lock()
-	defer p.Unlock()
-
 	p.pool.Set(key, conn, defaultTTL)
 	log.Debug("add conn with key:", key)
 }
 
 // Remove removes a Conn keyed by key.
 func (p *connPoolType) Remove(key string) {
-	p.Lock()
-	defer p.Unlock()
-
 	p.pool.Remove(key)
 	log.Debug("remove conn with key:", key)
 }
