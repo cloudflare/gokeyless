@@ -27,7 +27,6 @@ const (
 // so we don't need to do TLS handshake unnecessarily.
 type connPoolType struct {
 	pool *ttlcache.LRU
-	sync.RWMutex
 }
 
 // connPool keeps all active Conn
@@ -36,7 +35,6 @@ var connPool *connPoolType
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
 	Dial(*Client) (*Conn, error)
-	Add(Remote) Remote
 }
 
 // A Conn represents a long-lived client connection to a keyserver.
@@ -112,9 +110,6 @@ func healthchecker(conn *Conn) {
 
 // Get returns a Conn from the pool if there is any.
 func (p *connPoolType) Get(key string) *Conn {
-	p.RLock()
-	defer p.RUnlock()
-
 	// ignore stale indicator
 	value, _ := p.pool.Get(key)
 	conn, ok := value.(*Conn)
@@ -126,18 +121,12 @@ func (p *connPoolType) Get(key string) *Conn {
 
 // Add adds a Conn to the pool.
 func (p *connPoolType) Add(key string, conn *Conn) {
-	p.Lock()
-	defer p.Unlock()
-
 	p.pool.Set(key, conn, defaultTTL)
 	log.Debug("add conn with key:", key)
 }
 
 // Remove removes a Conn keyed by key.
 func (p *connPoolType) Remove(key string) {
-	p.Lock()
-	defer p.Unlock()
-
 	p.pool.Remove(key)
 	log.Debug("remove conn with key:", key)
 }
@@ -263,11 +252,6 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	return conn, nil
 }
 
-func (s *singleRemote) Add(r Remote) Remote {
-	g, _ := NewGroup([]Remote{s, r})
-	return g
-}
-
 func copyTLSConfig(c *tls.Config) *tls.Config {
 	return &tls.Config{
 		Certificates:             c.Certificates,
@@ -369,7 +353,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 			break
 		}
 
-		log.Debug(err)
+		log.Infof("fail to connect to %v:%v", *i, err)
 		i.latency.Reset()
 		i.errorCount++
 	}
@@ -417,14 +401,6 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 	}()
 
 	return conn, nil
-}
-
-// Add adds r into the underlying Remote list
-func (g *Group) Add(r Remote) Remote {
-	if g != r {
-		heap.Push(g, &item{Remote: r, latency: &ewmaLatency{}})
-	}
-	return g
 }
 
 // Len(), Less(i, j) and Swap(i,j) implements sort.Interface
