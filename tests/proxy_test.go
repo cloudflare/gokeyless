@@ -76,6 +76,9 @@ func TestTLSProxy(t *testing.T) {
 		}
 	}()
 
+	// wait for server to start
+	time.Sleep(100 * time.Millisecond)
+
 	pemKey, err := ioutil.ReadFile(tlsKey)
 	if err != nil {
 		t.Fatal(err)
