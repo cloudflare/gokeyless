@@ -91,6 +91,8 @@ func TestMain(t *testing.T) {
 	if c, err = NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
 		t.Fatal(err)
 	}
+	// set aggressive timeout since all tests use local connections
+	c.Dialer.Timeout = 1 * time.Second
 
 	// start a remote server at serverAddr
 	host, port, _ := net.SplitHostPort(s.Addr)
