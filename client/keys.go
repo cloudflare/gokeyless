@@ -18,7 +18,11 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
 			return gokeyless.OpError
 		}
-		if opts.SaltLength != rsa.PSSSaltLengthEqualsHash {
+		// Keyless only implements RSA-PSS with salt length == hash length,
+		// as used in TLS 1.3.  Check that it's what the client is asking,
+		// either explicitly or with the magic value.
+		if opts.SaltLength != rsa.PSSSaltLengthEqualsHash &&
+			opts.SaltLength != opts.Hash.Size() {
 			return gokeyless.OpError
 		}
 		switch opts.Hash {
