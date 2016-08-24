@@ -31,6 +31,18 @@ func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 	return h.New().Sum(ptxt)[len(ptxt):]
 }
 
+// NewPingRemoteTest generates a TestFunc to connect and perform a ping to
+// a specific remote directly.
+func NewPingRemoteTest(c *client.Client, r client.Remote) testapi.TestFunc {
+	return func() error {
+		conn, err := r.Dial(c)
+		if err != nil {
+			return err
+		}
+		return conn.Ping(nil)
+	}
+}
+
 // NewPingTest generates a TestFunc to connect and perform a ping.
 func NewPingTest(c *client.Client, server string) testapi.TestFunc {
 	return func() error {
