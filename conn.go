@@ -13,8 +13,10 @@ import (
 // Conn represents an open keyless connection.
 type Conn struct {
 	*tls.Conn
-	sync.Mutex
 	listeners map[uint32]chan *Header
+
+	read, write sync.Mutex
+	mapMutex    sync.RWMutex
 }
 
 // NewConn initializes a new Conn.
@@ -28,8 +30,11 @@ func NewConn(inner *tls.Conn) *Conn {
 // Close marks conn as closed and closes the inner net.Conn if it is
 // no longer in use.
 func (c *Conn) Close() {
-	c.Lock()
-	defer c.Unlock()
+	c.read.Lock()
+	c.write.Lock()
+	defer c.read.Unlock()
+	defer c.write.Unlock()
+
 	if c.Conn != nil {
 		if err := c.Conn.Close(); err != nil {
 			log.Errorf("Unable to close connection: %v", err)
@@ -40,15 +45,13 @@ func (c *Conn) Close() {
 
 // IsClosed returns true if the connection has been closed.
 func (c *Conn) IsClosed() bool {
-	c.Lock()
-	defer c.Unlock()
 	return c.Conn == nil
 }
 
 // WriteHeader marshals and header and writes it to the conn.
 func (c *Conn) WriteHeader(h *Header) error {
-	c.Lock()
-	defer c.Unlock()
+	c.write.Lock()
+	defer c.write.Unlock()
 
 	if c.Conn == nil {
 		return fmt.Errorf("connection is closed or not yet ready")
@@ -67,8 +70,8 @@ func (c *Conn) WriteHeader(h *Header) error {
 // ReadHeader unmarshals a header from the wire into an internal
 // Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.read.Lock()
+	defer c.read.Unlock()
 
 	if c.Conn == nil {
 		return nil, fmt.Errorf("connection is closed or not yet ready")
@@ -104,34 +107,31 @@ func (c *Conn) doRead() error {
 		return err
 	}
 
-	c.Lock()
+	c.mapMutex.RLock()
 	ch, ok := c.listeners[h.ID]
-	if !ok {
-		ch = make(chan *Header, 1)
-		c.listeners[h.ID] = ch
+	if ok {
+		ch <- h
 	}
-	c.Unlock()
-
-	ch <- h
+	c.mapMutex.RUnlock()
 
 	return nil
 }
 
 // listenResponse attempts to read a response with the appropriate ID, blocking until it is available.
 func (c *Conn) listenResponse(id uint32) (*Header, error) {
-	c.Lock()
+	c.mapMutex.Lock()
 	ch, ok := c.listeners[id]
 	if !ok {
 		ch = make(chan *Header, 1)
 		c.listeners[id] = ch
 	}
-	c.Unlock()
+	c.mapMutex.Unlock()
 
 	defer func() {
-		c.Lock()
+		c.mapMutex.Lock()
 		close(ch)
 		delete(c.listeners, id)
-		c.Unlock()
+		c.mapMutex.Unlock()
 	}()
 
 	if err := c.doRead(); err != nil {
