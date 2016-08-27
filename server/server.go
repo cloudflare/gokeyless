@@ -87,7 +87,7 @@ func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) 
 	log.Debug("Couldn't look up key based on SKI, trying Digest.")
 	ski, ok := keys.digests[op.Digest]
 	if ok {
-		priv, found = keys.skis[ski]
+		priv, found := keys.skis[ski]
 		if found {
 			return priv, found
 		}
