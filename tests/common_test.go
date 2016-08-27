@@ -50,6 +50,9 @@ func init() {
 		log.Fatal(err)
 	}
 
+	keys := server.NewDefaultKeystore()
+	s.Keys = keys
+
 	// Import RSA private key into server's keystore.
 	if pemBytes, err = ioutil.ReadFile(rsaPrivKey); err != nil {
 		log.Fatal(err)
@@ -58,7 +61,7 @@ func init() {
 	if priv, err = x509.ParsePKCS1PrivateKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if err = s.Keys.Add(nil, priv); err != nil {
+	if err = keys.Add(nil, priv); err != nil {
 		log.Fatal(err)
 	}
 
@@ -70,7 +73,7 @@ func init() {
 	if priv, err = x509.ParseECPrivateKey(p.Bytes); err != nil {
 		log.Fatal(err)
 	}
-	if err = s.Keys.Add(nil, priv); err != nil {
+	if err = keys.Add(nil, priv); err != nil {
 		log.Fatal(err)
 	}
 

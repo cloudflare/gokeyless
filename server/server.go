@@ -26,14 +26,12 @@ var keyExt = regexp.MustCompile(`.+\.key`)
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
-	// Add adds a new key to the store.
-	Add(*gokeyless.Operation, crypto.Signer) error
 	Get(*gokeyless.Operation) (crypto.Signer, bool)
 }
 
-// NewKeystore returns a new default keystore.
-func NewKeystore() Keystore {
-	return &defaultKeystore{
+// NewKeystore returns a new default memory-based static keystore.
+func NewDefaultKeystore() *DefaultKeystore {
+	return &DefaultKeystore{
 		skis:      make(map[gokeyless.SKI]crypto.Signer),
 		digests:   make(map[gokeyless.Digest]gokeyless.SKI),
 		snis:      make(map[string]gokeyless.SKI),
@@ -43,8 +41,8 @@ func NewKeystore() Keystore {
 	}
 }
 
-// defaultKeystore is a simple default key store.
-type defaultKeystore struct {
+// DefaultKeystore is a simple in-memory key store.
+type DefaultKeystore struct {
 	sync.RWMutex
 	skis      map[gokeyless.SKI]crypto.Signer
 	digests   map[gokeyless.Digest]gokeyless.SKI
@@ -56,7 +54,7 @@ type defaultKeystore struct {
 
 // Add adds a new key to the server's internal repertoire.
 // Stores in maps by SKI and (if possible) Digest, SNI, Server IP, and Client IP.
-func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) error {
+func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) error {
 	ski, err := gokeyless.GetSKI(priv.Public())
 	if err != nil {
 		return err
@@ -88,7 +86,8 @@ func (keys *defaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 	return nil
 }
 
-func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, ok bool) {
+// Get returns a key from keys, mapped from SKI.
+func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, ok bool) {
 	keys.RLock()
 	defer keys.RUnlock()
 
@@ -137,6 +136,33 @@ func (keys *defaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, o
 	}
 
 	return
+}
+
+// LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
+// to parse the file into crypto.Signer for loading into the server Keystore.
+func (keys *DefaultKeystore) LoadKeysFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.IsDir() && keyExt.MatchString(info.Name()) {
+			log.Debugf("Loading %s...\n", path)
+
+			in, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			priv, err := LoadKey(in)
+			if err != nil {
+				return err
+			}
+
+			return keys.Add(nil, priv)
+		}
+		return nil
+	})
 }
 
 type akiSet []gokeyless.SKI
@@ -192,7 +218,7 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr st
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Keys:  NewKeystore(),
+		Keys:  NewDefaultKeystore(),
 		stats: newStatistics(),
 	}
 }
@@ -375,33 +401,6 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 	} else {
 		log.Errorf("connection error: %v\n", connError)
 	}
-}
-
-// LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
-// to parse the file into crypto.Signer for loading into the server Keystore.
-func (s *Server) LoadKeysFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && keyExt.MatchString(info.Name()) {
-			log.Debugf("Loading %s...\n", path)
-
-			in, err := ioutil.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			priv, err := LoadKey(in)
-			if err != nil {
-				return err
-			}
-
-			return s.Keys.Add(nil, priv)
-		}
-		return nil
-	})
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
