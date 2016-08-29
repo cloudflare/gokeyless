@@ -34,9 +34,6 @@ func NewDefaultKeystore() *DefaultKeystore {
 	return &DefaultKeystore{
 		skis:      make(map[gokeyless.SKI]crypto.Signer),
 		digests:   make(map[gokeyless.Digest]gokeyless.SKI),
-		snis:      make(map[string]gokeyless.SKI),
-		serverIPs: make(map[string]gokeyless.SKI),
-		clientIPs: make(map[string]gokeyless.SKI),
 		validAKIs: make(map[gokeyless.SKI]akiSet),
 	}
 }
@@ -46,9 +43,6 @@ type DefaultKeystore struct {
 	sync.RWMutex
 	skis      map[gokeyless.SKI]crypto.Signer
 	digests   map[gokeyless.Digest]gokeyless.SKI
-	snis      map[string]gokeyless.SKI
-	serverIPs map[string]gokeyless.SKI
-	clientIPs map[string]gokeyless.SKI
 	validAKIs map[gokeyless.SKI]akiSet
 }
 
@@ -68,15 +62,6 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 	}
 
 	if op != nil {
-		if op.SNI != "" {
-			keys.snis[op.SNI] = ski
-		}
-		if op.ServerIP != nil {
-			keys.serverIPs[op.ServerIP.String()] = ski
-		}
-		if op.ClientIP != nil {
-			keys.clientIPs[op.ClientIP.String()] = ski
-		}
 		keys.validAKIs[ski] = keys.validAKIs[ski].Add(op.AKI)
 	}
 
@@ -87,55 +72,28 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 }
 
 // Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (priv crypto.Signer, ok bool) {
+func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) {
 	keys.RLock()
 	defer keys.RUnlock()
 
 	ski := op.SKI
 	if ski.Valid() {
-		priv, ok = keys.skis[ski]
-	} else {
-		if !ok {
-			log.Debug("Couldn't look up key based on SKI, trying Digest.")
-			if ski, ok = keys.digests[op.Digest]; ok {
-				priv, ok = keys.skis[ski]
-			}
-		}
-
-		if !ok {
-			log.Debug("Couldn't look up key based on Digest, trying SNI.")
-			if ski, ok = keys.snis[op.SNI]; ok {
-				priv, ok = keys.skis[ski]
-			}
-		}
-
-		if !ok {
-			if op.ServerIP != nil {
-				log.Debug("Couldn't look up key based on SNI, trying Server IP.")
-				if ski, ok = keys.serverIPs[op.ServerIP.String()]; ok {
-					priv, ok = keys.skis[ski]
-				}
-			}
-		}
-
-		if !ok {
-			if op.ClientIP != nil {
-				log.Debug("Couldn't look up key based on Server IP, trying Client IP.")
-				if ski, ok = keys.clientIPs[op.ClientIP.String()]; ok {
-					priv, ok = keys.skis[ski]
-				}
-			}
+		priv, found := keys.skis[ski]
+		if found {
+			return priv, found
 		}
 	}
 
-	if !ok {
-		log.Infof("Couldn't look up key for %s.", op)
-	} else if len(keys.validAKIs[ski]) > 0 && !keys.validAKIs[ski].Contains(op.AKI) {
-		log.Warningf("Attempt to access key with invalid AKI: %s", op.AKI)
-		return nil, false
+	log.Debug("Couldn't look up key based on SKI, trying Digest.")
+	ski, ok := keys.digests[op.Digest]
+	if ok {
+		priv, found := keys.skis[ski]
+		if found {
+			return priv, found
+		}
 	}
-
-	return
+	log.Infof("Couldn't look up key for %s.", op)
+	return nil, false
 }
 
 // LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
