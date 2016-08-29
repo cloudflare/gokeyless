@@ -82,9 +82,11 @@ func main() {
 	go func() { log.Fatal(s.ListenAndServe()) }()
 	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
 
-	if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
+	keys := server.NewDefaultKeystore()
+	if err := keys.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 		log.Fatal(err)
 	}
+	s.Keys = keys
 
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {
@@ -101,9 +103,11 @@ func main() {
 		select {
 		case <-c:
 			log.Info("Received SIGHUP, reloading keys...")
-			if err := s.LoadKeysFromDir(keyDir, LoadKey); err != nil {
+			keys := server.NewDefaultKeystore()
+			if err := keys.LoadKeysFromDir(keyDir, LoadKey); err != nil {
 				log.Fatal(err)
 			}
+			s.Keys = keys
 		}
 	}
 }
