@@ -45,6 +45,11 @@ func (c *Conn) Close() {
 
 // IsClosed returns true if the connection has been closed.
 func (c *Conn) IsClosed() bool {
+	c.read.Lock()
+	c.write.Lock()
+	defer c.read.Unlock()
+	defer c.write.Unlock()
+
 	return c.Conn == nil
 }
 
