@@ -1,12 +1,10 @@
 package client
 
 import (
-	"container/heap"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -274,24 +272,25 @@ func copyTLSConfig(c *tls.Config) *tls.Config {
 	}
 }
 
-// ewmaLatency is exponentially weighted moving average of latency
-type ewmaLatency struct {
-	val      time.Duration
-	measured bool
+// latency is exponentially weighted moving average of latency
+type latency struct {
+	val        time.Duration
+	errorCount int
+	measured   bool
 }
 
-func (l *ewmaLatency) Update(val time.Duration) {
+func (l latency) Update(val time.Duration) {
 	l.measured = true
 	l.val /= 2
 	l.val += (val / 2)
 }
 
-func (l *ewmaLatency) Reset() {
+func (l latency) Reset() {
 	l.val = 0
 	l.measured = false
 }
 
-func (l *ewmaLatency) Better(r *ewmaLatency) bool {
+func (l latency) Better(r latency) bool {
 	// if l is not measured (it also means last measurement was
 	// a failure), any updated/measured latency is better than
 	// l. Also if neither l or r is measured, l can't be better
@@ -304,20 +303,15 @@ func (l *ewmaLatency) Better(r *ewmaLatency) bool {
 		return true
 	}
 
-	return l.val < r.val
-}
-
-type item struct {
-	Remote
-	index      int
-	latency    *ewmaLatency
-	errorCount int
+	return (l.val < r.val) || (l.val == r.val && l.errorCount < r.errorCount)
 }
 
 // A Group is a Remote consisting of a load-balanced set of external servers.
 type Group struct {
-	sync.Mutex
-	remotes []*item
+	remotes     []Remote
+	latencies   []latency
+	lastPingAll time.Time
+	sync.RWMutex
 }
 
 // NewGroup creates a new group from a set of remotes.
@@ -326,121 +320,76 @@ func NewGroup(remotes []Remote) (*Group, error) {
 		return nil, errors.New("attempted to create empty remote group")
 	}
 	g := new(Group)
-	for _, r := range remotes {
-		heap.Push(g, &item{Remote: r, latency: &ewmaLatency{}})
-	}
+	g.remotes = remotes
+	g.latencies = make([]latency, len(remotes))
 
 	return g, nil
 }
 
 // Dial returns a connection with best latency measurement.
-func (g *Group) Dial(c *Client) (conn *Conn, err error) {
+func (g *Group) Dial(c *Client) (*Conn, error) {
+	if len(g.remotes) == 0 {
+		return nil, errors.New("remote group empty")
+	}
+
+	g.RLock()
+	bestr := g.remotes[0]
+	bestl := g.latencies[0]
+	// use a O(n) loop to find best remote, without
+	// maintaining mutex on a heap object
+	for i, l := range g.latencies {
+		if l.Better(bestl) {
+			bestr = g.remotes[i]
+		}
+	}
+	g.RUnlock()
+
 	g.Lock()
-	defer g.Unlock()
-
-	if g.Len() == 0 {
-		err = errors.New("remote group empty")
-		return
+	if time.Since(g.lastPingAll) > time.Minute {
+		g.lastPingAll = time.Now()
+		go g.pingAll(c)
 	}
+	g.Unlock()
 
-	var i *item
-	var popped []*item
-	for g.Len() > 0 {
-		i = heap.Pop(g).(*item)
-		popped = append(popped, i)
-		conn, err = i.Dial(c)
-		if err == nil {
-			break
+	conn, err := bestr.Dial(c)
+	return conn, err
+}
+
+func (g *Group) pingAll(c *Client) {
+	// make/copy a separate latencies slice
+	g.RLock()
+	latencies := make([]latency, len(g.remotes))
+	copy(latencies, g.latencies)
+	g.RUnlock()
+
+	// update on the latencies slice owned by the goroutine
+	// so there is no need to lock.
+	for i, l := range latencies {
+		r := g.remotes[i]
+		conn, err := r.Dial(c)
+		if err != nil {
+			l.Reset()
+			l.errorCount++
+			latencies[i] = l
+			log.Infof("ping failed: %v", err)
+			continue
 		}
-
-		log.Infof("fail to connect to %v:%v", *i, err)
-		i.latency.Reset()
-		i.errorCount++
-	}
-
-	for _, f := range popped {
-		heap.Push(g, f)
-	}
-
-	// fail to find a usable connection
-	if err != nil {
-		return nil, err
-	}
-
-	// loop through all remote servers for performance measurement
-	// in a separate goroutine
-	go func() {
-		time.Sleep(100 * time.Microsecond)
-		g.Lock()
-		for _, i := range g.remotes {
-			conn, err := i.Dial(c)
-			if err != nil {
-				i.latency.Reset()
-				i.errorCount++
-				log.Infof("ping failed: %v", err)
-				continue
-			}
-
-			start := time.Now()
-			err = conn.Ping(nil)
-			duration := time.Since(start)
-
-			if err != nil {
-				defer conn.Close()
-				i.latency.Reset()
-				i.errorCount++
-				log.Infof("ping failed: %v", err)
-			} else {
-				log.Debug(conn.addr, " ping duration:", duration)
-				i.latency.Update(duration)
-			}
+		start := time.Now()
+		err = conn.Ping(nil)
+		duration := time.Since(start)
+		if err != nil {
+			defer conn.Close()
+			l.Reset()
+			l.errorCount++
+			log.Infof("ping failed: %v", err)
+		} else {
+			l.Update(duration)
 		}
-		sort.Sort(g)
+		latencies[i] = l
+	}
 
-		g.Unlock()
-	}()
-
-	return conn, nil
-}
-
-// Len(), Less(i, j) and Swap(i,j) implements sort.Interface
-
-// Len returns the number of remote
-func (g *Group) Len() int {
-	return len(g.remotes)
-}
-
-// Swap swaps remote i and remote j in the list
-func (g *Group) Swap(i, j int) {
-	g.remotes[i], g.remotes[j] = g.remotes[j], g.remotes[i]
-	g.remotes[i].index = i
-	g.remotes[j].index = j
-}
-
-// Less compares two Remotes at position i and j based on latency
-func (g *Group) Less(i, j int) bool {
-	// TODO: incorporate more logic about open connections and failure rate
-	pi, pj := g.remotes[i].latency, g.remotes[j].latency
-	errsi, errsj := g.remotes[i].errorCount, g.remotes[j].errorCount
-
-	return pi.Better(pj) || pi == pj && errsi < errsj
-}
-
-// With above implemented sort.Interface, Push and Pop completes
-// heap.Interface, Now type item can be heap sorted and the
-// top of the heap would have minimal measured latency.
-
-// Push pushes x into the remote lists
-func (g *Group) Push(x interface{}) {
-	i := x.(*item)
-	i.index = len(g.remotes)
-	g.remotes = append(g.remotes, i)
-}
-
-// Pop drops the last Remote object from the list
-// Note: this is different from heap.Pop().
-func (g *Group) Pop() interface{} {
-	i := g.remotes[len(g.remotes)-1]
-	g.remotes = g.remotes[0 : len(g.remotes)-1]
-	return i
+	// lock the write on g.latencies
+	g.Lock()
+	g.latencies = latencies
+	g.Unlock()
 }
