@@ -317,8 +317,7 @@ type item struct {
 // A Group is a Remote consisting of a load-balanced set of external servers.
 type Group struct {
 	sync.Mutex
-	remotes     []*item
-	lastPingAll time.Time
+	remotes []*item
 }
 
 // NewGroup creates a new group from a set of remotes.
@@ -370,43 +369,38 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 
 	// loop through all remote servers for performance measurement
 	// in a separate goroutine
-	if time.Since(g.lastPingAll) > time.Second {
-		g.lastPingAll = time.Now()
-		go g.pingAll(c)
-	}
+	go func() {
+		time.Sleep(100 * time.Microsecond)
+		g.Lock()
+		for _, i := range g.remotes {
+			conn, err := i.Dial(c)
+			if err != nil {
+				i.latency.Reset()
+				i.errorCount++
+				log.Infof("ping failed: %v", err)
+				continue
+			}
+
+			start := time.Now()
+			err = conn.Ping(nil)
+			duration := time.Since(start)
+
+			if err != nil {
+				defer conn.Close()
+				i.latency.Reset()
+				i.errorCount++
+				log.Infof("ping failed: %v", err)
+			} else {
+				log.Debug(conn.addr, " ping duration:", duration)
+				i.latency.Update(duration)
+			}
+		}
+		sort.Sort(g)
+
+		g.Unlock()
+	}()
 
 	return conn, nil
-}
-
-func (g *Group) pingAll(c *Client) {
-	time.Sleep(100 * time.Microsecond)
-	g.Lock()
-	for _, i := range g.remotes {
-		conn, err := i.Dial(c)
-		if err != nil {
-			i.latency.Reset()
-			i.errorCount++
-			log.Infof("ping failed: %v", err)
-			continue
-		}
-
-		start := time.Now()
-		err = conn.Ping(nil)
-		duration := time.Since(start)
-
-		if err != nil {
-			defer conn.Close()
-			i.latency.Reset()
-			i.errorCount++
-			log.Infof("ping failed: %v", err)
-		} else {
-			log.Debug(conn.addr, " ping duration:", duration)
-			i.latency.Update(duration)
-		}
-	}
-	sort.Sort(g)
-
-	g.Unlock()
 }
 
 // Len(), Less(i, j) and Swap(i,j) implements sort.Interface
