@@ -50,14 +50,8 @@ type singleRemote struct {
 }
 
 func init() {
-	poolEvict := func(key string, value interface{}) {
-		conn, ok := value.(*Conn)
-		if ok && conn != nil && conn.Conn != nil {
-			conn.Conn.Close()
-		}
-	}
 	connPool = &connPoolType{
-		pool: ttlcache.NewLRU(connPoolSize, defaultTTL, poolEvict),
+		pool: ttlcache.NewLRU(connPoolSize, defaultTTL, nil),
 	}
 }
 
