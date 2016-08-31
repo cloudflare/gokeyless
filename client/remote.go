@@ -149,6 +149,10 @@ func UnixRemote(unixAddr, serverName string) (Remote, error) {
 	return NewServer(addr, serverName), nil
 }
 
+// LookupIPs resolves host with resolvers list sequentially unitl
+// one resolver can answer the request. It falls
+// back to use system default for final resolution if none of resolvers
+// can answer.
 func LookupIPs(resolvers []string, host string) (ips []net.IP, err error) {
 	m := new(dns.Msg)
 	dnsClient := new(dns.Client)
