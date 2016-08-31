@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sync"
 	"time"
 
@@ -203,6 +204,13 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Se
 func (s *Server) handle(conn *gokeyless.Conn) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
+
+	ch := make(chan *gokeyless.Header, 10)
+	defer close(ch)
+	for i := 0; i < 10; i++ {
+		go s.handleReq(conn, ch)
+	}
+
 	// Continuosly read request Headers from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
@@ -213,6 +221,26 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 		if h, connError = conn.ReadHeader(); connError != nil {
 			s.stats.logConnFailure()
 			continue
+		}
+
+		ch <- h
+	}
+
+	if connError == io.EOF {
+		log.Debug("connection closed by client")
+	} else {
+		log.Errorf("connection error: %v\n", connError)
+	}
+}
+
+func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
+	runtime.LockOSThread()
+
+	var connError error
+	for connError == nil {
+		h, more := <-ch
+		if !more {
+			break
 		}
 
 		requestBegin := time.Now()
@@ -352,12 +380,6 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 
 		connError = conn.Respond(h.ID, sig)
 		s.stats.logRequest(requestBegin)
-	}
-
-	if connError == io.EOF {
-		log.Debug("connection closed by client")
-	} else {
-		log.Errorf("connection error: %v\n", connError)
 	}
 }
 

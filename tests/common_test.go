@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
+	"time"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
@@ -34,6 +35,15 @@ var (
 	ecdsaKey *client.PrivateKey
 	remote   client.Remote
 )
+
+// dummyGetCertificate is a GetCertificate function which reads a static cert
+// from disk and simulates latency.
+func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
+	if string(op.Payload) == "slow" {
+		time.Sleep(time.Second)
+	}
+	return ioutil.ReadFile(tlsChain)
+}
 
 // Set up compatible server and client for use by tests.
 func init() {
@@ -77,10 +87,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	// Create a dummy GetCertificate function which reads a static cert from disk.
-	s.GetCertificate = func(op *gokeyless.Operation) ([]byte, error) {
-		return ioutil.ReadFile(tlsChain)
-	}
+	s.GetCertificate = dummyGetCertificate
 
 	listening := make(chan bool)
 	go func() {

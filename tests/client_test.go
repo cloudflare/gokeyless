@@ -13,7 +13,9 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
+	"sync"
 	"testing"
+	"time"
 
 	"go4.org/testing/functest"
 
@@ -193,5 +195,60 @@ func TestGetCertificate(t *testing.T) {
 	} else if bytes.Compare(certChainBytes, resp.Payload) != 0 {
 		t.Logf("m: %dB\tcertChain: %dB", len(certChainBytes), len(resp.Payload))
 		t.Fatal("certificate chain mismatch")
+	}
+}
+
+func TestConcurrency(t *testing.T) {
+	if testing.Short() {
+		t.SkipNow()
+	}
+
+	conn, err := remote.Dial(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		// Make a slow request first.
+		start := time.Now()
+		_, err := conn.DoOperation(&gokeyless.Operation{
+			Opcode:  gokeyless.OpGetCertificate,
+			Payload: []byte("slow"),
+		})
+		if err != nil {
+			err1 = err
+		} else if time.Since(start) < time.Second {
+			err1 = errors.New("slow request came back too quickly")
+		}
+
+		wg.Done()
+	}()
+
+	go func() {
+		// Make a fast request after a slow request is on the wire.
+		time.Sleep(250 * time.Millisecond)
+
+		start := time.Now()
+		_, err := conn.DoOperation(&gokeyless.Operation{
+			Opcode:  gokeyless.OpGetCertificate,
+			Payload: []byte("fast"),
+		})
+		if err != nil {
+			err2 = err
+		} else if time.Since(start) > time.Second {
+			// Verify fast request came back before slow request did.
+			err2 = errors.New("fast request took too long")
+		}
+
+		wg.Done()
+	}()
+
+	wg.Wait()
+	if err1 != nil || err2 != nil {
+		t.Fatalf("err1=%v, err2=%v", err1, err2)
 	}
 }
