@@ -426,6 +426,7 @@ func (g *Group) PingAll(c *Client) {
 
 	g.Lock()
 	g.remotes = remotes
+	g.lastPingAll = time.Now()
 	g.Unlock()
 }
 
