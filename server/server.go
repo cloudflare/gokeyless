@@ -30,7 +30,7 @@ type Keystore interface {
 	Get(*gokeyless.Operation) (crypto.Signer, bool)
 }
 
-// NewKeystore returns a new default memory-based static keystore.
+// NewDefaultKeystore returns a new default memory-based static keystore.
 func NewDefaultKeystore() *DefaultKeystore {
 	return &DefaultKeystore{
 		skis:      make(map[gokeyless.SKI]crypto.Signer),

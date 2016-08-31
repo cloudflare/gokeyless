@@ -200,7 +200,8 @@ func TestSlowServer(t *testing.T) {
 	}
 	t.Logf("slow server is at %s:%s", s2host, s2port)
 
-	c.DefaultRemote, _ = NewGroup([]Remote{remote, slowRemote})
+	g, _ := NewGroup([]Remote{remote, slowRemote})
+	c.DefaultRemote = g
 	c.remotes = map[gokeyless.SKI]Remote{}
 	t.Log("c.DefaultRemote size:", len(c.DefaultRemote.(*Group).remotes))
 
@@ -213,15 +214,19 @@ func TestSlowServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	g.PingAll(c)
 
-	// After a few health checks, must pick the normal server
-	conn, err := c.Dial(ecdsaSKI)
+	// After ping checks, 1st remote must be the normal server.
+	firstRemote := g.remotes[0]
+	conn, err := firstRemote.Dial(c)
+	if conn.addr != s.Addr {
+		t.Fatal("bad 1st remote addr:", conn.addr)
+	}
+
+	// dialing through SKI -> dialing through default remote, should succeed.
+	conn, err = c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if conn.addr != s.Addr {
-		t.Fatal("bad remote addr:", conn.addr)
 	}
 }
 
