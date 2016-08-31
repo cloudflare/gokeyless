@@ -52,8 +52,8 @@ type singleRemote struct {
 func init() {
 	poolEvict := func(key string, value interface{}) {
 		conn, ok := value.(*Conn)
-		if ok && !conn.Conn.IsClosed() {
-			conn.Close()
+		if ok && conn != nil && conn.Conn != nil {
+			conn.Conn.Close()
 		}
 	}
 	connPool = &connPoolType{
@@ -75,7 +75,6 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 // Close closes a Conn and remove it from the conn pool
 func (conn *Conn) Close() {
 	conn.Conn.Close()
-	connPool.Remove(conn.addr)
 }
 
 // KeepAlive keeps Conn reusable in the conn pool
