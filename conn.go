@@ -99,10 +99,6 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	if err := h.Body.UnmarshalBinary(body); err != nil {
 		return nil, err
 	}
-	peerCerts := c.ConnectionState().PeerCertificates
-	if len(peerCerts) > 0 && len(peerCerts[0].AuthorityKeyId) == len(h.Body.AKI) {
-		copy(h.Body.AKI[:], peerCerts[0].AuthorityKeyId)
-	}
 	return h, nil
 }
 

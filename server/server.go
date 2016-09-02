@@ -33,18 +33,16 @@ type Keystore interface {
 // NewDefaultKeystore returns a new default memory-based static keystore.
 func NewDefaultKeystore() *DefaultKeystore {
 	return &DefaultKeystore{
-		skis:      make(map[gokeyless.SKI]crypto.Signer),
-		digests:   make(map[gokeyless.Digest]gokeyless.SKI),
-		validAKIs: make(map[gokeyless.SKI]akiSet),
+		skis:    make(map[gokeyless.SKI]crypto.Signer),
+		digests: make(map[gokeyless.Digest]gokeyless.SKI),
 	}
 }
 
 // DefaultKeystore is a simple in-memory key store.
 type DefaultKeystore struct {
 	sync.RWMutex
-	skis      map[gokeyless.SKI]crypto.Signer
-	digests   map[gokeyless.Digest]gokeyless.SKI
-	validAKIs map[gokeyless.SKI]akiSet
+	skis    map[gokeyless.SKI]crypto.Signer
+	digests map[gokeyless.Digest]gokeyless.SKI
 }
 
 // Add adds a new key to the server's internal repertoire.
@@ -60,10 +58,6 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 
 	if digest, err := gokeyless.GetDigest(priv.Public()); err == nil {
 		keys.digests[digest] = ski
-	}
-
-	if op != nil {
-		keys.validAKIs[ski] = keys.validAKIs[ski].Add(op.AKI)
 	}
 
 	keys.skis[ski] = priv
@@ -122,24 +116,6 @@ func (keys *DefaultKeystore) LoadKeysFromDir(dir string, LoadKey func([]byte) (c
 		}
 		return nil
 	})
-}
-
-type akiSet []gokeyless.SKI
-
-func (akis akiSet) Contains(a gokeyless.SKI) bool {
-	for _, aki := range akis {
-		if aki.Equal(a) {
-			return true
-		}
-	}
-	return false
-}
-
-func (akis akiSet) Add(a gokeyless.SKI) akiSet {
-	if akis.Contains(a) {
-		return akis
-	}
-	return append(akis, a)
 }
 
 // Server is a Keyless Server capable of performing opaque key operations.
