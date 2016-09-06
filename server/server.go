@@ -127,8 +127,6 @@ type Server struct {
 	Config *tls.Config
 	// Keys contains the private keys and certificates for the server.
 	Keys Keystore
-	// ActivationToken is the token used to prove an activating keyserver's identity.
-	ActivationToken []byte
 	// stats stores statistics about keyless requests.
 	stats *statistics
 	// GetCertificate is used for loading certificates.
