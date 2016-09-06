@@ -18,7 +18,7 @@ var (
 
 func (i Tag) String() string {
 	switch {
-	case 1 <= i && i <= 6:
+	case 1 <= i && i <= 5:
 		i -= 1
 		return _Tag_name_0[_Tag_index_0[i]:_Tag_index_0[i+1]]
 	case 17 <= i && i <= 18:
@@ -36,7 +36,7 @@ const (
 	_Op_name_1 = "OpECDSASignMD5SHA1OpECDSASignSHA1OpECDSASignSHA224OpECDSASignSHA256OpECDSASignSHA384OpECDSASignSHA512"
 	_Op_name_2 = "OpGetCertificate"
 	_Op_name_3 = "OpRSAPSSSignSHA256OpRSAPSSSignSHA384OpRSAPSSSignSHA512"
-	_Op_name_4 = "OpResponseOpPingOpPongOpActivate"
+	_Op_name_4 = "OpResponseOpPingOpPong"
 	_Op_name_5 = "OpError"
 )
 
@@ -45,7 +45,7 @@ var (
 	_Op_index_1 = [...]uint8{0, 18, 33, 50, 67, 84, 101}
 	_Op_index_2 = [...]uint8{0, 16}
 	_Op_index_3 = [...]uint8{0, 18, 36, 54}
-	_Op_index_4 = [...]uint8{0, 10, 16, 22, 32}
+	_Op_index_4 = [...]uint8{0, 10, 16, 22}
 	_Op_index_5 = [...]uint8{0, 7}
 )
 
@@ -62,7 +62,7 @@ func (i Op) String() string {
 	case 53 <= i && i <= 55:
 		i -= 53
 		return _Op_name_3[_Op_index_3[i]:_Op_index_3[i+1]]
-	case 240 <= i && i <= 243:
+	case 240 <= i && i <= 242:
 		i -= 240
 		return _Op_name_4[_Op_index_4[i]:_Op_index_4[i+1]]
 	case i == 255:

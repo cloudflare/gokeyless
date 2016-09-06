@@ -59,13 +59,6 @@ func NewPingTest(c *client.Client, server string) testapi.TestFunc {
 	}
 }
 
-// NewActivateTest generates a TestFunc to perform a single activation call.
-func NewActivateTest(c *client.Client, server string, hashedToken []byte) testapi.TestFunc {
-	return func() error {
-		return c.ActivateServer(server, hashedToken)
-	}
-}
-
 // NewGetCertificateTest generates a TestFunc to connect and perform a certificate load.
 func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net.IP, payload, expected []byte) testapi.TestFunc {
 	return func() error {
@@ -250,10 +243,6 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 	}
 
 	results := testapi.NewResults()
-
-	if len(in.HashedToken) > 0 {
-		results.RegisterTest("activate", NewActivateTest(c, in.Keyserver, in.HashedToken))
-	}
 
 	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
 

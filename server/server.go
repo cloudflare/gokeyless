@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -294,16 +293,6 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 			opts = crypto.SHA384
 		case gokeyless.OpRSASignSHA512, gokeyless.OpECDSASignSHA512, gokeyless.OpRSAPSSSignSHA512:
 			opts = crypto.SHA512
-		case gokeyless.OpActivate:
-			if len(s.ActivationToken) > 0 {
-				hashedToken := sha256.Sum256(s.ActivationToken)
-				connError = conn.Respond(h.ID, hashedToken[:])
-				s.stats.logRequest(requestBegin)
-			} else {
-				connError = conn.RespondError(h.ID, gokeyless.ErrBadOpcode)
-				s.stats.logInvalid(requestBegin)
-			}
-			continue
 		case gokeyless.OpPong, gokeyless.OpResponse, gokeyless.OpError:
 			log.Errorf("%s: %s is not a valid request Opcode\n", gokeyless.ErrUnexpectedOpcode, h.Body.Opcode)
 			connError = conn.RespondError(h.ID, gokeyless.ErrUnexpectedOpcode)
