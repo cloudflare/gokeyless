@@ -132,7 +132,6 @@ func initializeServer() *server.Server {
 	if err != nil {
 		log.Fatal(err)
 	}
-	s.ActivationToken = []byte(token.Token)
 	log.Info("Server entering initialization state")
 	go func() { log.Fatal(s.ListenAndServe()) }()
 
@@ -150,8 +149,6 @@ func initializeServer() *server.Server {
 	}
 	log.Infof("Certificate saved to %s\n", certFile)
 
-	// Remove server from activation state and initialize issued certificate.
-	s.ActivationToken = s.ActivationToken[:0]
 	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		log.Fatal(err)

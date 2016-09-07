@@ -154,22 +154,6 @@ func (c *Client) DialDefault() (*Conn, error) {
 	return c.DefaultRemote.Dial(c)
 }
 
-// ActivateServer dials a server and sends an activation request.
-func (c *Client) ActivateServer(server string, token []byte) error {
-	r, err := c.LookupServer(server)
-	if err != nil {
-		return err
-	}
-
-	conn, err := r.Dial(c)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	return conn.Activate(token)
-}
-
 // registerSKI associates the SKI of a public key with a particular keyserver.
 func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 	c.m.Lock()

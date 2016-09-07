@@ -90,9 +90,6 @@ const (
 	// OpPong indicates a response echoed from an OpPing test message.
 	OpPong Op = 0xF2
 
-	// OpActivate indicates a test message to verify a keyserver in an initialization state.
-	OpActivate Op = 0xF3
-
 	// OpResponse is used to send a block of data back to the client.
 	OpResponse Op = 0xF0
 	// OpError indicates some error has occurred, explanation is single byte in payload.
