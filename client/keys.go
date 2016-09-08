@@ -81,7 +81,6 @@ type PrivateKey struct {
 	public   crypto.PublicKey
 	client   *Client
 	ski      gokeyless.SKI
-	digest   gokeyless.Digest
 	clientIP net.IP
 	serverIP net.IP
 	sni      string
@@ -104,7 +103,6 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 		Opcode:   op,
 		Payload:  msg,
 		SKI:      key.ski,
-		Digest:   key.digest,
 		ClientIP: key.clientIP,
 		ServerIP: key.serverIP,
 		SNI:      key.sni,

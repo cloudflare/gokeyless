@@ -32,16 +32,14 @@ type Keystore interface {
 // NewDefaultKeystore returns a new default memory-based static keystore.
 func NewDefaultKeystore() *DefaultKeystore {
 	return &DefaultKeystore{
-		skis:    make(map[gokeyless.SKI]crypto.Signer),
-		digests: make(map[gokeyless.Digest]gokeyless.SKI),
+		skis: make(map[gokeyless.SKI]crypto.Signer),
 	}
 }
 
 // DefaultKeystore is a simple in-memory key store.
 type DefaultKeystore struct {
 	sync.RWMutex
-	skis    map[gokeyless.SKI]crypto.Signer
-	digests map[gokeyless.Digest]gokeyless.SKI
+	skis map[gokeyless.SKI]crypto.Signer
 }
 
 // Add adds a new key to the server's internal repertoire.
@@ -54,10 +52,6 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 
 	keys.Lock()
 	defer keys.Unlock()
-
-	if digest, err := gokeyless.GetDigest(priv.Public()); err == nil {
-		keys.digests[digest] = ski
-	}
 
 	keys.skis[ski] = priv
 
@@ -78,14 +72,6 @@ func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) 
 		}
 	}
 
-	log.Debug("Couldn't look up key based on SKI, trying Digest.")
-	ski, ok := keys.digests[op.Digest]
-	if ok {
-		priv, found := keys.skis[ski]
-		if found {
-			return priv, found
-		}
-	}
 	log.Infof("Couldn't look up key for %s.", op)
 	return nil, false
 }

@@ -200,14 +200,10 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 		return nil, err
 	}
 
-	// digest is being deprecated, so it's ok to ignore error here
-	digest, _ := gokeyless.GetDigest(pub)
-
 	priv := PrivateKey{
 		public:   pub,
 		client:   c,
 		ski:      ski,
-		digest:   digest,
 		sni:      sni,
 		serverIP: serverIP,
 	}
