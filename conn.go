@@ -124,21 +124,7 @@ func (c *Conn) doRead() error {
 }
 
 // listenResponse attempts to read a response with the appropriate ID, blocking until it is available.
-func (c *Conn) listenResponse(id uint32) (*Header, error) {
-	c.mapMutex.Lock()
-	ch, ok := c.listeners[id]
-	if !ok {
-		ch = make(chan *Header, 1)
-		c.listeners[id] = ch
-	}
-	c.mapMutex.Unlock()
-
-	defer func() {
-		c.mapMutex.Lock()
-		delete(c.listeners, id)
-		c.mapMutex.Unlock()
-	}()
-
+func (c *Conn) listenResponse(ch chan *Header) (*Header, error) {
 	if err := c.doRead(); err != nil {
 		return nil, err
 	}
@@ -149,7 +135,6 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 		return nil, fmt.Errorf("operation timeout")
 
 	case h := <-ch:
-		close(ch)
 		return h, nil
 	}
 
@@ -159,11 +144,27 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 // result.
 func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 	req := NewHeader(operation)
+
+	// Must have channel entry ready before sending request since
+	// response may be acquired by another goroutine immediately.
+	// And if the channel cannot be found, the response will be lost.
+	id := req.ID
+	ch := make(chan *Header, 1)
+	c.mapMutex.Lock()
+	c.listeners[id] = ch
+	c.mapMutex.Unlock()
+
+	defer func() {
+		c.mapMutex.Lock()
+		delete(c.listeners, id)
+		c.mapMutex.Unlock()
+	}()
+
 	if err := c.WriteHeader(req); err != nil {
 		return nil, err
 	}
 
-	resp, err := c.listenResponse(req.ID)
+	resp, err := c.listenResponse(ch)
 	if err != nil {
 		return nil, err
 	}
