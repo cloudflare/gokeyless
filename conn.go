@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/cloudflare/cfssl/log"
+)
+
+var (
+	OperationTimeout = time.Second * 10
 )
 
 // Conn represents an open keyless connection.
@@ -130,7 +135,6 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 
 	defer func() {
 		c.mapMutex.Lock()
-		close(ch)
 		delete(c.listeners, id)
 		c.mapMutex.Unlock()
 	}()
@@ -139,7 +143,16 @@ func (c *Conn) listenResponse(id uint32) (*Header, error) {
 		return nil, err
 	}
 
-	return <-ch, nil
+	timeout := time.After(OperationTimeout)
+	select {
+	case <-timeout:
+		return nil, fmt.Errorf("operation timeout")
+
+	case h := <-ch:
+		close(ch)
+		return h, nil
+	}
+
 }
 
 // DoOperation executes an entire keyless operation, returning its
