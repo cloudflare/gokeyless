@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sync"
 	"time"
 
@@ -193,8 +192,6 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 }
 
 func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
-	runtime.LockOSThread()
-
 	var connError error
 	for connError == nil {
 		h, more := <-ch
