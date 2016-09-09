@@ -5,7 +5,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"io/ioutil"
+	"log"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -39,59 +41,70 @@ var (
 )
 
 // Set up compatible server and client for use by tests.
-func TestMain(t *testing.T) {
-	var err error
+func TestMain(m *testing.M) {
 	var pemBytes []byte
 	var p *pem.Block
 	var priv crypto.Signer
+	var err error
 
 	// Setup keyless server
 	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, socketAddr)
 	if err != nil {
-		t.Fatal(err)
+		log.Fatal(err)
 	}
 
 	keys := server.NewDefaultKeystore()
 	s.Keys = keys
-	if pemBytes, err = ioutil.ReadFile(rsaPrivKey); err != nil {
-		t.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if priv, err = x509.ParsePKCS1PrivateKey(p.Bytes); err != nil {
-		t.Fatal(err)
-	}
-	if err = keys.Add(nil, priv); err != nil {
-		t.Fatal(err)
+	pemBytes, err = ioutil.ReadFile(rsaPrivKey)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if pemBytes, err = ioutil.ReadFile(ecdsaPrivKey); err != nil {
-		t.Fatal(err)
+	p, _ = pem.Decode(pemBytes)
+	priv, err = x509.ParsePKCS1PrivateKey(p.Bytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = keys.Add(nil, priv)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pemBytes, err = ioutil.ReadFile(ecdsaPrivKey)
+	if err != nil {
+		log.Fatal(err)
 	}
 	p, _ = pem.Decode(pemBytes)
-	if priv, err = x509.ParseECPrivateKey(p.Bytes); err != nil {
-		t.Fatal(err)
+	priv, err = x509.ParseECPrivateKey(p.Bytes)
+	if err != nil {
+		log.Fatal(err)
 	}
-	if err = keys.Add(nil, priv); err != nil {
-		t.Fatal(err)
+	err = keys.Add(nil, priv)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	go func() {
-		if err := s.ListenAndServe(); err != nil {
-			t.Fatal(err)
+		err := s.ListenAndServe()
+		if err != nil {
+			log.Fatal(err)
 		}
 	}()
 
 	go func() {
-		if err := s.UnixListenAndServe(); err != nil {
-			t.Fatal(err)
+		err := s.UnixListenAndServe()
+		if err != nil {
+			log.Fatal(err)
 		}
 	}()
 
 	// wait for server to start
 	time.Sleep(100 * time.Millisecond)
 	// Setup keyless client
-	if c, err = NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
-		t.Fatal(err)
+	c, err = NewClientFromFile(clientCert, clientKey, keyserverCA)
+	if err != nil {
+		log.Fatal(err)
 	}
 	// set aggressive timeout since all tests use local connections
 	c.Dialer.Timeout = 1 * time.Second
@@ -100,24 +113,34 @@ func TestMain(t *testing.T) {
 	host, port, _ := net.SplitHostPort(s.Addr)
 	remote, err = c.LookupServerWithName("localhost", host, port)
 	if err != nil {
-		t.Fatal(err)
+		log.Fatal(err)
 	}
 
 	deadRemote, err = c.LookupServer("localhost:65432")
 	if err != nil {
-		t.Fatal(err)
+		log.Fatal(err)
 	}
 
 	// Make a remote group containing a good server and a bad one.
 	// Setup default remote to be the above group
-	c.DefaultRemote, _ = NewGroup([]Remote{remote, deadRemote})
+	c.DefaultRemote, err = NewGroup([]Remote{remote, deadRemote})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// register both public keys with empty remote server so
 	// DefaultRemote will be used
-	registerCertFile(rsaPubKey, t)
+	err = clientRegisterCertFile(rsaPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	registerCertFile(ecdsaPubKey, t)
+	err = clientRegisterCertFile(ecdsaPubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	os.Exit(m.Run())
 }
 
 func TestRemoteGroup(t *testing.T) {
@@ -142,7 +165,10 @@ func TestUnixRemote(t *testing.T) {
 	c.remotes = map[gokeyless.SKI]Remote{}
 
 	// register the ECDDSA certificate again with the default remote
-	registerCertFile(ecdsaPubKey, t)
+	err = clientRegisterCertFile(ecdsaPubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
@@ -155,9 +181,12 @@ func TestBadRemote(t *testing.T) {
 	c.remotes = map[gokeyless.SKI]Remote{}
 
 	// register the ECDDSA certificate again with the default broken remote
-	registerCertFile(ecdsaPubKey, t)
+	err := clientRegisterCertFile(ecdsaPubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := c.Dial(ecdsaSKI)
+	_, err = c.Dial(ecdsaSKI)
 	if err == nil {
 		t.Fatal("bad remote management")
 	}
@@ -206,7 +235,10 @@ func TestSlowServer(t *testing.T) {
 	t.Log("c.DefaultRemote size:", len(c.DefaultRemote.(*Group).remotes))
 
 	// register the ECDDSA certificate again with the default broken remote
-	registerCertFile(ecdsaPubKey, t)
+	err = clientRegisterCertFile(ecdsaPubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Initially picked a random server
 	_, err = c.Dial(ecdsaSKI)
@@ -231,19 +263,20 @@ func TestSlowServer(t *testing.T) {
 }
 
 // helper function register a public key from a file.
-func registerCertFile(filepath string, t *testing.T) {
+func clientRegisterCertFile(filepath string) error {
 	pemBytes, err := ioutil.ReadFile(filepath)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	p, _ := pem.Decode(pemBytes)
 	pub, err := x509.ParsePKIXPublicKey(p.Bytes)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	if _, err = c.RegisterPublicKey("", pub); err != nil {
-		t.Fatal(err)
+		return err
 	}
+	return nil
 }
 
 // slowListener returns a slowConn
