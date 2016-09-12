@@ -338,6 +338,7 @@ func (s *Server) Serve(l net.Listener) error {
 	for {
 		if c, err := l.Accept(); err != nil {
 			log.Error(err)
+			return err
 		} else {
 			go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
 		}
@@ -360,6 +361,7 @@ func (s *Server) ListenAndServe() error {
 // UnixListenAndServe listens on the Unix socket address and handles keyless requests.
 func (s *Server) UnixListenAndServe() error {
 	if s.UnixAddr != "" {
+		os.Remove(s.UnixAddr)
 		l, err := net.Listen("unix", s.UnixAddr)
 		if err != nil {
 			return err
