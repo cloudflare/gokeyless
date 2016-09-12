@@ -78,12 +78,13 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 
 // PrivateKey represents a keyless-backed RSA/ECDSA private key.
 type PrivateKey struct {
-	public   crypto.PublicKey
-	client   *Client
-	ski      gokeyless.SKI
-	clientIP net.IP
-	serverIP net.IP
-	sni      string
+	public     crypto.PublicKey
+	client     *Client
+	ski        gokeyless.SKI
+	clientIP   net.IP
+	serverIP   net.IP
+	serverName string
+	sni        string
 }
 
 // Public returns the public key corresponding to the opaque private key.
@@ -94,7 +95,12 @@ func (key *PrivateKey) Public() crypto.PublicKey {
 // execute performs an opaque cryptographic operation on a server associated
 // with the key.
 func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
-	conn, err := key.client.Dial(key.ski)
+	r, err := key.client.getRemote(key.serverName)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := r.Dial(key.client)
 	if err != nil {
 		return nil, err
 	}

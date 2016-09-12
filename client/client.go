@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -41,12 +40,8 @@ type Client struct {
 	DefaultRemote Remote
 	// Blacklist is a list of addresses that this client won't dial.
 	Blacklist AddrSet
-	// m is a Read/Write lock to protect against conccurrent accesses to maps.
-	m sync.RWMutex
 	// remoteCache maps all known server names to corresponding remote.
 	remoteCache *ttlcache.LRU
-	// remotes maps all known certificate SKIs to their Remote.
-	remotes map[gokeyless.SKI]Remote
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
@@ -63,7 +58,6 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 		Dialer:      &net.Dialer{},
 		Blacklist:   make(AddrSet),
 		remoteCache: ttlcache.NewLRU(remoteCacheSize, remoteCacheTTL, nil),
-		remotes:     make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -134,18 +128,6 @@ func (c *Client) ClearBlacklist() {
 	c.Blacklist = make(AddrSet)
 }
 
-// Dial smartly establishes a connection to a registered keyless server
-// or reuses an existing connection if possible.
-func (c *Client) Dial(ski gokeyless.SKI) (*Conn, error) {
-	c.m.RLock()
-	r, ok := c.remotes[ski]
-	c.m.RUnlock()
-	if ok {
-		return r.Dial(c)
-	}
-	return c.DialDefault()
-}
-
 // DialDefault establishes a connection to the default keyless server.
 func (c *Client) DialDefault() (*Conn, error) {
 	if c.DefaultRemote == nil {
@@ -154,39 +136,30 @@ func (c *Client) DialDefault() (*Conn, error) {
 	return c.DefaultRemote.Dial(c)
 }
 
-// registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
-	c.m.Lock()
-	defer c.m.Unlock()
+// getRemote obtains the Remote for the given server name, so that it can be
+// associated with the PrivateKey
+func (c *Client) getRemote(server string) (Remote, error) {
 	// empty server means always associate ski with DefaultRemote
 	if server == "" {
-		log.Debugf("registering key @default_remote with SKI: %02x", ski)
-		c.remotes[ski] = c.DefaultRemote
-		return nil
+		return c.DefaultRemote, nil
 	}
 
-	log.Debugf("registering key @%s with SKI: %02x", server, ski)
-	cachedRemote := false
 	v, stale := c.remoteCache.Get(server)
 	if v != nil && !stale {
 		if r, ok := v.(Remote); ok {
-			c.remotes[ski] = r
-			cachedRemote = true
+			return r, nil
 		} else {
-			log.Error("failed to convert cached remote")
+			panic("failed to convert cached remote")
 		}
 	}
 
-	if !cachedRemote {
-		r, err := c.LookupServer(server)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		c.remoteCache.Set(server, r, 0) // use default timeout
-		c.remotes[ski] = r
+	r, err := c.LookupServer(server)
+	if err != nil {
+		log.Error(err)
+		return nil, err
 	}
-	return nil
+	c.remoteCache.Set(server, r, 0) // use default timeout
+	return r, nil
 }
 
 // RegisterPublicKeyTemplate registers a public key with additional operation template information.
@@ -196,16 +169,13 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 		return nil, err
 	}
 
-	if err := c.registerSKI(server, ski); err != nil {
-		return nil, err
-	}
-
 	priv := PrivateKey{
-		public:   pub,
-		client:   c,
-		ski:      ski,
-		sni:      sni,
-		serverIP: serverIP,
+		public:     pub,
+		client:     c,
+		ski:        ski,
+		sni:        sni,
+		serverIP:   serverIP,
+		serverName: server,
 	}
 
 	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
