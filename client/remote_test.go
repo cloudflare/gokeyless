@@ -86,17 +86,11 @@ func TestMain(m *testing.M) {
 	}
 
 	go func() {
-		err := s.ListenAndServe()
-		if err != nil {
-			log.Fatal(err)
-		}
+		s.ListenAndServe()
 	}()
 
 	go func() {
-		err := s.UnixListenAndServe()
-		if err != nil {
-			log.Fatal(err)
-		}
+		s.UnixListenAndServe()
 	}()
 
 	// wait for server to start
@@ -140,7 +134,16 @@ func TestMain(m *testing.M) {
 		log.Fatal(err)
 	}
 
-	os.Exit(m.Run())
+	ret := m.Run()
+	// clean up server listeners
+	if s.UnixListener != nil {
+		s.UnixListener.Close()
+	}
+	if s.TCPListener != nil {
+		s.TCPListener.Close()
+	}
+
+	os.Exit(ret)
 }
 
 func TestRemoteGroup(t *testing.T) {
@@ -169,10 +172,12 @@ func TestUnixRemote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Dial(ecdsaSKI)
+	conn, err := c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	conn.Close()
 }
 
 func TestBadRemote(t *testing.T) {
