@@ -169,10 +169,12 @@ func TestUnixRemote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Dial(ecdsaSKI)
+	conn, err := c.Dial(ecdsaSKI)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	conn.Close()
 }
 
 func TestBadRemote(t *testing.T) {
