@@ -1,0 +1,13 @@
+[Unit]
+Description=gokeyless daemon
+After=network.target
+
+[Service]
+Type=simple
+User=keyless
+Group=keyless
+WorkingDirectory=/etc/keyless
+ExecStart=/usr/local/bin/gokeyless
+
+[Install]
+WantedBy=multi-user.target
