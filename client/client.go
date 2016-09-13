@@ -189,13 +189,8 @@ func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
 	return nil
 }
 
-// RegisterPublicKeyTemplate registers a public key with additional operation template information.
-func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
-	ski, err := gokeyless.GetSKI(pub)
-	if err != nil {
-		return nil, err
-	}
-
+// RegisterSKI registers a public key under given ski with additional operation template information.
+func (c *Client) RegisterSKI(server string, ski gokeyless.SKI, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	if err := c.registerSKI(server, ski); err != nil {
 		return nil, err
 	}
@@ -214,6 +209,16 @@ func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, 
 		return &Decrypter{priv}, nil
 	}
 	return &priv, nil
+}
+
+// RegisterPublicKeyTemplate computes SKI and registers public key with additional operation template information.
+func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+	ski, err := gokeyless.GetSKI(pub)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.RegisterSKI(server, ski, pub, sni, serverIP)
 }
 
 // RegisterPublicKey SKIs and registers a public key as being held by a server.
