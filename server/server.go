@@ -218,15 +218,18 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 			if s.GetCertificate == nil {
 				log.Error("GetCertificate is nil")
 				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
+				s.stats.logInvalid(requestBegin)
 				continue
 			} else {
 				certChain, err := s.GetCertificate(h.Body)
 				if err != nil {
 					log.Errorf("GetCertificate: %v", err)
 					connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
+					s.stats.logInvalid(requestBegin)
 					continue
 				}
 				connError = conn.Respond(h.ID, certChain)
+				s.stats.logRequest(requestBegin)
 			}
 
 			continue
