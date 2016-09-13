@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
 )
 
@@ -94,24 +95,36 @@ func (key *PrivateKey) Public() crypto.PublicKey {
 // execute performs an opaque cryptographic operation on a server associated
 // with the key.
 func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
-	conn, err := key.client.Dial(key.ski)
-	if err != nil {
-		return nil, err
-	}
+	var result *gokeyless.Operation
+	// retry once if connection returned by remote Dial is problematic.
+	for attempts := 2; attempts > 0; attempts-- {
+		conn, err := key.client.Dial(key.ski)
+		if err != nil {
+			return nil, err
+		}
 
-	result, err := conn.Conn.DoOperation(&gokeyless.Operation{
-		Opcode:   op,
-		Payload:  msg,
-		SKI:      key.ski,
-		ClientIP: key.clientIP,
-		ServerIP: key.serverIP,
-		SNI:      key.sni,
-	})
-	if err != nil {
-		defer conn.Close()
-		return nil, err
+		result, err = conn.Conn.DoOperation(&gokeyless.Operation{
+			Opcode:   op,
+			Payload:  msg,
+			SKI:      key.ski,
+			ClientIP: key.clientIP,
+			ServerIP: key.serverIP,
+			SNI:      key.sni,
+		})
+		if err != nil {
+			conn.Close()
+			// not the last attempts, log error and retry
+			if attempts > 1 {
+				log.Info("failed remote operation:", err)
+				log.Infof("retry new connction")
+				continue
+			}
+			return nil, err
+		} else {
+			conn.KeepAlive()
+			break
+		}
 	}
-	conn.KeepAlive()
 
 	if result.Opcode != gokeyless.OpResponse {
 		if result.Opcode == gokeyless.OpError {
