@@ -11,6 +11,7 @@ DESTDIR                      := build
 PREFIX                       := usr/local
 INSTALL_BIN                  := $(DESTDIR)/$(PREFIX)/bin
 INIT_PREFIX                  := $(DESTDIR)/etc/init.d
+SYSTEMD_PREFIX               := $(DESTDIR)/lib/systemd/system
 CONFIG_PREFIX                := $(DESTDIR)/etc/keyless
 
 ARCH := amd64
@@ -27,6 +28,7 @@ install-config:
 	@chmod 700 $(CONFIG_PREFIX)/keys
 	@mkdir -p $(INIT_PREFIX)
 	@install -m755 pkg/gokeyless.sysv $(INIT_PREFIX)/gokeyless
+	@install -m755 pkg/gokeyless.service $(SYSTEMD_PREFIX)/gokeyless.service
 	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
 	@install -m644 pkg/default.pem $(CONFIG_PREFIX)/default.pem
 	@install -m400 pkg/default-key.pem $(CONFIG_PREFIX)/default-key.pem
