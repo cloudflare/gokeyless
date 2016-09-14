@@ -2,12 +2,15 @@ package main
 
 import (
 	"crypto"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
@@ -22,8 +25,6 @@ var (
 
 var (
 	initToken    string
-	initCertFile string
-	initKeyFile  string
 	initEndpoint string
 	port         string
 	metricsAddr  string
@@ -35,11 +36,11 @@ var (
 	manualMode   bool
 )
 
+type CertError error
+
 func init() {
 	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
-	flag.StringVar(&initCertFile, "init-cert", "default.pem", "Default certificate used for server initialization")
-	flag.StringVar(&initKeyFile, "init-key", "default-key.pem", "Default key used for server initialization")
 	flag.StringVar(&initEndpoint, "init-endpoint", defaultEndpoint, "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
@@ -54,29 +55,30 @@ func init() {
 func main() {
 	flag.Parse()
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
-	if err != nil {
-		log.Warningf("Could not create server. Running initializeServer to get %s and %s", keyFile, certFile)
-
-		// If an existing CSR (and associated key) exists, don't
-		// proceed/overwrite the key.
-		if _, err := os.Stat(csrFile); !os.IsNotExist(err) {
-			log.Fatalf("an existing CSR was found at %q: remove once a signed certificate has been installed.", csrFile)
-		}
-
+	init := needNewCertAndKey()
+	if init {
+		log.Info("Now let's get server certificate and key")
 		// Allow manual activation (requires the CSR to be manually signed).
 		if manualMode {
+			log.Info("[Manual mode]")
 			if err := manualActivation(); err != nil {
 				log.Fatal(err)
 			}
 
 			log.Infof("CSR generated (requires manual signing) and written to %q",
 				csrFile)
+			log.Info("We are done, please contact support for getting the CSR signed into a certificate")
 			os.Exit(0)
 		} else {
+			log.Info("[Automatic mode]")
 			// Automatically activate against the certificate API.
-			s = initializeServer()
+			initializeServerCertAndKey()
 		}
+	}
+
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
+	if err != nil {
+		log.Fatal("cannot start server:", err)
 	}
 
 	go func() { log.Fatal(s.ListenAndServe()) }()
@@ -108,6 +110,23 @@ func main() {
 				log.Fatal(err)
 			}
 			s.Keys = keys
+
+			log.Info("Check server certificate...")
+			needRenewal := needNewCertAndKey()
+			if needRenewal {
+				if manualMode {
+					log.Fatalf("please contact support to get certificate renewed")
+				} else {
+					initializeServerCertAndKey()
+					cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+					if err != nil {
+						log.Fatalf("cannot load server cert/key: %v", err)
+					}
+					log.Info("server certificate is renewed")
+					s.Config.Certificates = []tls.Certificate{cert}
+				}
+			}
+			log.Info("server certificate is valid, restart completes")
 		}
 	}
 }
@@ -120,6 +139,38 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	}
 
 	return derhelpers.ParsePrivateKeyDER(in)
+}
+
+func validCert(cert *x509.Certificate) bool {
+	now := time.Now()
+	if now.Before(cert.NotBefore) {
+		return false
+	}
+
+	if now.After(cert.NotAfter) {
+		return false
+	}
+
+	// certificate expires in a month
+	if now.Add(time.Hour * 24 * 30).After(cert.NotAfter) {
+		return false
+	}
+
+	return true
+}
+func needNewCertAndKey() bool {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		log.Errorf("cannot load server cert/key: %v", err)
+		return true
+	}
+
+	if !validCert(cert.Leaf) {
+		log.Errorf("certificate is either not yet valid, expired or expiring in a month")
+		return true
+	}
+
+	return false
 }
 
 func manualActivation() error {
