@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	tlsCert   = "testdata/tls.pem"
-	tlsKey    = "testdata/tls.key"
+	tlsCert   = "testdata/server.pem"
+	tlsKey    = "testdata/server-key.pem"
+	caCert    = "testdata/ca.pem"
 	network   = "tcp"
 	localAddr = "localhost:7777"
 )
@@ -88,7 +89,7 @@ func TestTLSProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := pem.Decode(pemKey)
-	rsaKey, err := x509.ParsePKCS1PrivateKey(p.Bytes)
+	rsaKey, err := x509.ParseECPrivateKey(p.Bytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,12 @@ func TestTLSProxy(t *testing.T) {
 		ServerName: serverConfig.Certificates[0].Leaf.Subject.CommonName,
 		RootCAs:    x509.NewCertPool(),
 	}
-	clientConfig.RootCAs.AddCert(cert.Leaf)
+
+	caBytes, err := ioutil.ReadFile(caCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig.RootCAs.AppendCertsFromPEM(caBytes)
 
 	conn, err := tls.Dial(network, localAddr, clientConfig)
 	if err != nil {

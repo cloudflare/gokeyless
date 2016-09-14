@@ -22,10 +22,6 @@ import (
 	"github.com/cloudflare/gokeyless/tests/testapi"
 )
 
-const (
-	tlsChain = "testdata/tlschain.pem"
-)
-
 // hashPtxt hashes the plaintext with the given hash algorithm.
 func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 	return h.New().Sum(ptxt)[len(ptxt):]

@@ -175,7 +175,7 @@ func TestRSADecrypt(t *testing.T) {
 }
 
 func TestGetCertificate(t *testing.T) {
-	certChainBytes, _ := ioutil.ReadFile(tlsChain)
+	certChainBytes, _ := ioutil.ReadFile(serverCert)
 
 	if testing.Short() {
 		t.SkipNow()

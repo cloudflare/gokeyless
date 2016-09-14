@@ -42,7 +42,7 @@ func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
 	if string(op.Payload) == "slow" {
 		time.Sleep(time.Second)
 	}
-	return ioutil.ReadFile(tlsChain)
+	return ioutil.ReadFile(serverCert)
 }
 
 // Set up compatible server and client for use by tests.
