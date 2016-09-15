@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
@@ -55,25 +57,25 @@ func init() {
 func main() {
 	flag.Parse()
 
-	init := needNewCertAndKey()
-	if init {
-		log.Info("Now let's get server certificate and key")
-		// Allow manual activation (requires the CSR to be manually signed).
-		if manualMode {
-			log.Info("[Manual mode]")
-			if err := manualActivation(); err != nil {
-				log.Fatal(err)
-			}
+	// Allow manual activation (requires the CSR to be manually signed).
+	// manual activation won't proceed to start the server
+	if manualMode {
+		log.Info("now check server csr and key")
+		if !verifyCSRAndKey() {
+			log.Info("csr and key are not usable. generating server csr and key")
+			manualActivation()
 
-			log.Infof("CSR generated (requires manual signing) and written to %q",
+			log.Infof("contact CloudFlare for manual signing of csr in %q",
 				csrFile)
-			log.Info("We are done, please contact support for getting the CSR signed into a certificate")
-			os.Exit(0)
 		} else {
-			log.Info("[Automatic mode]")
-			// Automatically activate against the certificate API.
-			initializeServerCertAndKey()
+			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact CloudFlare for manual signing",
+				csrFile, keyFile)
 		}
+		os.Exit(0)
+	}
+
+	if needNewCertAndKey() {
+		initializeServerCertAndKey()
 	}
 
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
@@ -112,19 +114,14 @@ func main() {
 			s.Keys = keys
 
 			log.Info("Check server certificate...")
-			needRenewal := needNewCertAndKey()
-			if needRenewal {
-				if manualMode {
-					log.Fatalf("please contact support to get certificate renewed")
-				} else {
-					initializeServerCertAndKey()
-					cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-					if err != nil {
-						log.Fatalf("cannot load server cert/key: %v", err)
-					}
-					log.Info("server certificate is renewed")
-					s.Config.Certificates = []tls.Certificate{cert}
+			if needNewCertAndKey() {
+				initializeServerCertAndKey()
+				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+				if err != nil {
+					log.Fatalf("cannot load server cert/key: %v", err)
 				}
+				log.Info("server certificate is renewed")
+				s.Config.Certificates = []tls.Certificate{cert}
 			}
 			log.Info("server certificate is valid, restart completes")
 		}
@@ -141,7 +138,8 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	return derhelpers.ParsePrivateKeyDER(in)
 }
 
-func validCert(cert *x509.Certificate) bool {
+// validCertExpiry checks if cerficiate is currently valid.
+func validCertExpiry(cert *x509.Certificate) bool {
 	now := time.Now()
 	if now.Before(cert.NotBefore) {
 		return false
@@ -153,11 +151,13 @@ func validCert(cert *x509.Certificate) bool {
 
 	// certificate expires in a month
 	if now.Add(time.Hour * 24 * 30).After(cert.NotAfter) {
-		return false
+		log.Warning("server certificate is expiring in 30 days")
 	}
 
 	return true
 }
+
+// needNewCertAndKey checks the validity of certificate and key
 func needNewCertAndKey() bool {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -165,27 +165,61 @@ func needNewCertAndKey() bool {
 		return true
 	}
 
-	if !validCert(cert.Leaf) {
-		log.Errorf("certificate is either not yet valid, expired or expiring in a month")
+	if !validCertExpiry(cert.Leaf) {
+		log.Errorf("certificate is either not yet valid or expired")
 		return true
 	}
 
 	return false
 }
 
-func manualActivation() error {
-	token := tokenPrompt()
-	csr, _, err := generateCSR(token.Host)
+// verifyCSRAndKey checks if csr and key files exist and if they match
+func verifyCSRAndKey() bool {
+	csrBytes, err := ioutil.ReadFile(csrFile)
 	if err != nil {
-		return err
+		log.Errorf("cannot read csr file: %v", err)
+		return false
 	}
 
-	f, err := os.Create(csrFile)
+	csr, err := helpers.ParseCSRPEM(csrBytes)
 	if err != nil {
-		return err
+		log.Errorf("cannot parse csr file: %v", err)
+		return false
 	}
-	defer f.Close()
 
-	_, err = f.Write(csr)
-	return err
+	if err := csr.CheckSignature(); err != nil {
+		log.Errorf("cannot verify csr signature: %v", err)
+		return false
+	}
+
+	csrPubKey, err := x509.MarshalPKIXPublicKey(csr.PublicKey)
+	if err != nil {
+		log.Errorf("cannot serialize public key from csr: %v", err)
+		return false
+	}
+
+	keyBytes, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		log.Errorf("cannot read private key file: %v", err)
+		return false
+	}
+
+	key, err := helpers.ParsePrivateKeyPEM(keyBytes)
+	if err != nil {
+		log.Errorf("cannot parse private key file: %v", err)
+		return false
+	}
+
+	pubkey, err := x509.MarshalPKIXPublicKey(key.Public())
+	if err != nil {
+		log.Errorf("cannot serialize public key from private key: %v", err)
+		return false
+	}
+
+	if !bytes.Equal(pubkey, csrPubKey) {
+		log.Errorf("csr doesn't match with private key")
+		return false
+	}
+
+	return true
 }

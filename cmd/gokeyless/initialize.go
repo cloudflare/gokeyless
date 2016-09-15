@@ -119,24 +119,24 @@ func initializeServerCertAndKey() {
 
 	csr, key, err := generateCSR(token.Host)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to generate csr and key: ", err)
 	}
 
 	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to write to key file: ", err)
 	}
-	log.Infof("Key is generated and saved to %s", keyFile)
+	log.Infof("key is generated and saved to %s", keyFile)
 
 	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to write to csr file:", err)
 	}
-	log.Infof("CSR is generated and saved to %s", csrFile)
+	log.Infof("csr is generated and saved to %s", csrFile)
 
-	log.Info("Contacting CloudFlare API for CSR signing")
+	log.Info("contacting CloudFlare API for CSR signing")
 
 	cert, err := initAPICall(token, string(csr))
 	if err != nil {
-		log.Fatal("Initialization failed due to API error:", err)
+		log.Fatal("initialization failed due to API error:", err)
 	}
 
 	if err := os.Remove(certFile); err != nil && !os.IsNotExist(err) {
@@ -146,7 +146,7 @@ func initializeServerCertAndKey() {
 	if err := ioutil.WriteFile(certFile, cert, 0644); err != nil {
 		log.Fatal(err)
 	}
-	log.Infof("Certificate saved to %s", certFile)
+	log.Infof("certificate saved to %s", certFile)
 
 	return
 }
@@ -176,4 +176,24 @@ func tokenPrompt() *apiToken {
 	fmt.Scanln(&token.Token)
 
 	return token
+}
+
+func manualActivation() {
+	var host string
+	fmt.Print("Keyserver Hostname: ")
+	fmt.Scanln(&host)
+	csr, key, err := generateCSR(host)
+	if err != nil {
+		log.Fatal("failed to generate csr and key: ", err)
+	}
+
+	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
+		log.Fatal("failed to write to key file:", err)
+	}
+	log.Infof("key is generated and saved to %s", keyFile)
+
+	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
+		log.Fatal("failed to write to csr file:", err)
+	}
+	log.Infof("csr is generated and saved to %s", csrFile)
 }
