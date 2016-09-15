@@ -47,7 +47,7 @@ func init() {
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
-	flag.StringVar(&keyDir, "private-key-directory", "keys/", "Directory in which private keys are stored with .key extension")
+	flag.StringVar(&keyDir, "private-key-directory", "./keys", "Directory in which private keys are stored with .key extension")
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsAddr, "metrics-addr", "localhost:2406", "address where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
@@ -159,13 +159,18 @@ func validCertExpiry(cert *x509.Certificate) bool {
 
 // needNewCertAndKey checks the validity of certificate and key
 func needNewCertAndKey() bool {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	_, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		log.Errorf("cannot load server cert/key: %v", err)
 		return true
 	}
 
-	if !validCertExpiry(cert.Leaf) {
+	// error is ignore because tls.LoadX509KeyPair already verify the existence of the file
+	certBytes, _ := ioutil.ReadFile(certFile)
+	// error is ignore because tls.LoadX509KeyPair already verify the file can be parsed
+	cert, _ := helpers.ParseCertificatePEM(certBytes)
+	// verify the leaf certificate
+	if cert == nil || !validCertExpiry(cert) {
 		log.Errorf("certificate is either not yet valid or expired")
 		return true
 	}
