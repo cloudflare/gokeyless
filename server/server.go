@@ -117,6 +117,11 @@ type Server struct {
 	stats *statistics
 	// GetCertificate is used for loading certificates.
 	GetCertificate GetCertificate
+
+	// UnixListener is the listener serving unix://[UnixAddr]
+	UnixListener net.Listener
+	// TCPListener is the listener serving tcp://[Addr]
+	TCPListener net.Listener
 }
 
 // GetCertificate is a function that returns a certificate given a request.
@@ -339,11 +344,12 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 func (s *Server) Serve(l net.Listener) error {
 	defer l.Close()
 	for {
-		if c, err := l.Accept(); err != nil {
+		c, err := l.Accept()
+		if err != nil {
 			log.Error(err)
-		} else {
-			go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
+			return err
 		}
+		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
 	}
 }
 
@@ -356,6 +362,8 @@ func (s *Server) ListenAndServe() error {
 	}
 
 	s.Addr = l.Addr().String()
+	s.TCPListener = l
+
 	log.Infof("Listening at tcp://%s\n", l.Addr())
 	return s.Serve(l)
 }
@@ -367,9 +375,20 @@ func (s *Server) UnixListenAndServe() error {
 		if err != nil {
 			return err
 		}
+		s.UnixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
 		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty path")
+}
+
+func (s *Server) Close() {
+	if s.UnixListener != nil {
+		s.UnixListener.Close()
+	}
+
+	if s.TCPListener != nil {
+		s.TCPListener.Close()
+	}
 }
