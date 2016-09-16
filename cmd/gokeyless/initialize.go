@@ -2,18 +2,15 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/server"
 )
 
 type v4apiError struct {
@@ -96,6 +93,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 }
 
 func getToken() (*apiToken, error) {
+	log.Infof("reading token from file %s", initToken)
 	token := new(apiToken)
 	f, err := os.Open(initToken)
 	if err != nil {
@@ -108,36 +106,37 @@ func getToken() (*apiToken, error) {
 	if err := json.NewDecoder(f).Decode(token); err != nil {
 		log.Errorf("couldn't read token from file %s: %v", initToken, err)
 		token = tokenPrompt()
-		if err := json.NewEncoder(f).Encode(token); err != nil {
-			return nil, fmt.Errorf("couldn't write token to file %s: %v", initToken, err)
-		}
 	}
 
 	return token, nil
 }
 
-func initializeServer() *server.Server {
+func initializeServerCertAndKey() {
 	token, err := getToken()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	csr, _, err := generateCSR(token.Host)
+	csr, key, err := generateCSR(token.Host)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("failed to generate csr and key: ", err)
 	}
 
-	s, err := server.NewServerFromFile(initCertFile, initKeyFile, caFile,
-		net.JoinHostPort("", port), "")
-	if err != nil {
-		log.Fatal(err)
+	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
+		log.Fatal("failed to write to key file: ", err)
 	}
-	log.Info("Server entering initialization state")
-	go func() { log.Fatal(s.ListenAndServe()) }()
+	log.Infof("key is generated and saved to %s", keyFile)
+
+	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
+		log.Fatal("failed to write to csr file:", err)
+	}
+	log.Infof("csr is generated and saved to %s", csrFile)
+
+	log.Info("contacting CloudFlare API for CSR signing")
 
 	cert, err := initAPICall(token, string(csr))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("initialization failed due to API error:", err)
 	}
 
 	if err := os.Remove(certFile); err != nil && !os.IsNotExist(err) {
@@ -147,16 +146,9 @@ func initializeServer() *server.Server {
 	if err := ioutil.WriteFile(certFile, cert, 0644); err != nil {
 		log.Fatal(err)
 	}
-	log.Infof("Certificate saved to %s\n", certFile)
+	log.Infof("certificate saved to %s", certFile)
 
-	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	s.Config.Certificates = []tls.Certificate{tlsCert}
-	log.Info("Server exiting initialization state")
-	return s
+	return
 }
 
 // generateCSR generates a private key and a CSR for the given host. The
@@ -171,12 +163,6 @@ func generateCSR(host string) ([]byte, []byte, error) {
 		},
 	})
 
-	if err := ioutil.WriteFile(keyFile, key, 0400); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Infof("Key generated and saved to %s\n", keyFile)
-
 	return csr, key, err
 }
 
@@ -190,4 +176,24 @@ func tokenPrompt() *apiToken {
 	fmt.Scanln(&token.Token)
 
 	return token
+}
+
+func manualActivation() {
+	var host string
+	fmt.Print("Keyserver Hostname: ")
+	fmt.Scanln(&host)
+	csr, key, err := generateCSR(host)
+	if err != nil {
+		log.Fatal("failed to generate csr and key: ", err)
+	}
+
+	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
+		log.Fatal("failed to write to key file:", err)
+	}
+	log.Infof("key is generated and saved to %s", keyFile)
+
+	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
+		log.Fatal("failed to write to csr file:", err)
+	}
+	log.Infof("csr is generated and saved to %s", csrFile)
 }
