@@ -85,7 +85,7 @@ func (keys *DefaultKeystore) LoadKeysFromDir(dir string, LoadKey func([]byte) (c
 		}
 
 		if !info.IsDir() && keyExt.MatchString(info.Name()) {
-			log.Infof("Loading %s...\n", path)
+			log.Infof("loading %s...", path)
 
 			in, err := ioutil.ReadFile(path)
 			if err != nil {

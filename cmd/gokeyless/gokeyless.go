@@ -38,8 +38,6 @@ var (
 	manualMode   bool
 )
 
-type CertError error
-
 func init() {
 	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
