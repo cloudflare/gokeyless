@@ -114,13 +114,14 @@ func main() {
 			log.Info("Check server certificate...")
 			if needNewCertAndKey() {
 				initializeServerCertAndKey()
-				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-				if err != nil {
-					log.Fatalf("cannot load server cert/key: %v", err)
-				}
 				log.Info("server certificate is renewed")
-				s.Config.Certificates = []tls.Certificate{cert}
 			}
+			log.Info("loading server certificate")
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				log.Fatalf("cannot load server cert/key: %v", err)
+			}
+			s.Config.Certificates = []tls.Certificate{cert}
 			log.Info("server certificate is valid, restart completes")
 		}
 	}
