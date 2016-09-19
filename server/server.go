@@ -199,6 +199,12 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 
 func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 	runtime.LockOSThread()
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("panic while handling request: %v", err)
+			go s.handleReq(conn, ch)
+		}
+	}()
 
 	var connError error
 	for connError == nil {
