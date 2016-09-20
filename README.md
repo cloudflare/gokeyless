@@ -68,6 +68,9 @@ The following opcodes are supported in the opcode item:
     0x15 - operation: ECDSA sign SHA256
     0x16 - operation: ECDSA sign SHA384
     0x17 - operation: ECDSA sign SHA512
+    0x35 - operation: RSASSA-PSS sign SHA256
+    0x36 - operation: RSASSA-PSS sign SHA384
+    0x36 - operation: RSASSA-PSS sign SHA512
 
 Responses contain a header with a matching ID and only two items:
 
@@ -108,8 +111,17 @@ following options are required and take a path to these files. These two
 parameters set up the certificate (and associated private key) that will be
 presented by the server when a client connects.
 
-     --server-cert 
-     --server-key
+     -cert
+     -key
+
+In order to get server credential, we can use the following parameter to
+generate the server private key and certificate signing request (CSR). It
+will create a private key stored as `server-key.pem` (or the path specified
+by `-key`) and a CSR file `server.csr`.
+Use the CSR file to get the server certificate issued from CloudFlare
+keyserver CA.
+
+     -manual-activation
 
 The private keys that this server is able to use should be stored in
 PEM format in a directory denoted by the option:
@@ -160,6 +172,9 @@ This is the keyserver for Keyless SSL. It consists of a single binary file
 - `-loglevel` (optional) Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants). Defaults to `LevelInfo`.
 - `-pid-file` (optional) Path to a file into which the PID of the
   keyserver. This file is only written if the keyserver starts successfully.
+- `-manual-activation` (optional) This makes the keyserver generate
+  the server key and the CSR written to files. And we will manually get the
+  server certificate issued.
 
 ## License
 

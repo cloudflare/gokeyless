@@ -49,7 +49,7 @@ func init() {
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsAddr, "metrics-addr", "localhost:2406", "address where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
-	flag.BoolVar(&manualMode, "manual-activation", false, "Manually activate the keyserver by writing the CSR to stderr")
+	flag.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR,  and exits. Use the CSR to get server certificate issued manually.")
 }
 
 func main() {
