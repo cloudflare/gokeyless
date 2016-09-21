@@ -246,6 +246,18 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	gconn := gokeyless.NewConn(inner)
 	conn = NewConn(s.String(), gconn)
 	connPool.Add(s.String(), conn)
+	go func() {
+		for {
+			err := conn.DoRead()
+			if err != nil {
+				log.Errorf("failed to read next header from %v: %v", s.String(), err)
+				break
+			}
+		}
+
+		conn.Close()
+	}()
+
 	return conn, nil
 }
 

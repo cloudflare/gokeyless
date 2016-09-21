@@ -20,8 +20,8 @@ type Conn struct {
 	*tls.Conn
 	listeners map[uint32]chan *Header
 
-	read, write sync.Mutex
-	mapMutex    sync.RWMutex
+	write    sync.Mutex
+	mapMutex sync.RWMutex
 }
 
 // NewConn initializes a new Conn.
@@ -35,9 +35,7 @@ func NewConn(inner *tls.Conn) *Conn {
 // Close marks conn as closed and closes the inner net.Conn if it is
 // no longer in use.
 func (c *Conn) Close() {
-	c.read.Lock()
 	c.write.Lock()
-	defer c.read.Unlock()
 	defer c.write.Unlock()
 
 	if c.Conn != nil {
@@ -50,9 +48,7 @@ func (c *Conn) Close() {
 
 // IsClosed returns true if the connection has been closed.
 func (c *Conn) IsClosed() bool {
-	c.read.Lock()
 	c.write.Lock()
-	defer c.read.Unlock()
 	defer c.write.Unlock()
 
 	return c.Conn == nil
@@ -74,15 +70,11 @@ func (c *Conn) WriteHeader(h *Header) error {
 
 	_, err = c.Write(b)
 	return err
-
 }
 
 // ReadHeader unmarshals a header from the wire into an internal
 // Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
-	c.read.Lock()
-	defer c.read.Unlock()
-
 	if c.Conn == nil {
 		return nil, fmt.Errorf("connection is closed or not yet ready")
 	}
@@ -107,7 +99,11 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	return h, nil
 }
 
-func (c *Conn) doRead() error {
+// DoRead reads a header from the connection and sends it to its intended
+// recipient. On the client side, this should be called repeatedly. Each time it
+// returns, the corresponding DoOperation call will stop blocking and return the
+// response.
+func (c *Conn) DoRead() error {
 	h, err := c.ReadHeader()
 	if err != nil {
 		return err
@@ -123,31 +119,14 @@ func (c *Conn) doRead() error {
 	return nil
 }
 
-// listenResponse attempts to read a response with the appropriate ID, blocking until it is available.
-func (c *Conn) listenResponse(ch chan *Header) (*Header, error) {
-	if err := c.doRead(); err != nil {
-		return nil, err
-	}
-
-	timeout := time.After(OperationTimeout)
-	select {
-	case <-timeout:
-		return nil, fmt.Errorf("operation timeout")
-
-	case h := <-ch:
-		return h, nil
-	}
-
-}
-
 // DoOperation executes an entire keyless operation, returning its
 // result.
 func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 	req := NewHeader(operation)
 
 	// Must have channel entry ready before sending request since
-	// response may be acquired by another goroutine immediately.
-	// And if the channel cannot be found, the response will be lost.
+	// response may be acquired by reader goroutine immediately
+	// and if the channel cannot be found, the response will be lost.
 	id := req.ID
 	ch := make(chan *Header, 1)
 	c.mapMutex.Lock()
@@ -160,16 +139,18 @@ func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 		c.mapMutex.Unlock()
 	}()
 
+	start := time.Now()
 	if err := c.WriteHeader(req); err != nil {
 		return nil, err
 	}
 
-	resp, err := c.listenResponse(ch)
-	if err != nil {
-		return nil, err
-	}
+	select {
+	case resp := <-ch:
+		return resp.Body, nil
 
-	return resp.Body, nil
+	case <-time.After(OperationTimeout - time.Since(start)):
+		return nil, fmt.Errorf("operation timeout")
+	}
 }
 
 // Ping requests that the server reflect the data back to the client.
