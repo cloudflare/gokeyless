@@ -102,7 +102,7 @@ type Error byte
 const (
 	// ErrCrypto indicates a cryptography failure.
 	ErrCrypto Error = iota + 1
-	// ErrKeyNotFound indicates no matching certificate ID.
+	// ErrKeyNotFound indicates key can't be found using the operation header.
 	ErrKeyNotFound
 	// ErrRead indicates a disk read failure.
 	ErrRead
@@ -126,7 +126,7 @@ func (e Error) Error() string {
 	case ErrCrypto:
 		errStr = "cryptography error"
 	case ErrKeyNotFound:
-		errStr = "no matching certificate SKI"
+		errStr = "key not found due to no matching SKI/SNI/ServerIP"
 	case ErrRead:
 		errStr = "disk read failure"
 	case ErrVersionMismatch:
