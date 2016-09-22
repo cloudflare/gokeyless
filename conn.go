@@ -7,8 +7,6 @@ import (
 	"io"
 	"sync"
 	"time"
-
-	"github.com/cloudflare/cfssl/log"
 )
 
 var (
@@ -36,32 +34,14 @@ func NewConn(inner *tls.Conn) *Conn {
 // no longer in use.
 func (c *Conn) Close() {
 	c.write.Lock()
+	c.Conn.Close()
 	defer c.write.Unlock()
-
-	if c.Conn != nil {
-		if err := c.Conn.Close(); err != nil {
-			log.Errorf("Unable to close connection: %v", err)
-		}
-	}
-	c.Conn = nil
-}
-
-// IsClosed returns true if the connection has been closed.
-func (c *Conn) IsClosed() bool {
-	c.write.Lock()
-	defer c.write.Unlock()
-
-	return c.Conn == nil
 }
 
 // WriteHeader marshals and header and writes it to the conn.
 func (c *Conn) WriteHeader(h *Header) error {
 	c.write.Lock()
 	defer c.write.Unlock()
-
-	if c.Conn == nil {
-		return fmt.Errorf("connection is closed or not yet ready")
-	}
 
 	b, err := h.MarshalBinary()
 	if err != nil {
@@ -75,10 +55,6 @@ func (c *Conn) WriteHeader(h *Header) error {
 // ReadHeader unmarshals a header from the wire into an internal
 // Header structure.
 func (c *Conn) ReadHeader() (*Header, error) {
-	if c.Conn == nil {
-		return nil, fmt.Errorf("connection is closed or not yet ready")
-	}
-
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
