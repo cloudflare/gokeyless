@@ -69,6 +69,7 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 // Close closes a Conn and remove it from the conn pool
 func (conn *Conn) Close() {
 	conn.Conn.Close()
+	connPool.Remove(conn.addr)
 }
 
 // KeepAlive keeps Conn reusable in the conn pool
@@ -253,7 +254,6 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		}
 
 		conn.Close()
-		connPool.Remove(s.String())
 	}()
 
 	return conn, nil

@@ -86,7 +86,7 @@ On an error, these are the possible 1-byte payloads:
 
     0x01 - cryptography failure
     0x02 - key not found - no matching certificate ID
-    0x03 - read error - disk read failure
+    0x03 - read error - I/O read failure
     0x04 - version mismatch - unsupported version incorrect
     0x05 - bad opcode - use of unknown opcode in request
     0x06 - unexpected opcode - use of response opcode in request
