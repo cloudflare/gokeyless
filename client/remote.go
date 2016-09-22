@@ -84,20 +84,17 @@ func healthchecker(conn *Conn) {
 
 	for {
 		time.Sleep(backoff.Duration())
-		if !conn.Conn.IsClosed() {
-			err := conn.Ping(nil)
-			if err != nil {
-				log.Debug("health check ping failed:", err)
-				// shut down the conn and remove it from the
-				// conn pool.
-				conn.Close()
-				return
-			}
 
-			log.Debug("start a new health check timer")
-		} else { // bail out
+		err := conn.Ping(nil)
+		if err != nil {
+			log.Debug("health check ping failed:", err)
+			// shut down the conn and remove it from the
+			// conn pool.
+			conn.Close()
 			return
 		}
+
+		log.Debug("start a new health check timer")
 	}
 }
 
@@ -231,7 +228,7 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	}
 
 	conn := connPool.Get(s.String())
-	if conn != nil && !conn.IsClosed() {
+	if conn != nil {
 		return conn, nil
 	}
 
@@ -246,6 +243,19 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	gconn := gokeyless.NewConn(inner)
 	conn = NewConn(s.String(), gconn)
 	connPool.Add(s.String(), conn)
+	go func() {
+		for {
+			err := conn.DoRead()
+			if err != nil {
+				log.Errorf("failed to read next header from %v: %v", s.String(), err)
+				break
+			}
+		}
+
+		conn.Close()
+		connPool.Remove(s.String())
+	}()
+
 	return conn, nil
 }
 
