@@ -55,7 +55,7 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 
 	keys.skis[ski] = priv
 
-	log.Debugf("Adding key with SKI: %02x", ski)
+	log.Debugf("add key with SKI: %02x", ski)
 	return nil
 }
 
@@ -68,11 +68,12 @@ func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) 
 	if ski.Valid() {
 		priv, found := keys.skis[ski]
 		if found {
+			log.Infof("fetch key with SKI: %02x", ski)
 			return priv, found
 		}
 	}
 
-	log.Infof("Couldn't look up key for %s.", op)
+	log.Errorf("couldn't fetch key for %s.", op)
 	return nil, false
 }
 
