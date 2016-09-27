@@ -27,13 +27,13 @@ type Tag byte
 const (
 	// TagCertificateDigest implies a SHA256 Digest of a key.
 	TagCertificateDigest Tag = 0x01
-	// TagServerName implies an SNI string.
+	// TagServerName implies server hostname (SNI) for the proxyed TLS server.
 	TagServerName Tag = 0x02
 	// TagClientIP implies an IPv4/6 address of the client connecting.
 	TagClientIP Tag = 0x03
 	// TagSubjectKeyIdentifier implies the Subject Key Identifier for the given key.
 	TagSubjectKeyIdentifier Tag = 0x04
-	// TagServerIP implies an IPv4/6 address of the proxying server.
+	// TagServerIP implies an IPv4/6 address of the proxyed TLS server.
 	TagServerIP Tag = 0x05
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode Tag = 0x11

@@ -47,7 +47,7 @@ func main() {
 		log.Fatal(err)
 	}
 	c.Config.InsecureSkipVerify = insecureSkipVerify
-	privs, err := c.RegisterDir(keyserver, certDir, nil)
+	privs, err := c.ScanDir(keyserver, certDir, nil)
 	if err != nil {
 		log.Fatal("failed to load cert directory:", err)
 	}

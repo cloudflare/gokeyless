@@ -13,10 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"time"
 
-	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
 	"github.com/lziest/ttlcache"
@@ -41,12 +39,8 @@ type Client struct {
 	DefaultRemote Remote
 	// Blacklist is a list of addresses that this client won't dial.
 	Blacklist AddrSet
-	// m is a Read/Write lock to protect against conccurrent accesses to maps.
-	m sync.RWMutex
 	// remoteCache maps all known server names to corresponding remote.
 	remoteCache *ttlcache.LRU
-	// remotes maps all known certificate SKIs to their Remote.
-	remotes map[gokeyless.SKI]Remote
 }
 
 // NewClient prepares a TLS client capable of connecting to keyservers.
@@ -63,7 +57,6 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 		Dialer:      &net.Dialer{},
 		Blacklist:   make(AddrSet),
 		remoteCache: ttlcache.NewLRU(remoteCacheSize, remoteCacheTTL, nil),
-		remotes:     make(map[gokeyless.SKI]Remote),
 	}
 }
 
@@ -134,73 +127,46 @@ func (c *Client) ClearBlacklist() {
 	c.Blacklist = make(AddrSet)
 }
 
-// Dial smartly establishes a connection to a registered keyless server
-// or reuses an existing connection if possible.
-func (c *Client) Dial(ski gokeyless.SKI) (*Conn, error) {
-	c.m.RLock()
-	r, ok := c.remotes[ski]
-	c.m.RUnlock()
-	if ok {
-		return r.Dial(c)
-	}
-	return c.DialDefault()
-}
-
-// DialDefault establishes a connection to the default keyless server.
-func (c *Client) DialDefault() (*Conn, error) {
-	if c.DefaultRemote == nil {
-		return nil, fmt.Errorf("default remote is nil")
-	}
-	return c.DefaultRemote.Dial(c)
-}
-
 // registerSKI associates the SKI of a public key with a particular keyserver.
-func (c *Client) registerSKI(server string, ski gokeyless.SKI) error {
-	c.m.Lock()
-	defer c.m.Unlock()
+func (c *Client) getRemote(server string) (Remote, error) {
 	// empty server means always associate ski with DefaultRemote
 	if server == "" {
-		log.Debugf("registering key @default_remote with SKI: %02x", ski)
-		c.remotes[ski] = c.DefaultRemote
-		return nil
+		if c.DefaultRemote == nil {
+			return nil, fmt.Errorf("default remote is nil")
+		}
+		return c.DefaultRemote, nil
 	}
 
-	log.Debugf("registering key @%s with SKI: %02x", server, ski)
-	cachedRemote := false
 	v, stale := c.remoteCache.Get(server)
 	if v != nil && !stale {
 		if r, ok := v.(Remote); ok {
-			c.remotes[ski] = r
-			cachedRemote = true
+			return r, nil
 		} else {
 			log.Error("failed to convert cached remote")
 		}
 	}
 
-	if !cachedRemote {
-		r, err := c.LookupServer(server)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-		c.remoteCache.Set(server, r, 0) // use default timeout
-		c.remotes[ski] = r
-	}
-	return nil
-}
-
-// RegisterSKI registers a public key under given ski with additional operation template information.
-func (c *Client) RegisterSKI(server string, ski gokeyless.SKI, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
-	if err := c.registerSKI(server, ski); err != nil {
+	r, err := c.LookupServer(server)
+	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
+	c.remoteCache.Set(server, r, 0) // use default timeout
+	return r, nil
+}
 
+// NewRemoteSigner returns a remote keyserver based crypto.Signer,
+// ski, sni, and serverIP are used to identified the key by the remote
+// keyserver.
+func NewRemoteSigner(c *Client, keyserver string, ski gokeyless.SKI,
+	pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	priv := PrivateKey{
-		public:   pub,
-		client:   c,
-		ski:      ski,
-		sni:      sni,
-		serverIP: serverIP,
+		public:    pub,
+		client:    c,
+		ski:       ski,
+		sni:       sni,
+		serverIP:  serverIP,
+		keyserver: keyserver,
 	}
 
 	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
@@ -209,30 +175,38 @@ func (c *Client) RegisterSKI(server string, ski gokeyless.SKI, pub crypto.Public
 		return &Decrypter{priv}, nil
 	}
 	return &priv, nil
+
 }
 
-// RegisterPublicKeyTemplate computes SKI and registers public key with additional operation template information.
-func (c *Client) RegisterPublicKeyTemplate(server string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+// NewRemoteSignerTemplate returns a remote keyserver
+// based crypto.Signer with the public key.
+// SKI is computed from the public key and along with sni and serverIP,
+// the remote Signer uses those key identification info to contact the
+// remote keyserver for keyless operations.
+func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	ski, err := gokeyless.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
-
-	return c.RegisterSKI(server, ski, pub, sni, serverIP)
+	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
 }
 
-// RegisterPublicKey SKIs and registers a public key as being held by a server.
-func (c *Client) RegisterPublicKey(server string, pub crypto.PublicKey) (crypto.Signer, error) {
-	return c.RegisterPublicKeyTemplate(server, pub, "", nil)
+// NewRemoteSignerByCert returns a remote keyserver based signer
+// with the the public key.
+func (c *Client) NewRemoteSignerByPublicKey(server string, pub crypto.PublicKey) (crypto.Signer, error) {
+	return c.NewRemoteSignerTemplate(server, pub, "", nil)
 }
 
-// RegisterCert SKIs the public key contained in a certificate and associates it with a particular keyserver.
-func (c *Client) RegisterCert(server string, cert *x509.Certificate) (crypto.Signer, error) {
-	return c.RegisterPublicKeyTemplate(server, cert.PublicKey, "", nil)
+// NewRemoteSignerByCert returns a remote keyserver based signer
+// with the the public key contained in a x509.Certificate.
+func (c *Client) NewRemoteSignerByCert(server string, cert *x509.Certificate) (crypto.Signer, error) {
+	return c.NewRemoteSignerTemplate(server, cert.PublicKey, "", nil)
 }
 
-// RegisterCertPEM registers a single PEM cert (possibly the leaf of a chain of certs).
-func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (crypto.Signer, error) {
+// NewRemoteSignerByCertPEM returns a remote keyserver based signer
+// with the public key extracted from  a single PEM cert
+// (possibly the leaf of a chain of certs).
+func (c *Client) NewRemoteSignerByCertPEM(server string, certsPEM []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(certsPEM)
 	if block == nil {
 		return nil, errors.New("couldn't parse PEM bytes")
@@ -243,7 +217,7 @@ func (c *Client) RegisterCertPEM(server string, certsPEM []byte) (crypto.Signer,
 		return nil, err
 	}
 
-	return c.RegisterPublicKeyTemplate(server, cert.PublicKey, "", nil)
+	return c.NewRemoteSignerTemplate(server, cert.PublicKey, "", nil)
 }
 
 var (
@@ -251,8 +225,8 @@ var (
 	crtExt    = regexp.MustCompile(`.+\.crt`)
 )
 
-// RegisterDir reads all .pubkey and .crt files from a directory and returns associated PublicKey structs.
-func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []crypto.Signer, err error) {
+// ScanDir reads all .pubkey and .crt files from a directory and returns associated PublicKey structs.
+func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []crypto.Signer, err error) {
 	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -275,16 +249,11 @@ func (c *Client) RegisterDir(server, dir string, LoadPubKey func([]byte) (crypto
 					return err
 				}
 
-				if priv, err = c.RegisterPublicKeyTemplate(server, pub, "", nil); err != nil {
+				if priv, err = c.NewRemoteSignerByPublicKey(server, pub); err != nil {
 					return err
 				}
 			} else {
-				var cert *x509.Certificate
-				if cert, err = helpers.ParseCertificatePEM(in); err != nil {
-					return err
-				}
-
-				if priv, err = c.RegisterCert(server, cert); err != nil {
+				if priv, err = c.NewRemoteSignerByCertPEM(server, in); err != nil {
 					return err
 				}
 			}
@@ -325,7 +294,7 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 		return fail(err)
 	}
 
-	cert.PrivateKey, err = c.RegisterCert(server, cert.Leaf)
+	cert.PrivateKey, err = c.NewRemoteSignerByCert(server, cert.Leaf)
 	if err != nil {
 		return fail(err)
 	}
