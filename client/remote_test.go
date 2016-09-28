@@ -124,6 +124,12 @@ func TestRemoteGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// defqult remote group has one working remote and one that doesn't.
+	// PingAll should not hang.
+	r.PingAll(c, 1)
+	r.PingAll(c, 2)
+	r.PingAll(c, 3)
 }
 
 func TestUnixRemote(t *testing.T) {
@@ -193,7 +199,7 @@ func TestSlowServer(t *testing.T) {
 	c.DefaultRemote = g
 	t.Log("c.DefaultRemote size:", len(c.DefaultRemote.(*Group).remotes))
 
-	g.PingAll(c)
+	g.PingAll(c, 1)
 
 	// After ping checks, 1st remote must be the normal server.
 	firstRemote := g.remotes[0]

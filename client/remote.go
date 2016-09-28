@@ -35,6 +35,7 @@ var connPool *connPoolType
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
 	Dial(*Client) (*Conn, error)
+	PingAll(*Client, int)
 }
 
 // A Conn represents a long-lived client connection to a keyserver.
@@ -259,6 +260,19 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 	return conn, nil
 }
 
+// PingAll simply attempts to ping the singleRemote
+func (s *singleRemote) PingAll(c *Client, concurrency int) {
+	conn, err := s.Dial(c)
+	if err != nil {
+		return
+	}
+
+	err = conn.Ping(nil)
+	if err != nil {
+		conn.Close()
+	}
+}
+
 func copyTLSConfig(c *tls.Config) *tls.Config {
 	return &tls.Config{
 		Certificates:             c.Certificates,
@@ -314,17 +328,18 @@ func (l ewmaLatency) Better(r ewmaLatency) bool {
 	return l.val < r.val
 }
 
-type item struct {
+// mRemote denotes Remote with latency measurements.
+type mRemote struct {
 	Remote
 	latency ewmaLatency
 }
 
-type itemSorter []item
+type mRemoteSorter []mRemote
 
 // A Group is a Remote consisting of a load-balanced set of external servers.
 type Group struct {
 	sync.RWMutex
-	remotes     []item
+	remotes     []mRemote
 	lastPingAll time.Time
 }
 
@@ -336,7 +351,7 @@ func NewGroup(remotes []Remote) (*Group, error) {
 	g := new(Group)
 
 	for _, r := range remotes {
-		g.remotes = append(g.remotes, item{Remote: r})
+		g.remotes = append(g.remotes, mRemote{Remote: r})
 	}
 
 	return g, nil
@@ -359,7 +374,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 		n = len(g.remotes)
 	}
 
-	remotes := make([]item, n)
+	remotes := make([]mRemote, n)
 	// copy and shuffle first n remotes for load balancing
 	for i := 0; i < n; i++ {
 		j := rand.Intn(i + 1)
@@ -374,7 +389,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 		g.Lock()
 		if time.Since(g.lastPingAll) > 30*time.Minute {
 			g.lastPingAll = time.Now()
-			go g.PingAll(c)
+			go g.PingAll(c, 1)
 		}
 		g.Unlock()
 
@@ -396,36 +411,59 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 // in a separate goroutine. It allows a separate goroutine to
 // asynchronously sort remotes by ping latencies. It also serves
 // as a service discovery tool.
-func (g *Group) PingAll(c *Client) {
+func (g *Group) PingAll(c *Client, concurrency int) {
 	g.RLock()
-	remotes := make([]item, len(g.remotes))
+	remotes := make([]mRemote, len(g.remotes))
 	copy(remotes, g.remotes)
 	g.RUnlock()
 
-	for i, r := range remotes {
-		conn, err := r.Dial(c)
-		if err != nil {
-			r.latency.Reset()
-			log.Infof("ping failed: %v", err)
-			remotes[i] = r
-			continue
-		}
-
-		start := time.Now()
-		err = conn.Ping(nil)
-		duration := time.Since(start)
-
-		if err != nil {
-			defer conn.Close()
-			r.latency.Reset()
-			log.Infof("ping failed: %v", err)
-		} else {
-			log.Debug(conn.addr, " ping duration:", duration)
-			r.latency.Update(duration)
-		}
-		remotes[i] = r
+	if concurrency <= 0 {
+		concurrency = 1
 	}
-	sort.Sort(itemSorter(remotes))
+	// ch receives all tested remote back
+	ch := make(chan mRemote, len(g.remotes))
+	// jobQueue controls concurrency
+	jobQueue := make(chan bool, concurrency)
+	// fill the queue
+	for i := 0; i < cap(jobQueue); i++ {
+		jobQueue <- true
+	}
+
+	// each goroutine dials a remote
+	for _, r := range remotes {
+		// take a job slot from the queue
+		<-jobQueue
+		go func(r mRemote) {
+			// defer returns a job slot to the queue
+			defer func() { jobQueue <- true }()
+			conn, err := r.Dial(c)
+			if err != nil {
+				r.latency.Reset()
+				log.Infof("PingAll's dial failed: %v", err)
+				ch <- r
+				return
+			}
+
+			start := time.Now()
+			err = conn.Ping(nil)
+			duration := time.Since(start)
+
+			if err != nil {
+				defer conn.Close()
+				r.latency.Reset()
+				log.Infof("PingAll's ping failed: %v", err)
+			} else {
+				r.latency.Update(duration)
+			}
+			ch <- r
+		}(r)
+	}
+
+	for i := 0; i < len(remotes); i++ {
+		remotes[i] = <-ch
+	}
+
+	sort.Sort(mRemoteSorter(remotes))
 
 	g.Lock()
 	g.remotes = remotes
@@ -436,17 +474,17 @@ func (g *Group) PingAll(c *Client) {
 // Len(), Less(i, j) and Swap(i,j) implements sort.Interface
 
 // Len returns the number of remote
-func (s itemSorter) Len() int {
+func (s mRemoteSorter) Len() int {
 	return len(s)
 }
 
 // Swap swaps remote i and remote j in the list
-func (s itemSorter) Swap(i, j int) {
+func (s mRemoteSorter) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
 // Less compares two Remotes at position i and j based on latency
-func (s itemSorter) Less(i, j int) bool {
+func (s mRemoteSorter) Less(i, j int) bool {
 	pi, pj := s[i].latency, s[j].latency
 	return pi.Better(pj)
 }
