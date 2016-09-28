@@ -35,7 +35,7 @@ var connPool *connPoolType
 // A Remote represents some number of remote keyless server(s)
 type Remote interface {
 	Dial(*Client) (*Conn, error)
-	PingAll(*Client)
+	PingAll(*Client, int)
 }
 
 // A Conn represents a long-lived client connection to a keyserver.
@@ -261,7 +261,7 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 }
 
 // PingAll simply attempts to ping the singleRemote
-func (s *singleRemote) PingAll(c *Client) {
+func (s *singleRemote) PingAll(c *Client, concurrency int) {
 	conn, err := s.Dial(c)
 	if err != nil {
 		return
@@ -389,7 +389,7 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 		g.Lock()
 		if time.Since(g.lastPingAll) > 30*time.Minute {
 			g.lastPingAll = time.Now()
-			go g.PingAll(c)
+			go g.PingAll(c, 1)
 		}
 		g.Unlock()
 
@@ -411,18 +411,31 @@ func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 // in a separate goroutine. It allows a separate goroutine to
 // asynchronously sort remotes by ping latencies. It also serves
 // as a service discovery tool.
-func (g *Group) PingAll(c *Client) {
+func (g *Group) PingAll(c *Client, concurrency int) {
 	g.RLock()
 	remotes := make([]mRemote, len(g.remotes))
 	copy(remotes, g.remotes)
 	g.RUnlock()
 
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 	// ch receives all tested remote back
 	ch := make(chan mRemote, len(g.remotes))
+	// jobQueue controls concurrency
+	jobQueue := make(chan bool, concurrency)
+	// fill the queue
+	for i := 0; i < cap(jobQueue); i++ {
+		jobQueue <- true
+	}
 
 	// each goroutine dials a remote
 	for _, r := range remotes {
+		// take a job slot from the queue
+		<-jobQueue
 		go func(r mRemote) {
+			// defer returns a job slot to the queue
+			defer func() { jobQueue <- true }()
 			conn, err := r.Dial(c)
 			if err != nil {
 				r.latency.Reset()
