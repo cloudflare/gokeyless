@@ -124,6 +124,10 @@ func TestRemoteGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// defqult remote group has one working remote and one that doesn't.
+	// PingAll should not hang.
+	r.PingAll(c)
 }
 
 func TestUnixRemote(t *testing.T) {
