@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/cloudflare/cfssl/helpers"
+	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
@@ -45,13 +47,37 @@ func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
 	return ioutil.ReadFile(serverCert)
 }
 
+// LoadKey attempts to load a private key from PEM or DER.
+func LoadKey(in []byte) (priv crypto.Signer, err error) {
+	priv, err = helpers.ParsePrivateKeyPEM(in)
+	if err == nil {
+		return priv, nil
+	}
+
+	return derhelpers.ParsePrivateKeyDER(in)
+}
+
+// helper function reads a pub key from a file and convert it to a signer
+func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
+	pemBytes, err := ioutil.ReadFile(filepath)
+	if err != nil {
+		return nil, err
+	}
+	p, _ := pem.Decode(pemBytes)
+	pub, err := x509.ParsePKIXPublicKey(p.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	s, err := c.NewRemoteSignerByPublicKey("", pub)
+	if err != nil {
+		return nil, err
+	}
+	return s, err
+}
+
 // Set up compatible server and client for use by tests.
 func init() {
 	var err error
-	var pemBytes []byte
-	var p *pem.Block
-	var priv crypto.Signer
-	var pub crypto.PublicKey
 
 	log.Level = log.LevelFatal
 
@@ -61,31 +87,8 @@ func init() {
 	}
 
 	keys := server.NewDefaultKeystore()
+	keys.LoadKeysFromDir("testdata", LoadKey)
 	s.Keys = keys
-
-	// Import RSA private key into server's keystore.
-	if pemBytes, err = ioutil.ReadFile(rsaPrivKey); err != nil {
-		log.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if priv, err = x509.ParsePKCS1PrivateKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-	if err = keys.Add(nil, priv); err != nil {
-		log.Fatal(err)
-	}
-
-	// Import ECDSA private key into server's keystore.
-	if pemBytes, err = ioutil.ReadFile(ecdsaPrivKey); err != nil {
-		log.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if priv, err = x509.ParseECPrivateKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-	if err = keys.Add(nil, priv); err != nil {
-		log.Fatal(err)
-	}
 
 	s.GetCertificate = dummyGetCertificate
 
@@ -98,7 +101,8 @@ func init() {
 	}()
 	<-listening
 
-	if c, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA); err != nil {
+	c, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -106,34 +110,21 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	c.DefaultRemote = remote
 
-	if pemBytes, err = ioutil.ReadFile(rsaPubKey); err != nil {
+	privKey, err := NewRemoteSignerByPubKeyFile(rsaPubKey)
+	if err != nil {
 		log.Fatal(err)
 	}
-	p, _ = pem.Decode(pemBytes)
-	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-	var privKey crypto.Signer
+
 	var ok bool
-	if privKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
-		log.Fatal(err)
-	}
-
 	rsaKey, ok = privKey.(*client.Decrypter)
 	if !ok {
 		log.Fatal("bad RSA key registration")
 	}
 
-	if pemBytes, err = ioutil.ReadFile(ecdsaPubKey); err != nil {
-		log.Fatal(err)
-	}
-	p, _ = pem.Decode(pemBytes)
-	if pub, err = x509.ParsePKIXPublicKey(p.Bytes); err != nil {
-		log.Fatal(err)
-	}
-
-	if privKey, err = c.RegisterPublicKey(serverAddr, pub); err != nil {
+	privKey, err = NewRemoteSignerByPubKeyFile(ecdsaPubKey)
+	if err != nil {
 		log.Fatal(err)
 	}
 

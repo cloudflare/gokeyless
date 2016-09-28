@@ -244,7 +244,7 @@ func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, wor
 
 	for _, cert := range certs {
 		var privDec *client.Decrypter
-		priv, err := c.RegisterPublicKeyTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
+		priv, err := c.NewRemoteSignerTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
 		if err != nil {
 			return nil, err
 		}

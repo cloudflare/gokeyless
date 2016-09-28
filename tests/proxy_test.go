@@ -61,7 +61,6 @@ func TestTLSProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.RegisterCert(serverAddr, cert.Leaf)
 
 	serverConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
