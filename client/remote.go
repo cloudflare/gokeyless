@@ -421,7 +421,7 @@ func (g *Group) PingAll(c *Client, concurrency int) {
 		concurrency = 1
 	}
 	// ch receives all tested remote back
-	ch := make(chan mRemote, len(g.remotes))
+	ch := make(chan mRemote, len(remotes))
 	// jobQueue controls concurrency
 	jobQueue := make(chan bool, concurrency)
 	// fill the queue
