@@ -13,7 +13,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport/core"
-	"github.com/cloudflare/gokeyless"
+	"github.com/lziest/gokeyless"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
 )

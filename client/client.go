@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
+	"github.com/lziest/gokeyless"
 	"github.com/lziest/ttlcache"
 )
 

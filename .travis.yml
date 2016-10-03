@@ -22,5 +22,4 @@ script:
 notifications:
   email:
     recipients:
-      - kyle@cloudflare.com
-      - msilverlock@cloudflare.com
+      - zi.lin.cs@gmail.com
