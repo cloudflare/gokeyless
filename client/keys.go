@@ -11,7 +11,7 @@ import (
 	"net"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
+	"github.com/lziest/gokeyless"
 )
 
 func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op {
