@@ -10,7 +10,6 @@ import (
 	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/tests"
-	"github.com/cloudflare/gokeyless/tests/testapi"
 )
 
 var (
@@ -52,7 +51,7 @@ func main() {
 		log.Fatal("failed to load cert directory:", err)
 	}
 
-	results := testapi.NewResults()
+	results := tests.NewResults()
 	results.RegisterTest("ping", tests.NewPingTest(c, keyserver))
 	for _, priv := range privs {
 		ski, _ := gokeyless.GetSKI(priv.Public())
