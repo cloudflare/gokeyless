@@ -6,21 +6,134 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/asn1"
 	"errors"
 	"math/big"
 	"net"
-	"strconv"
+	"sync"
 	"time"
 
-	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/go-metrics"
 	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/tests/testapi"
 )
+
+// Results is a registry of metrics representing the success stats of an entire test suite.
+type Results struct {
+	metrics.Registry `json:"results"`
+	Tests            map[string]*Test `json:"tests"`
+}
+
+// NewResults initializes a new API Results registry.
+func NewResults() *Results {
+	results := &Results{
+		Registry: metrics.NewRegistry(),
+		Tests:    make(map[string]*Test),
+	}
+	results.Register("latency", metrics.NewTimer())
+	results.Register("success", metrics.NewCounter())
+	results.Register("failure", metrics.NewCounter())
+	return results
+}
+
+// TestFunc represents generic test to be run.
+type TestFunc func() error
+
+// Test represents the success stats for an individual test.
+type Test struct {
+	metrics.Registry `json:"results"`
+	Errors           metrics.Registry `json:"errors,omitempty"`
+	run              TestFunc
+}
+
+// RegisterTest initializes a new Test struct and adds it to results.
+func (results *Results) RegisterTest(name string, run TestFunc) {
+	test := &Test{
+		Registry: metrics.NewRegistry(),
+		Errors:   metrics.NewRegistry(),
+		run:      run,
+	}
+	test.Register("latency", metrics.NewTimer())
+	test.Register("success", metrics.NewCounter())
+	test.Register("failure", metrics.NewCounter())
+	results.Tests[name] = test
+}
+
+// RunTests continually runs the tests stored in results for testLen.
+func (results *Results) RunTests(testLen time.Duration, workers int) {
+	log.Debugf("Running tests for %v with %d workers", testLen, workers)
+	tests := make(chan string, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			for name := range tests {
+				test := results.Tests[name]
+				testStart := time.Now()
+				if err := test.run(); err != nil {
+					results.Get("failure").(metrics.Counter).Inc(1)
+					test.Get("failure").(metrics.Counter).Inc(1)
+					errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
+					errCount.Inc(1)
+					log.Infof("--- %s - Running %s: %v", "FAIL", name, err)
+				} else {
+					test.Get("success").(metrics.Counter).Inc(1)
+					results.Get("success").(metrics.Counter).Inc(1)
+					log.Infof("--- %s - Running %s", "PASS", name)
+				}
+				test.Get("latency").(metrics.Timer).UpdateSince(testStart)
+				results.Get("latency").(metrics.Timer).UpdateSince(testStart)
+			}
+		}()
+	}
+
+	timeout := time.After(testLen)
+	for {
+		for name := range results.Tests {
+			select {
+			case <-timeout:
+				close(tests)
+				return
+
+			case tests <- name:
+			}
+		}
+	}
+}
+
+// RunBenchmarkTests runs each tests repetitively with multiple goroutines.
+func (results *Results) RunBenchmarkTests(repeats, workers int) {
+	log.Debugf("Running each test for %d times with %d workers", repeats, workers)
+
+	var wg sync.WaitGroup
+	for name := range results.Tests {
+		test := results.Tests[name]
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func(name string, test *Test) {
+				defer wg.Done()
+				for i := 0; i < repeats; i++ {
+					testStart := time.Now()
+					err := test.run()
+					test.Get("latency").(metrics.Timer).UpdateSince(testStart)
+					results.Get("latency").(metrics.Timer).UpdateSince(testStart)
+					if err != nil {
+						results.Get("failure").(metrics.Counter).Inc(1)
+						test.Get("failure").(metrics.Counter).Inc(1)
+						errCount := metrics.GetOrRegisterCounter(err.Error(), test.Errors)
+						errCount.Inc(1)
+						log.Infof("--- %s - Running %s: %v", "FAIL", name, err)
+					} else {
+						test.Get("success").(metrics.Counter).Inc(1)
+						results.Get("success").(metrics.Counter).Inc(1)
+						log.Infof("--- %s - Running %s", "PASS", name)
+					}
+				}
+			}(name, test)
+		}
+	}
+
+	wg.Wait()
+}
 
 // hashPtxt hashes the plaintext with the given hash algorithm.
 func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
@@ -29,7 +142,7 @@ func hashPtxt(h crypto.Hash, ptxt []byte) []byte {
 
 // NewPingRemoteTest generates a TestFunc to connect and perform a ping to
 // a specific remote directly.
-func NewPingRemoteTest(c *client.Client, r client.Remote) testapi.TestFunc {
+func NewPingRemoteTest(c *client.Client, r client.Remote) TestFunc {
 	return func() error {
 		conn, err := r.Dial(c)
 		if err != nil {
@@ -40,7 +153,7 @@ func NewPingRemoteTest(c *client.Client, r client.Remote) testapi.TestFunc {
 }
 
 // NewPingTest generates a TestFunc to connect and perform a ping.
-func NewPingTest(c *client.Client, server string) testapi.TestFunc {
+func NewPingTest(c *client.Client, server string) TestFunc {
 	return func() error {
 		r, err := c.LookupServer(server)
 		if err != nil {
@@ -56,7 +169,7 @@ func NewPingTest(c *client.Client, server string) testapi.TestFunc {
 }
 
 // NewGetCertificateTest generates a TestFunc to connect and perform a certificate load.
-func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net.IP, payload, expected []byte) testapi.TestFunc {
+func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net.IP, payload, expected []byte) TestFunc {
 	return func() error {
 		r, err := c.LookupServer(keyserver)
 		if err != nil {
@@ -85,8 +198,8 @@ func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net
 }
 
 // NewSignTests generates a map of test name to TestFunc that performs an opaque sign and verify.
-func NewSignTests(priv crypto.Signer) map[string]testapi.TestFunc {
-	tests := make(map[string]testapi.TestFunc)
+func NewSignTests(priv crypto.Signer) map[string]TestFunc {
+	tests := make(map[string]TestFunc)
 	ptxt := []byte("Test Plaintext")
 	r := rand.Reader
 	hashes := map[string]crypto.Hash{
@@ -106,7 +219,7 @@ func NewSignTests(priv crypto.Signer) map[string]testapi.TestFunc {
 			msg = hashPtxt(h, ptxt)
 		}
 
-		tests[hashName] = func(h crypto.Hash) testapi.TestFunc {
+		tests[hashName] = func(h crypto.Hash) TestFunc {
 			return func() error {
 				sig, err := priv.Sign(r, msg, h)
 				if err != nil {
@@ -134,7 +247,7 @@ func NewSignTests(priv crypto.Signer) map[string]testapi.TestFunc {
 }
 
 // NewDecryptTest generates an RSA decryption test.
-func NewDecryptTest(decrypter crypto.Decrypter) testapi.TestFunc {
+func NewDecryptTest(decrypter crypto.Decrypter) TestFunc {
 	ptxt := []byte("Test Plaintext")
 	r := rand.Reader
 
@@ -166,108 +279,4 @@ func NewDecryptTest(decrypter crypto.Decrypter) testapi.TestFunc {
 		}
 		return nil
 	}
-}
-
-func getCertFromDomain(domain string) (*x509.Certificate, error) {
-	var host, port string
-	var err error
-	if host, port, err = net.SplitHostPort(domain); err != nil {
-		host = domain
-		port = "443"
-	}
-
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", net.JoinHostPort(host, port), &tls.Config{InsecureSkipVerify: true})
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	if len(conn.ConnectionState().PeerCertificates) == 0 {
-		return nil, errors.New("received no server certificates")
-	}
-
-	return conn.ConnectionState().PeerCertificates[0], nil
-}
-
-// RunAPITests runs a test suite based on on API Input and returns an API Result.
-func RunAPITests(in *testapi.Input, c *client.Client, testLen time.Duration, workers int) (*testapi.Results, error) {
-	log.Debugf("Testing %s", in.Keyserver)
-	var err error
-	var certs []*x509.Certificate
-	if c == nil {
-		err = errors.New("invalid client")
-		log.Warning(err)
-		return nil, err
-	}
-
-	if len(in.CertsPEM) > 0 {
-		log.Debug("Parsing certificate PEM")
-		certs, err = helpers.ParseCertificatesPEM([]byte(in.CertsPEM))
-		if err != nil {
-			log.Warning("Couldn't parse certificate PEM")
-			return nil, err
-		}
-	}
-
-	var sni string
-	if in.Domain != "" {
-		log.Debugf("Getting certificate from %s", in.Domain)
-		if cert, err := getCertFromDomain(in.Domain); err == nil {
-			certs = append(certs, cert)
-		} else {
-			log.Warningf("Couldn't get certificate from %s: %v", in.Domain, err)
-		}
-
-		if sni, _, err = net.SplitHostPort(in.Domain); err != nil {
-			sni = in.Domain
-		}
-	}
-
-	c.Config.InsecureSkipVerify = in.InsecureSkipVerify
-	serverIP := net.ParseIP(in.ServerIP)
-
-	if newTestLen, err := time.ParseDuration(in.TestLen); err == nil {
-		if newTestLen > 0 && newTestLen < 30*time.Second {
-			testLen = newTestLen
-		}
-	}
-
-	if newWorkers, err := strconv.Atoi(in.Workers); err == nil {
-		if newWorkers > 0 && newWorkers < 1024 {
-			workers = newWorkers
-		}
-	}
-
-	results := testapi.NewResults()
-
-	results.RegisterTest("ping", NewPingTest(c, in.Keyserver))
-
-	for _, cert := range certs {
-		var privDec *client.Decrypter
-		priv, err := c.NewRemoteSignerTemplate(in.Keyserver, cert.PublicKey, sni, serverIP)
-		if err != nil {
-			return nil, err
-		}
-
-		if _, ok := cert.PublicKey.(*rsa.PublicKey); ok {
-			privDec = priv.(*client.Decrypter)
-		}
-
-		ski, err := gokeyless.GetSKICert(cert)
-		if err != nil {
-			return nil, err
-		}
-
-		if privDec != nil {
-			results.RegisterTest(ski.String()+"."+"decrypt", NewDecryptTest(privDec))
-		}
-
-		for name, test := range NewSignTests(priv) {
-			results.RegisterTest(ski.String()+"."+name, test)
-		}
-	}
-
-	results.RunTests(testLen, workers)
-
-	return results, nil
 }
