@@ -76,10 +76,11 @@ func main() {
 		initializeServerCertAndKey()
 	}
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile)
 	if err != nil {
 		log.Fatal("cannot start server:", err)
 	}
+	s.Addr = net.JoinHostPort("", port)
 
 	go func() { log.Fatal(s.ListenAndServe()) }()
 	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()

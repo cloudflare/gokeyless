@@ -55,10 +55,12 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 func TestMain(m *testing.M) {
 	var err error
 	// Setup keyless server
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, socketAddr)
+	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.Addr = serverAddr
+	s.UnixAddr = socketAddr
 
 	keys := server.NewDefaultKeystore()
 	keys.LoadKeysFromDir("testdata", LoadKey)
@@ -160,8 +162,7 @@ func TestBadRemote(t *testing.T) {
 
 func TestSlowServer(t *testing.T) {
 	// Setup a slow keyless server
-	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA,
-		serverAddr, serverAddr)
+	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		t.Fatal(err)
 	}
