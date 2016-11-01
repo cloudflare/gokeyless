@@ -81,10 +81,11 @@ func init() {
 
 	log.Level = log.LevelFatal
 
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, "")
+	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.Addr = serverAddr
 
 	keys := server.NewDefaultKeystore()
 	keys.LoadKeysFromDir("testdata", LoadKey)

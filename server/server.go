@@ -129,10 +129,8 @@ type Server struct {
 type GetCertificate func(op *gokeyless.Operation) (certChain []byte, err error)
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
-func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
+func NewServer(cert tls.Certificate, keylessCA *x509.CertPool) *Server {
 	return &Server{
-		Addr:     addr,
-		UnixAddr: unixAddr,
 		Config: &tls.Config{
 			ClientCAs:    keylessCA,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -148,7 +146,7 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr st
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
-func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Server, error) {
+func NewServerFromFile(certFile, keyFile, caFile string) (*Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -163,7 +161,7 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Se
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
 		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
-	return NewServer(cert, keylessCA, addr, metricsAddr), nil
+	return NewServer(cert, keylessCA), nil
 }
 
 func (s *Server) handle(conn *gokeyless.Conn) {
@@ -363,16 +361,19 @@ func (s *Server) Serve(l net.Listener) error {
 // ListenAndServe listens on the TCP network address s.Addr and then
 // calls Serve to handle requests on incoming keyless connections.
 func (s *Server) ListenAndServe() error {
-	l, err := net.Listen("tcp", s.Addr)
-	if err != nil {
-		return err
+	if s.Addr != "" {
+		l, err := net.Listen("tcp", s.Addr)
+		if err != nil {
+			return err
+		}
+
+		s.Addr = l.Addr().String()
+		s.TCPListener = l
+
+		log.Infof("Listening at tcp://%s\n", l.Addr())
+		return s.Serve(l)
 	}
-
-	s.Addr = l.Addr().String()
-	s.TCPListener = l
-
-	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.Serve(l)
+	return errors.New("can't listen and serve: server address is uninitialized")
 }
 
 // UnixListenAndServe listens on the Unix socket address and handles keyless requests.
@@ -387,7 +388,7 @@ func (s *Server) UnixListenAndServe() error {
 		log.Infof("Listening at unix://%s\n", l.Addr())
 		return s.Serve(l)
 	}
-	return errors.New("can't listen on empty path")
+	return errors.New("can't listen and serve: empty unix path")
 }
 
 func (s *Server) Close() {
