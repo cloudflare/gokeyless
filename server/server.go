@@ -148,7 +148,7 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr st
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
-func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Server, error) {
+func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -163,7 +163,7 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, metricsAddr string) (*Se
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
 		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
-	return NewServer(cert, keylessCA, addr, metricsAddr), nil
+	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
 func (s *Server) handle(conn *gokeyless.Conn) {
