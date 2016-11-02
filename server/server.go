@@ -68,7 +68,7 @@ func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) 
 	if ski.Valid() {
 		priv, found := keys.skis[ski]
 		if found {
-			log.Infof("fetch key with SKI: %02x", ski)
+			log.Infof("fetch key with SKI: %s", ski)
 			return priv, found
 		}
 	}
