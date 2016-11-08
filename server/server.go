@@ -390,6 +390,7 @@ func (s *Server) UnixListenAndServe() error {
 	return errors.New("can't listen on empty path")
 }
 
+// Close shuts down the listeners.
 func (s *Server) Close() {
 	if s.UnixListener != nil {
 		s.UnixListener.Close()

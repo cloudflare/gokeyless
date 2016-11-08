@@ -170,7 +170,7 @@ func TestRSADecrypt(t *testing.T) {
 	}
 	if bytes.Compare(ptxt, m) == 0 {
 		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
-		t.Fatal("rsa decrypt suceeded despite incorrect SessionKeyLen")
+		t.Fatal("rsa decrypt succeeded despite incorrect SessionKeyLen")
 	}
 }
 

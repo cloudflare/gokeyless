@@ -14,6 +14,26 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
+
+var (
+	rsaCrypto = map[crypto.Hash] gokeyless.Op {
+		crypto.MD5SHA1: gokeyless.OpRSASignMD5SHA1,
+		crypto.SHA1:    gokeyless.OpRSASignSHA1,
+		crypto.SHA224:  gokeyless.OpRSASignSHA224,
+		crypto.SHA256:  gokeyless.OpRSASignSHA256,
+		crypto.SHA384:  gokeyless.OpRSASignSHA384,
+		crypto.SHA512:  gokeyless.OpRSASignSHA512,
+	}
+	ecdsaCrypto = map[crypto.Hash] gokeyless.Op {
+		crypto.MD5SHA1: gokeyless.OpECDSASignMD5SHA1,
+		crypto.SHA1: gokeyless.OpECDSASignSHA1,
+		crypto.SHA224: gokeyless.OpECDSASignSHA224,
+		crypto.SHA256: gokeyless.OpECDSASignSHA256,
+		crypto.SHA384: gokeyless.OpECDSASignSHA384,
+		crypto.SHA512: gokeyless.OpECDSASignSHA512,
+	}
+)
+
 func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op {
 	if opts, ok := opts.(*rsa.PSSOptions); ok {
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
@@ -39,37 +59,15 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 	}
 	switch key.Public().(type) {
 	case *rsa.PublicKey:
-		switch opts.HashFunc() {
-		case crypto.MD5SHA1:
-			return gokeyless.OpRSASignMD5SHA1
-		case crypto.SHA1:
-			return gokeyless.OpRSASignSHA1
-		case crypto.SHA224:
-			return gokeyless.OpRSASignSHA224
-		case crypto.SHA256:
-			return gokeyless.OpRSASignSHA256
-		case crypto.SHA384:
-			return gokeyless.OpRSASignSHA384
-		case crypto.SHA512:
-			return gokeyless.OpRSASignSHA512
-		default:
+		if value, ok := rsaCrypto[opts.HashFunc()]; ok {
+			return value
+		} else {
 			return gokeyless.OpError
 		}
 	case *ecdsa.PublicKey:
-		switch opts.HashFunc() {
-		case crypto.MD5SHA1:
-			return gokeyless.OpECDSASignMD5SHA1
-		case crypto.SHA1:
-			return gokeyless.OpECDSASignSHA1
-		case crypto.SHA224:
-			return gokeyless.OpECDSASignSHA224
-		case crypto.SHA256:
-			return gokeyless.OpECDSASignSHA256
-		case crypto.SHA384:
-			return gokeyless.OpECDSASignSHA384
-		case crypto.SHA512:
-			return gokeyless.OpECDSASignSHA512
-		default:
+		if value, ok := ecdsaCrypto[opts.HashFunc()]; ok {
+			return value
+		} else {
 			return gokeyless.OpError
 		}
 	default:
@@ -126,10 +124,9 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 				continue
 			}
 			return nil, err
-		} else {
-			conn.KeepAlive()
-			break
 		}
+		conn.KeepAlive()
+		break
 	}
 
 	if result.Opcode != gokeyless.OpResponse {
