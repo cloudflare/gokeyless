@@ -141,9 +141,8 @@ func (c *Client) getRemote(server string) (Remote, error) {
 	if v != nil && !stale {
 		if r, ok := v.(Remote); ok {
 			return r, nil
-		} else {
-			log.Error("failed to convert cached remote")
 		}
+		log.Error("failed to convert cached remote")
 	}
 
 	r, err := c.LookupServer(server)
@@ -191,7 +190,7 @@ func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey,
 	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
 }
 
-// NewRemoteSignerByCert returns a remote keyserver based signer
+// NewRemoteSignerByPublicKey returns a remote keyserver based signer
 // with the the public key.
 func (c *Client) NewRemoteSignerByPublicKey(server string, pub crypto.PublicKey) (crypto.Signer, error) {
 	return c.NewRemoteSignerTemplate(server, pub, "", nil)

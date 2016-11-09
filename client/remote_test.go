@@ -204,6 +204,9 @@ func TestSlowServer(t *testing.T) {
 	// After ping checks, 1st remote must be the normal server.
 	firstRemote := g.remotes[0]
 	conn, err := firstRemote.Dial(c)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if conn.addr != s.Addr {
 		t.Fatal("bad 1st remote addr:", conn.addr)
 	}

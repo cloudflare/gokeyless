@@ -275,7 +275,7 @@ func NewDecryptTest(decrypter crypto.Decrypter) TestFunc {
 			return
 		}
 		if bytes.Compare(ptxt, m) == 0 {
-			return errors.New("rsa decrypt suceeded despite incorrect SessionKeyLen")
+			return errors.New("rsa decrypt succeeded despite incorrect SessionKeyLen")
 		}
 		return nil
 	}

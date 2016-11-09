@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// OperationTimeout is the default timeout value.
 var (
 	OperationTimeout = time.Second * 10
 )

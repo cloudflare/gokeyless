@@ -221,7 +221,7 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 		return sha256.Sum256([]byte(fmt.Sprintf("%X", rsaPub.N))), nil
 	}
 
-	return nilDigest, errors.New("can't comute digest for non-RSA public key")
+	return nilDigest, errors.New("can't compute digest for non-RSA public key")
 }
 
 // Header represents the format for a Keyless protocol header.
@@ -282,7 +282,7 @@ type Operation struct {
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %s, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
+	return fmt.Sprintf("[Opcode: %02x, SKI: %02x, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
@@ -355,13 +355,13 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		length = int(binary.BigEndian.Uint16(body[i+1 : i+3]))
 		if i+3+length > len(body) {
-			return fmt.Errorf("%s length is %dB beyond end of body", tag, i+3+length-len(body))
+			return fmt.Errorf("%02x length is %dB beyond end of body", tag, i+3+length-len(body))
 		}
 
 		data := body[i+3 : i+3+length]
 
 		if seen[tag] {
-			return fmt.Errorf("tag %s seen multiple times", tag)
+			return fmt.Errorf("tag %02x seen multiple times", tag)
 		}
 		seen[tag] = true
 
@@ -397,7 +397,7 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 		case TagPadding:
 			// ignore padding
 		default:
-			return fmt.Errorf("unknown tag: %s", tag)
+			return fmt.Errorf("unknown tag: %02x", tag)
 		}
 	}
 	return nil
