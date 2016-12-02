@@ -31,7 +31,6 @@ func NewResults() *Results {
 		Registry: metrics.NewRegistry(),
 		Tests:    make(map[string]*Test),
 	}
-	results.Register("latency", metrics.NewTimer())
 	results.Register("success", metrics.NewCounter())
 	results.Register("failure", metrics.NewCounter())
 	return results
@@ -54,7 +53,6 @@ func (results *Results) RegisterTest(name string, run TestFunc) {
 		Errors:   metrics.NewRegistry(),
 		run:      run,
 	}
-	test.Register("latency", metrics.NewTimer())
 	test.Register("success", metrics.NewCounter())
 	test.Register("failure", metrics.NewCounter())
 	results.Tests[name] = test
@@ -68,7 +66,6 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 		go func() {
 			for name := range tests {
 				test := results.Tests[name]
-				testStart := time.Now()
 				if err := test.run(); err != nil {
 					results.Get("failure").(metrics.Counter).Inc(1)
 					test.Get("failure").(metrics.Counter).Inc(1)
@@ -80,8 +77,6 @@ func (results *Results) RunTests(testLen time.Duration, workers int) {
 					results.Get("success").(metrics.Counter).Inc(1)
 					log.Infof("--- %s - Running %s", "PASS", name)
 				}
-				test.Get("latency").(metrics.Timer).UpdateSince(testStart)
-				results.Get("latency").(metrics.Timer).UpdateSince(testStart)
 			}
 		}()
 	}
@@ -112,10 +107,7 @@ func (results *Results) RunBenchmarkTests(repeats, workers int) {
 			go func(name string, test *Test) {
 				defer wg.Done()
 				for i := 0; i < repeats; i++ {
-					testStart := time.Now()
 					err := test.run()
-					test.Get("latency").(metrics.Timer).UpdateSince(testStart)
-					results.Get("latency").(metrics.Timer).UpdateSince(testStart)
 					if err != nil {
 						results.Get("failure").(metrics.Counter).Inc(1)
 						test.Get("failure").(metrics.Counter).Inc(1)
