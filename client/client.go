@@ -98,6 +98,10 @@ func (as AddrSet) Contains(addr net.Addr) bool {
 // PopulateBlacklistFromHostname populates the client blacklist using an hostname.
 // All ips resolved from that hostname, appended with port are blacklisted.
 func (c *Client) PopulateBlacklistFromHostname(host string, port int) {
+	// Never attempt to resolve empty hostname
+	if host == "" {
+		return
+	}
 	if ips, err := LookupIPs(c.Resolvers, host); err == nil {
 		for _, ip := range ips {
 			c.Blacklist.Add(&net.TCPAddr{
