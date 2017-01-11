@@ -26,8 +26,9 @@ var (
 )
 
 var (
-	initToken    string
+	apiKeyFile   string
 	initEndpoint string
+	hostname     string
 	port         string
 	metricsAddr  string
 	certFile     string
@@ -40,7 +41,8 @@ var (
 
 func init() {
 	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
-	flag.StringVar(&initToken, "init-token", "token.json", "API token used for server initialization")
+	flag.StringVar(&hostname, "hostname", "", "keyserver hostname (IP address is OK)")
+	flag.StringVar(&apiKeyFile, "api-key-file", "", "file of API key used for server certificate issuance")
 	flag.StringVar(&initEndpoint, "init-endpoint", defaultEndpoint, "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
