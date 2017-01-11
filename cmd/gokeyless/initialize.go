@@ -43,14 +43,8 @@ type initAPIResponse struct {
 	Result   map[string]string `json:"result,omitempty"`
 }
 
-type apiToken struct {
-	Token string `json:"token"`
-	Host  string `json:"host"`
-	Port  string `json:"port,omitempty"`
-}
-
-func initAPICall(token *apiToken, csr string) ([]byte, error) {
-	body, err := newRequestBody(token.Host, csr)
+func initAPICall(token, hostname, csr string) ([]byte, error) {
+	body, err := newRequestBody(hostname, csr)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +54,7 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 		return nil, err
 	}
 
-	req.Header.Set("X-Auth-User-Service-Key", token.Token)
+	req.Header.Set("X-Auth-User-Service-Key", token)
 
 	log.Infof("making API call: %s", initEndpoint)
 	resp, err := new(http.Client).Do(req)
@@ -92,32 +86,41 @@ func initAPICall(token *apiToken, csr string) ([]byte, error) {
 	return nil, fmt.Errorf("no certificate in API response: %#v", apiResp)
 }
 
-func getToken() (*apiToken, error) {
-	log.Infof("reading token from file %s", initToken)
-	token := new(apiToken)
-	f, err := os.Open(initToken)
+// tokenFromPrompt populates the Host and Token fields of a new *apiToken.
+func tokenFromPrompt() string {
+	var token string
+
+	fmt.Println("Let's generate a keyserver certificate from CF API")
+	if hostname == "" {
+		fmt.Print("Hostname for this Keyless server: ")
+		fmt.Scanln(&hostname)
+	}
+	fmt.Print("Certificates API Key: ")
+	fmt.Scanln(&token)
+	return token
+}
+
+func getTokenFromFile() string {
+	if apiKeyFile == "" {
+		return ""
+	}
+
+	log.Infof("reading token from file %s", apiKeyFile)
+	token, err := ioutil.ReadFile(apiKeyFile)
 	if err != nil {
-		if f, err = os.Create(initToken); err != nil {
-			return nil, err
-		}
-	}
-	defer f.Close()
-
-	if err := json.NewDecoder(f).Decode(token); err != nil {
-		log.Errorf("couldn't read token from file %s: %v", initToken, err)
-		token = tokenPrompt()
+		log.Errorf("Unable to read from file %s: %v", apiKeyFile, err)
 	}
 
-	return token, nil
+	return string(token)
 }
 
 func initializeServerCertAndKey() {
-	token, err := getToken()
-	if err != nil {
-		log.Fatal(err)
+	token := getTokenFromFile()
+	if len(token) == 0 {
+		token = tokenFromPrompt()
 	}
 
-	csr, key, err := generateCSR(token.Host)
+	csr, key, err := generateCSR(hostname)
 	if err != nil {
 		log.Fatal("failed to generate csr and key: ", err)
 	}
@@ -134,17 +137,17 @@ func initializeServerCertAndKey() {
 
 	log.Info("contacting CloudFlare API for CSR signing")
 
-	cert, err := initAPICall(token, string(csr))
+	cert, err := initAPICall(token, hostname, string(csr))
 	if err != nil {
 		log.Fatal("initialization failed due to API error:", err)
 	}
 
 	if err := os.Remove(certFile); err != nil && !os.IsNotExist(err) {
-		log.Fatal(err)
+		log.Fatal("couldn't remove old certificate file: ", err)
 	}
 
 	if err := ioutil.WriteFile(certFile, cert, 0644); err != nil {
-		log.Fatal(err)
+		log.Fatal("couldn't write to certificate file: ", err)
 	}
 	log.Infof("certificate saved to %s", certFile)
 
@@ -164,18 +167,6 @@ func generateCSR(host string) ([]byte, []byte, error) {
 	})
 
 	return csr, key, err
-}
-
-// tokenPrompt populates the Host and Token fields of a new *apiToken.
-func tokenPrompt() *apiToken {
-	token := &apiToken{}
-
-	fmt.Print("Keyserver Hostname: ")
-	fmt.Scanln(&token.Host)
-	fmt.Print("Certificates API Key: ")
-	fmt.Scanln(&token.Token)
-
-	return token
 }
 
 func manualActivation() {
