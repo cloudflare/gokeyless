@@ -68,15 +68,17 @@ func initAPICall(token, hostname, csr string) ([]byte, error) {
 		return nil, fmt.Errorf("certificate API returned an invalid response body for HTTP %d", resp.StatusCode)
 	}
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("certificate API returns non-200 response, HTTP code: %d, Response: %s", resp.StatusCode, string(bodyBytes))
+	}
 	apiResp := &initAPIResponse{}
-	if err := json.Unmarshal(bodyBytes, apiResp); err != nil {
-		log.Debugf("invalid JSON response: %s", bodyBytes)
-		return nil, fmt.Errorf("certificate API returned HTTP %d", resp.StatusCode)
+	err = json.Unmarshal(bodyBytes, apiResp)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse certificate API response,  HTTP Response: %s", string(bodyBytes))
 	}
 
 	if !apiResp.Success {
-		errs, _ := json.Marshal(apiResp.Errors)
-		return nil, fmt.Errorf("certificate API call returned HTTP %d | %s", resp.StatusCode, errs)
+		return nil, fmt.Errorf("certificate API call returnes errors: %s", string(bodyBytes))
 	}
 
 	if cert, ok := apiResp.Result["certificate"]; ok {
