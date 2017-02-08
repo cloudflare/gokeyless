@@ -18,16 +18,18 @@ import (
 	"github.com/cloudflare/gokeyless/server"
 )
 
-var (
+const (
 	defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
-	csrFile         = "server.csr"
 )
 
 var (
+	csrFile = "server.csr"
+
 	apiKeyFile   string
 	initEndpoint string
 	hostname     string
 	port         string
+	zoneID       string
 	metricsAddr  string
 	certFile     string
 	keyFile      string
@@ -44,6 +46,7 @@ var (
 func init() {
 	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&hostname, "hostname", "", "keyserver hostname (IP address is OK)")
+	flag.StringVar(&zoneID, "zone-id", "", "Cloudflare Zone ID for account detail lookup")
 	flag.StringVar(&apiKeyFile, "api-key-file", "", "file of API key used for server certificate issuance")
 	flag.StringVar(&initEndpoint, "init-endpoint", defaultEndpoint, "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
