@@ -21,14 +21,16 @@ type v4apiError struct {
 type initAPIRequest struct {
 	Rqtype    string   `json:"request_type,omitempty"`
 	Hostnames []string `json:"hostnames,omitempty"`
+	Zones     []string `json:"zones,omitemtpy"`
 	CSR       string   `json:"csr,omitempty"`
 	//Days      int      `json:"requested_validity,omitempty"`
 }
 
-func newRequestBody(hostname, csr string) (io.Reader, error) {
+func newRequestBody(hostname, zone, csr string) (io.Reader, error) {
 	apiReq := initAPIRequest{
 		Rqtype:    "keyless-certificate",
 		Hostnames: []string{hostname},
+		Zones:     []string{zone},
 		CSR:       csr,
 	}
 	body := new(bytes.Buffer)
@@ -43,8 +45,8 @@ type initAPIResponse struct {
 	Result   map[string]string `json:"result,omitempty"`
 }
 
-func initAPICall(token, hostname, csr string) ([]byte, error) {
-	body, err := newRequestBody(hostname, csr)
+func initAPICall(token, hostname, zone, csr string) ([]byte, error) {
+	body, err := newRequestBody(hostname, zone, csr)
 	if err != nil {
 		return nil, err
 	}
@@ -97,6 +99,10 @@ func tokenFromPrompt() string {
 		fmt.Print("Hostname for this Keyless server: ")
 		fmt.Scanln(&hostname)
 	}
+	if zone == "" {
+		fmt.Print("CloudFlare Zone name for this Keyless server: ")
+		fmt.Scanln(&zone)
+	}
 	fmt.Print("Certificates API Key: ")
 	fmt.Scanln(&token)
 	return token
@@ -139,7 +145,7 @@ func initializeServerCertAndKey() {
 
 	log.Info("contacting CloudFlare API for CSR signing")
 
-	cert, err := initAPICall(token, hostname, string(csr))
+	cert, err := initAPICall(token, hostname, zone, string(csr))
 	if err != nil {
 		log.Fatal("initialization failed due to API error:", err)
 	}

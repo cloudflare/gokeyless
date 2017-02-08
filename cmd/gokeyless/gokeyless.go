@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
+	defaultEndpoint = "https://api.cloudflare.com/client/v4/keyless_server_certificates/"
 	csrFile         = "server.csr"
 )
 
@@ -30,6 +30,7 @@ var (
 	initEndpoint string
 	hostname     string
 	port         string
+	zone         string
 	metricsAddr  string
 	certFile     string
 	keyFile      string
@@ -42,6 +43,7 @@ var (
 func init() {
 	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&hostname, "hostname", "", "keyserver hostname (IP address is OK)")
+	flag.StringVar(&zone, "zone", "", "CF zone name for account detail lookup")
 	flag.StringVar(&apiKeyFile, "api-key-file", "", "file of API key used for server certificate issuance")
 	flag.StringVar(&initEndpoint, "init-endpoint", defaultEndpoint, "API endpoint for server initialization")
 	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
