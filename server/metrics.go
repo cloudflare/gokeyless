@@ -17,15 +17,15 @@ type statistics struct {
 func newStatistics() *statistics {
 	stats := &statistics{
 		requestDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "request_duration",
+			Name: "keyless_request_duration",
 			Help: "Requests duration summary in seconds",
 		}),
 		requestsInvalid: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "requests_invalid",
+			Name: "keyless_requests_invalid",
 			Help: "Number of invalid requests.",
 		}),
 		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "failed_connection",
+			Name: "keyless_failed_connection",
 			Help: "Number of connection/transport failure, in tls handshake and etc..",
 		}),
 	}
