@@ -9,16 +9,16 @@ import (
 )
 
 type statistics struct {
-	requests        prometheus.Summary
+	requestDuration prometheus.Summary
 	requestsInvalid prometheus.Counter
 	connFailures    prometheus.Counter
 }
 
 func newStatistics() *statistics {
 	stats := &statistics{
-		requests: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "requests",
-			Help: "Curent latency in responding to requests.",
+		requestDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name: "request_duration",
+			Help: "Requests duration summary in milliseconds",
 		}),
 		requestsInvalid: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "requests_invalid",
@@ -35,7 +35,7 @@ func newStatistics() *statistics {
 // logInvalid increments the error count and updates the error percentage.
 func (stats *statistics) logInvalid(requestBegin time.Time) {
 	stats.requestsInvalid.Inc()
-	stats.logRequest(requestBegin)
+	stats.logRequestDuration(requestBegin)
 }
 
 // logConnFailure increments the error count of connFailures.
@@ -44,8 +44,8 @@ func (stats *statistics) logConnFailure() {
 }
 
 // logRequest increments the request count and updates the error percentage.
-func (stats *statistics) logRequest(requestBegin time.Time) {
-	stats.requests.Observe(float64(time.Now().Sub(requestBegin)))
+func (stats *statistics) logRequestDuration(requestBegin time.Time) {
+	stats.requestDuration.Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Millisecond))
 }
 
 // MetricsListenAndServe serves Prometheus metrics at metricsAddr
@@ -62,7 +62,7 @@ func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 
 // RegisterMetrics registers server metrics with global prometheus handler
 func (s *Server) RegisterMetrics() {
-	prometheus.MustRegister(s.stats.requests)
+	prometheus.MustRegister(s.stats.requestDuration)
 	prometheus.MustRegister(s.stats.requestsInvalid)
 	prometheus.MustRegister(s.stats.connFailures)
 }
