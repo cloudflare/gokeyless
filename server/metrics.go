@@ -18,7 +18,7 @@ func newStatistics() *statistics {
 	stats := &statistics{
 		requestDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "request_duration",
-			Help: "Requests duration summary in milliseconds",
+			Help: "Requests duration summary in seconds",
 		}),
 		requestsInvalid: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "requests_invalid",
@@ -45,7 +45,7 @@ func (stats *statistics) logConnFailure() {
 
 // logRequest increments the request count and updates the error percentage.
 func (stats *statistics) logRequestDuration(requestBegin time.Time) {
-	stats.requestDuration.Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Millisecond))
+	stats.requestDuration.Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Second))
 }
 
 // MetricsListenAndServe serves Prometheus metrics at metricsAddr
