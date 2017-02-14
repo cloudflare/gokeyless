@@ -223,7 +223,7 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 		switch h.Body.Opcode {
 		case gokeyless.OpPing:
 			connError = conn.RespondPong(h.ID, h.Body.Payload)
-			s.stats.logRequest(requestBegin)
+			s.stats.logRequestDuration(requestBegin)
 			continue
 
 		case gokeyless.OpGetCertificate:
@@ -241,7 +241,7 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 					continue
 				}
 				connError = conn.Respond(h.ID, certChain)
-				s.stats.logRequest(requestBegin)
+				s.stats.logRequestDuration(requestBegin)
 			}
 
 			continue
@@ -278,7 +278,7 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 			}
 
 			connError = conn.Respond(h.ID, ptxt)
-			s.stats.logRequest(requestBegin)
+			s.stats.logRequestDuration(requestBegin)
 			continue
 		case gokeyless.OpRSASignMD5SHA1, gokeyless.OpECDSASignMD5SHA1:
 			opts = crypto.MD5SHA1
@@ -343,7 +343,7 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 		}
 
 		connError = conn.Respond(h.ID, sig)
-		s.stats.logRequest(requestBegin)
+		s.stats.logRequestDuration(requestBegin)
 	}
 }
 
