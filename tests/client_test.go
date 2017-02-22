@@ -174,6 +174,43 @@ func TestRSADecrypt(t *testing.T) {
 	}
 }
 
+func TestSeal(t *testing.T) {
+	conn, err := remote.Dial(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	r := make([]byte, 20)
+	if _, err := rand.Read(r); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := conn.DoOperation(&gokeyless.Operation{
+		Opcode:  gokeyless.OpSeal,
+		Payload: r,
+	})
+	if err != nil || resp.Opcode == gokeyless.OpError {
+		t.Fatal(err, resp.GetError())
+	} else if !bytes.Equal([]byte("OpSeal "), resp.Payload[:len("OpSeal ")]) {
+		t.Fatal("payload type mismatch")
+	} else if !bytes.Equal(r, resp.Payload[len("OpSeal "):]) {
+		t.Fatal("payload value mismatch")
+	}
+
+	resp, err = conn.DoOperation(&gokeyless.Operation{
+		Opcode:  gokeyless.OpUnseal,
+		Payload: r,
+	})
+	if err != nil || resp.Opcode == gokeyless.OpError {
+		t.Fatal(err, resp.GetError())
+	} else if !bytes.Equal([]byte("OpUnseal "), resp.Payload[:len("OpUnseal ")]) {
+		t.Fatal("payload type mismatch")
+	} else if !bytes.Equal(r, resp.Payload[len("OpUnseal "):]) {
+		t.Fatal("payload value mismatch")
+	}
+}
+
 func TestGetCertificate(t *testing.T) {
 	certChainBytes, _ := ioutil.ReadFile(serverCert)
 

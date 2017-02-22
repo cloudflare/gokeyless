@@ -118,6 +118,9 @@ type Server struct {
 	stats *statistics
 	// GetCertificate is used for loading certificates.
 	GetCertificate GetCertificate
+	// Sealer is called for Seal and Unseal operations.
+	// Sealer can return a gokeyless.Error to send a custom error code.
+	Sealer func(*gokeyless.Operation) ([]byte, error)
 
 	// UnixListener is the listener serving unix://[UnixAddr]
 	UnixListener net.Listener
@@ -232,18 +235,40 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
 				s.stats.logInvalid(requestBegin)
 				continue
-			} else {
-				certChain, err := s.GetCertificate(h.Body)
-				if err != nil {
-					log.Errorf("GetCertificate: %v", err)
-					connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
-					s.stats.logInvalid(requestBegin)
-					continue
-				}
-				connError = conn.Respond(h.ID, certChain)
-				s.stats.logRequestDuration(requestBegin)
 			}
 
+			certChain, err := s.GetCertificate(h.Body)
+			if err != nil {
+				log.Errorf("GetCertificate: %v", err)
+				connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
+				s.stats.logInvalid(requestBegin)
+				continue
+			}
+			connError = conn.Respond(h.ID, certChain)
+			s.stats.logRequestDuration(requestBegin)
+			continue
+
+		case gokeyless.OpSeal, gokeyless.OpUnseal:
+			if s.Sealer == nil {
+				log.Error("Sealer is nil")
+				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
+				s.stats.logInvalid(requestBegin)
+				continue
+			}
+
+			res, err := s.Sealer(h.Body)
+			if err != nil {
+				log.Errorf("Sealer: %v", err)
+				code := gokeyless.ErrInternal
+				if err, ok := err.(gokeyless.Error); ok {
+					code = err
+				}
+				connError = conn.RespondError(h.ID, code)
+				s.stats.logInvalid(requestBegin)
+				continue
+			}
+			connError = conn.Respond(h.ID, res)
+			s.stats.logRequestDuration(requestBegin)
 			continue
 
 		case gokeyless.OpRSADecrypt:

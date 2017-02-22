@@ -47,6 +47,16 @@ func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
 	return ioutil.ReadFile(serverCert)
 }
 
+func dummySealer(op *gokeyless.Operation) (res []byte, err error) {
+	if op.Opcode == gokeyless.OpSeal {
+		res = []byte("OpSeal ")
+	} else {
+		res = []byte("OpUnseal ")
+	}
+	res = append(res, op.Payload...)
+	return
+}
+
 // LoadKey attempts to load a private key from PEM or DER.
 func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	priv, err = helpers.ParsePrivateKeyPEM(in)
@@ -91,6 +101,7 @@ func init() {
 	s.Keys = keys
 
 	s.GetCertificate = dummyGetCertificate
+	s.Sealer = dummySealer
 
 	listening := make(chan bool)
 	go func() {
