@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -240,15 +241,18 @@ func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.Pub
 		if !info.IsDir() && (isPubKey || isCert) {
 			log.Infof("Loading %s...\n", path)
 
-			var in []byte
-			if in, err = ioutil.ReadFile(path); err != nil {
+			in, err := ioutil.ReadFile(path)
+			if err != nil {
 				return err
 			}
 
 			var priv crypto.Signer
+			if LoadPubKey == nil {
+				LoadPubKey = DefaultLoadPubKey
+			}
 			if isPubKey {
-				var pub crypto.PublicKey
-				if pub, err = LoadPubKey(in); err != nil {
+				pub, err := LoadPubKey(in)
+				if err != nil {
 					return err
 				}
 
@@ -303,4 +307,23 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 	}
 
 	return cert, nil
+}
+
+func DefaultLoadPubKey(in []byte) (crypto.PublicKey, error) {
+	block, _ := pem.Decode(in)
+	if block == nil {
+		return nil, errors.New("failed to parse PEM block containing the public key")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, errors.New("failed to parse DER encoded public key: " + err.Error())
+	}
+
+	switch pub := pub.(type) {
+	case *rsa.PublicKey, *ecdsa.PublicKey:
+		return pub, nil
+	default:
+		return nil, errors.New("unknown/unsupported type of public key")
+	}
 }
