@@ -17,7 +17,7 @@ var (
 // Conn represents an open keyless connection.
 type Conn struct {
 	*tls.Conn
-	listeners map[uint32]chan *Header
+	listeners map[uint32]chan *Packet
 
 	write    sync.Mutex
 	mapMutex sync.RWMutex
@@ -27,7 +27,7 @@ type Conn struct {
 func NewConn(inner *tls.Conn) *Conn {
 	return &Conn{
 		Conn:      inner,
-		listeners: make(map[uint32]chan *Header),
+		listeners: make(map[uint32]chan *Packet),
 	}
 }
 
@@ -39,8 +39,8 @@ func (c *Conn) Close() {
 	defer c.write.Unlock()
 }
 
-// WriteHeader marshals and header and writes it to the conn.
-func (c *Conn) WriteHeader(h *Header) error {
+// WritePacket marshals packet and writes it to the conn.
+func (c *Conn) WritePacket(h *Packet) error {
 	c.write.Lock()
 	defer c.write.Unlock()
 
@@ -53,15 +53,15 @@ func (c *Conn) WriteHeader(h *Header) error {
 	return err
 }
 
-// ReadHeader unmarshals a header from the wire into an internal
-// Header structure.
-func (c *Conn) ReadHeader() (*Header, error) {
+// ReadPacket unmarshals a packet from the wire into an internal
+// Packet structure.
+func (c *Conn) ReadPacket() (*Packet, error) {
 	b := make([]byte, 8)
 	if _, err := io.ReadFull(c, b); err != nil {
 		return nil, err
 	}
 
-	h := new(Header)
+	h := new(Packet)
 	h.UnmarshalBinary(b)
 
 	body := make([]byte, h.Length)
@@ -76,12 +76,12 @@ func (c *Conn) ReadHeader() (*Header, error) {
 	return h, nil
 }
 
-// DoRead reads a header from the connection and sends it to its intended
+// DoRead reads a packet from the connection and sends it to its intended
 // recipient. On the client side, this should be called repeatedly. Each time it
 // returns, the corresponding DoOperation call will stop blocking and return the
 // response.
 func (c *Conn) DoRead() error {
-	h, err := c.ReadHeader()
+	h, err := c.ReadPacket()
 	if err != nil {
 		return err
 	}
@@ -99,13 +99,13 @@ func (c *Conn) DoRead() error {
 // DoOperation executes an entire keyless operation, returning its
 // result.
 func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
-	req := NewHeader(operation)
+	req := NewPacket(operation)
 
 	// Must have channel entry ready before sending request since
 	// response may be acquired by reader goroutine immediately
 	// and if the channel cannot be found, the response will be lost.
 	id := req.ID
-	ch := make(chan *Header, 1)
+	ch := make(chan *Packet, 1)
 	c.mapMutex.Lock()
 	c.listeners[id] = ch
 	c.mapMutex.Unlock()
@@ -117,7 +117,7 @@ func (c *Conn) DoOperation(operation *Operation) (*Operation, error) {
 	}()
 
 	start := time.Now()
-	if err := c.WriteHeader(req); err != nil {
+	if err := c.WritePacket(req); err != nil {
 		return nil, err
 	}
 
@@ -156,9 +156,9 @@ func (c *Conn) Ping(data []byte) error {
 
 // respondOperation writes a keyless response operation to the wire.
 func (c *Conn) respondOperation(id uint32, operation *Operation) error {
-	resp := NewHeader(operation)
+	resp := NewPacket(operation)
 	resp.ID = id
-	return c.WriteHeader(resp)
+	return c.WritePacket(resp)
 }
 
 // Respond sends a keyless response.

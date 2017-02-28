@@ -175,20 +175,20 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
 
-	ch := make(chan *gokeyless.Header, 10)
+	ch := make(chan *gokeyless.Packet, 10)
 	defer close(ch)
 	for i := 0; i < 10; i++ {
 		go s.handleReq(conn, ch)
 	}
 
-	// Continuosly read request Headers from conn and respond
+	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
-	var h *gokeyless.Header
+	var h *gokeyless.Packet
 	for connError == nil {
 		conn.SetDeadline(time.Now().Add(timeout))
 
-		if h, connError = conn.ReadHeader(); connError != nil {
+		if h, connError = conn.ReadPacket(); connError != nil {
 			break
 		}
 
@@ -203,7 +203,7 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	}
 }
 
-func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
+func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
 	runtime.LockOSThread()
 	defer func() {
 		if err := recover(); err != nil {

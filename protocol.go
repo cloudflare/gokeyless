@@ -102,7 +102,7 @@ type Error byte
 const (
 	// ErrCrypto indicates a cryptography failure.
 	ErrCrypto Error = iota + 1
-	// ErrKeyNotFound indicates key can't be found using the operation header.
+	// ErrKeyNotFound indicates key can't be found using the operation packet.
 	ErrKeyNotFound
 	// ErrRead indicates I/O read failure.
 	ErrRead
@@ -224,8 +224,8 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 	return nilDigest, errors.New("can't compute digest for non-RSA public key")
 }
 
-// Header represents the format for a Keyless protocol header.
-type Header struct {
+// Packet represents the format for a Keyless protocol header and body.
+type Packet struct {
 	MajorVers, MinorVers uint8
 	ID                   uint32
 	// Length of marshaled Body. Only used in unmarshaling.
@@ -233,9 +233,9 @@ type Header struct {
 	Body   *Operation
 }
 
-// NewHeader returns a new Header from a sequence of Items.
-func NewHeader(operation *Operation) *Header {
-	return &Header{
+// NewPacket returns a new Packet from a sequence of Items.
+func NewPacket(operation *Operation) *Packet {
+	return &Packet{
 		MajorVers: 0x01,
 		MinorVers: 0x00,
 		ID:        rand.Uint32(),
@@ -243,8 +243,8 @@ func NewHeader(operation *Operation) *Header {
 	}
 }
 
-// MarshalBinary header into on-the-wire format.
-func (h *Header) MarshalBinary() ([]byte, error) {
+// MarshalBinary converts packet into on-the-wire format.
+func (h *Packet) MarshalBinary() ([]byte, error) {
 	data := make([]byte, 8)
 	body, err := h.Body.MarshalBinary()
 	if err != nil {
@@ -257,8 +257,8 @@ func (h *Header) MarshalBinary() ([]byte, error) {
 	return append(data, body...), nil
 }
 
-// UnmarshalBinary header from on-the-wire format.
-func (h *Header) UnmarshalBinary(data []byte) error {
+// UnmarshalBinary convert a header from on-the-wire format.
+func (h *Packet) UnmarshalBinary(data []byte) error {
 	if len(data) < 8 {
 		return fmt.Errorf("header data incomplete (only %d bytes)", len(data))
 	}
