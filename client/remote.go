@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"sort"
@@ -255,7 +256,11 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		for {
 			err := conn.DoRead()
 			if err != nil {
-				log.Errorf("failed to read next header from %v: %v", s.String(), err)
+				if err == io.EOF {
+					log.Debug("connection closed by server")
+				} else {
+					log.Errorf("failed to read next header from %v: %v", s.String(), err)
+				}
 				break
 			}
 		}

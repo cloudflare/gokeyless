@@ -197,6 +197,8 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 
 	if connError == io.EOF {
 		log.Debug("connection closed by client")
+	} else if err, ok := connError.(net.Error); ok && err.Timeout() {
+		log.Debugf("server closes connection due to timeout: %v\n", err)
 	} else {
 		s.stats.logConnFailure()
 		log.Errorf("connection error: %v\n", connError)
