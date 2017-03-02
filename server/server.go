@@ -119,8 +119,7 @@ type Server struct {
 	// GetCertificate is used for loading certificates.
 	GetCertificate GetCertificate
 	// Sealer is called for Seal and Unseal operations.
-	// Sealer can return a gokeyless.Error to send a custom error code.
-	Sealer func(*gokeyless.Operation) ([]byte, error)
+	Sealer Sealer
 
 	// UnixListener is the listener serving unix://[UnixAddr]
 	UnixListener net.Listener
@@ -130,6 +129,13 @@ type Server struct {
 
 // GetCertificate is a function that returns a certificate given a request.
 type GetCertificate func(op *gokeyless.Operation) (certChain []byte, err error)
+
+// Sealer is an interface for an handler for OpSeal and OpUnseal. Seal and
+// Unseal can return a gokeyless.Error to send a custom error code.
+type Sealer interface {
+	Seal(*gokeyless.Operation) ([]byte, error)
+	Unseal(*gokeyless.Operation) ([]byte, error)
+}
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
@@ -251,12 +257,18 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Header) {
 		case gokeyless.OpSeal, gokeyless.OpUnseal:
 			if s.Sealer == nil {
 				log.Error("Sealer is nil")
-				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
+				connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			res, err := s.Sealer(h.Body)
+			var res []byte
+			var err error
+			if h.Body.Opcode == gokeyless.OpSeal {
+				res, err = s.Sealer.Seal(h.Body)
+			} else {
+				res, err = s.Sealer.Unseal(h.Body)
+			}
 			if err != nil {
 				log.Errorf("Sealer: %v", err)
 				code := gokeyless.ErrInternal
