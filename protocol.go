@@ -84,6 +84,10 @@ const (
 
 	// OpGetCertificate requests a certificate
 	OpGetCertificate Op = 0x20
+	// OpSeal asks to encrypt a blob (like a Session Ticket)
+	OpSeal Op = 0x21
+	// OpUnseal asks to decrypt a blob encrypted by OpSeal
+	OpUnseal Op = 0x22
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
@@ -118,6 +122,8 @@ const (
 	ErrInternal
 	// ErrCertNotFound indicates missing certificate.
 	ErrCertNotFound
+	// ErrExpired indicates that the sealed blob is no longer unsealable.
+	ErrExpired
 )
 
 func (e Error) Error() string {
@@ -141,6 +147,8 @@ func (e Error) Error() string {
 		errStr = "internal error"
 	case ErrCertNotFound:
 		errStr = "certificate not found"
+	case ErrExpired:
+		errStr = "sealing key expired"
 	default:
 		errStr = "unknown error"
 	}
