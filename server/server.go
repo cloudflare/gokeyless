@@ -137,6 +137,11 @@ type Sealer interface {
 	Unseal(*gokeyless.Operation) ([]byte, error)
 }
 
+type req struct {
+	conn   *gokeyless.Conn
+	packet *gokeyless.Packet
+}
+
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
 func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
 	return &Server{
@@ -175,15 +180,9 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *gokeyless.Conn) {
+func (s *Server) handle(conn *gokeyless.Conn, ch chan req) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
-
-	ch := make(chan *gokeyless.Packet, 10)
-	defer close(ch)
-	for i := 0; i < 10; i++ {
-		go s.handleReq(conn, ch)
-	}
 
 	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
@@ -196,7 +195,7 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 			break
 		}
 
-		ch <- h
+		ch <- req{conn, h}
 	}
 
 	if connError == io.EOF {
@@ -208,21 +207,22 @@ func (s *Server) handle(conn *gokeyless.Conn) {
 	}
 }
 
-func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
+func (s *Server) handleReqs(ch chan req) {
 	runtime.LockOSThread()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("panic while handling request: %v", err)
-			go s.handleReq(conn, ch)
+			go s.handleReqs(ch)
 		}
 	}()
 
 	var connError error
 	for connError == nil {
-		h, more := <-ch
+		r, more := <-ch
 		if !more {
 			break
 		}
+		conn, h := r.conn, r.packet
 
 		requestBegin := time.Now()
 		log.Debugf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
@@ -388,13 +388,20 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
 func (s *Server) Serve(l net.Listener) error {
 	defer l.Close()
+
+	ch := make(chan req, 8)
+	for i := 0; i < 8; i++ {
+		go s.handleReqs(ch)
+	}
+	defer close(ch)
+
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			log.Error(err)
 			return err
 		}
-		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
+		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)), ch)
 	}
 }
 

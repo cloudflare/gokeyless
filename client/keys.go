@@ -14,9 +14,8 @@ import (
 	"github.com/cloudflare/gokeyless"
 )
 
-
 var (
-	rsaCrypto = map[crypto.Hash] gokeyless.Op {
+	rsaCrypto = map[crypto.Hash]gokeyless.Op{
 		crypto.MD5SHA1: gokeyless.OpRSASignMD5SHA1,
 		crypto.SHA1:    gokeyless.OpRSASignSHA1,
 		crypto.SHA224:  gokeyless.OpRSASignSHA224,
@@ -24,13 +23,13 @@ var (
 		crypto.SHA384:  gokeyless.OpRSASignSHA384,
 		crypto.SHA512:  gokeyless.OpRSASignSHA512,
 	}
-	ecdsaCrypto = map[crypto.Hash] gokeyless.Op {
+	ecdsaCrypto = map[crypto.Hash]gokeyless.Op{
 		crypto.MD5SHA1: gokeyless.OpECDSASignMD5SHA1,
-		crypto.SHA1: gokeyless.OpECDSASignSHA1,
-		crypto.SHA224: gokeyless.OpECDSASignSHA224,
-		crypto.SHA256: gokeyless.OpECDSASignSHA256,
-		crypto.SHA384: gokeyless.OpECDSASignSHA384,
-		crypto.SHA512: gokeyless.OpECDSASignSHA512,
+		crypto.SHA1:    gokeyless.OpECDSASignSHA1,
+		crypto.SHA224:  gokeyless.OpECDSASignSHA224,
+		crypto.SHA256:  gokeyless.OpECDSASignSHA256,
+		crypto.SHA384:  gokeyless.OpECDSASignSHA384,
+		crypto.SHA512:  gokeyless.OpECDSASignSHA512,
 	}
 )
 

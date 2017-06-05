@@ -57,7 +57,7 @@ func BenchmarkDedup(b *testing.B) {
 	}
 	m := make(map[string]RR)
 	for i := 0; i < b.N; i++ {
-		Dedup(rrs,m )
+		Dedup(rrs, m)
 	}
 }
 
