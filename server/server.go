@@ -23,11 +23,6 @@ import (
 
 var keyExt = regexp.MustCompile(`.+\.key`)
 
-const (
-	UnixConnTimeout = time.Hour
-	TCPConnTimeout  = time.Second * 30
-)
-
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
@@ -180,7 +175,7 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
+func (s *Server) handle(conn *gokeyless.Conn) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
 
@@ -195,7 +190,7 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	var connError error
 	var h *gokeyless.Packet
 	for connError == nil {
-		conn.SetDeadline(time.Now().Add(timeout))
+		conn.SetDeadline(time.Now().Add(time.Hour))
 
 		if h, connError = conn.ReadPacket(); connError != nil {
 			break
@@ -209,7 +204,6 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	} else if err, ok := connError.(net.Error); ok && err.Timeout() {
 		log.Debugf("server closes connection due to timeout: %v\n", err)
 	} else {
-		s.stats.logConnFailure()
 		log.Errorf("connection error: %v\n", connError)
 	}
 }
@@ -392,7 +386,7 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
-func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
+func (s *Server) Serve(l net.Listener) error {
 	defer l.Close()
 	for {
 		c, err := l.Accept()
@@ -400,7 +394,7 @@ func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
 			log.Error(err)
 			return err
 		}
-		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)), timeout)
+		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)))
 	}
 }
 
@@ -416,7 +410,7 @@ func (s *Server) ListenAndServe() error {
 	s.TCPListener = l
 
 	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.Serve(l, TCPConnTimeout)
+	return s.Serve(l)
 }
 
 // UnixListenAndServe listens on the Unix socket address and handles keyless requests.
@@ -429,7 +423,7 @@ func (s *Server) UnixListenAndServe() error {
 		s.UnixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
-		return s.Serve(l, UnixConnTimeout)
+		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty path")
 }
