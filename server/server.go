@@ -125,6 +125,9 @@ type Server struct {
 	UnixListener net.Listener
 	// TCPListener is the listener serving tcp://[Addr]
 	TCPListener net.Listener
+
+	closed   bool
+	workerMu sync.Mutex
 }
 
 // GetCertificate is a function that returns a certificate given a request.
@@ -187,15 +190,20 @@ func (s *Server) handle(conn *gokeyless.Conn, ch chan req) {
 	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
-	var h *gokeyless.Packet
 	for connError == nil {
 		conn.SetDeadline(time.Now().Add(time.Hour))
 
+		var h *gokeyless.Packet
 		if h, connError = conn.ReadPacket(); connError != nil {
 			break
 		}
 
+		s.workerMu.Lock()
+		if s.closed {
+			break
+		}
 		ch <- req{conn, h}
+		s.workerMu.Unlock()
 	}
 
 	if connError == io.EOF {
@@ -393,7 +401,12 @@ func (s *Server) Serve(l net.Listener) error {
 	for i := 0; i < 8; i++ {
 		go s.handleReqs(ch)
 	}
-	defer close(ch)
+	defer func() {
+		s.workerMu.Lock()
+		s.closed = true
+		close(ch)
+		s.workerMu.Unlock()
+	}()
 
 	for {
 		c, err := l.Accept()
