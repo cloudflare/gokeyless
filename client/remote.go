@@ -24,10 +24,6 @@ const (
 	defaultTTL   = 1 * time.Hour
 )
 
-// ConnHealthCheck, when set to true, will automaically start
-// a healthcheck goroutine for each Conn created.
-var ConnHealthCheck = true
-
 // connPoolType is a async safe pool of established gokeyless Conn
 // so we don't need to do TLS handshake unnecessarily.
 type connPoolType struct {
@@ -61,17 +57,25 @@ func init() {
 	}
 }
 
-// NewConn creates a new Conn based on a gokeyless.Conn
+// NewConn creates a new Conn based on a gokeyless.Conn and spawns a goroutine
+// to periodically check that it is healthy.
 func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 	c := Conn{
 		Conn: conn,
 		addr: addr,
 	}
 
-	if ConnHealthCheck {
-		go healthchecker(&c)
-	}
+	go healthchecker(&c)
 	return &c
+}
+
+// NewStandaloneConn creates a new Conn based on a gokeyless.Conn. Unlike
+// NewConn, no healthcheck goroutine is spawned.
+func NewStandaloneConn(addr string, conn *gokeyless.Conn) *Conn {
+	return &Conn{
+		Conn: conn,
+		addr: addr,
+	}
 }
 
 // Close closes a Conn and remove it from the conn pool
