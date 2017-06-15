@@ -23,11 +23,6 @@ import (
 
 var keyExt = regexp.MustCompile(`.+\.key`)
 
-const (
-	UnixConnTimeout = time.Hour
-	TCPConnTimeout  = time.Second * 30
-)
-
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
@@ -130,6 +125,9 @@ type Server struct {
 	UnixListener net.Listener
 	// TCPListener is the listener serving tcp://[Addr]
 	TCPListener net.Listener
+
+	closed   bool
+	workerMu sync.Mutex
 }
 
 // GetCertificate is a function that returns a certificate given a request.
@@ -140,6 +138,11 @@ type GetCertificate func(op *gokeyless.Operation) (certChain []byte, err error)
 type Sealer interface {
 	Seal(*gokeyless.Operation) ([]byte, error)
 	Unseal(*gokeyless.Operation) ([]byte, error)
+}
+
+type req struct {
+	conn   *gokeyless.Conn
+	packet *gokeyless.Packet
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
@@ -180,28 +183,27 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
+func (s *Server) handle(conn *gokeyless.Conn, ch chan req) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
-
-	ch := make(chan *gokeyless.Packet, 10)
-	defer close(ch)
-	for i := 0; i < 10; i++ {
-		go s.handleReq(conn, ch)
-	}
 
 	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
-	var h *gokeyless.Packet
 	for connError == nil {
-		conn.SetDeadline(time.Now().Add(timeout))
+		conn.SetDeadline(time.Now().Add(time.Hour))
 
+		var h *gokeyless.Packet
 		if h, connError = conn.ReadPacket(); connError != nil {
 			break
 		}
 
-		ch <- h
+		s.workerMu.Lock()
+		if s.closed {
+			break
+		}
+		ch <- req{conn, h}
+		s.workerMu.Unlock()
 	}
 
 	if connError == io.EOF {
@@ -214,21 +216,22 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	}
 }
 
-func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
+func (s *Server) handleReqs(ch chan req) {
 	runtime.LockOSThread()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("panic while handling request: %v", err)
-			go s.handleReq(conn, ch)
+			go s.handleReqs(ch)
 		}
 	}()
 
 	var connError error
 	for connError == nil {
-		h, more := <-ch
+		r, more := <-ch
 		if !more {
 			break
 		}
+		conn, h := r.conn, r.packet
 
 		requestBegin := time.Now()
 		log.Debugf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
@@ -392,15 +395,27 @@ func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
-func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
+func (s *Server) Serve(l net.Listener) error {
 	defer l.Close()
+
+	ch := make(chan req, 8)
+	for i := 0; i < 8; i++ {
+		go s.handleReqs(ch)
+	}
+	defer func() {
+		s.workerMu.Lock()
+		s.closed = true
+		close(ch)
+		s.workerMu.Unlock()
+	}()
+
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			log.Error(err)
 			return err
 		}
-		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)), timeout)
+		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)), ch)
 	}
 }
 
@@ -416,7 +431,7 @@ func (s *Server) ListenAndServe() error {
 	s.TCPListener = l
 
 	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.Serve(l, TCPConnTimeout)
+	return s.Serve(l)
 }
 
 // UnixListenAndServe listens on the Unix socket address and handles keyless requests.
@@ -429,7 +444,7 @@ func (s *Server) UnixListenAndServe() error {
 		s.UnixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
-		return s.Serve(l, UnixConnTimeout)
+		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty path")
 }
