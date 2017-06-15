@@ -1,0 +1,18 @@
+FROM golang:1.8.3
+
+ENV USER root
+
+WORKDIR /go/src/github.com/cloudflare/gokeyless
+COPY . .
+
+# restore all deps and build
+RUN go install ./cmd/gokeyless
+
+EXPOSE 2407
+
+ENTRYPOINT ["/go/bin/gokeyless", \
+              "-ca-file", "client/testdata/ca.pem", \
+              "-cert", "client/testdata/server.pem", \
+              "-key", "client/testdata/server-key.pem", \
+              "-private-key-directory", "client/testdata", \
+              "-port", "2407"]
