@@ -14,7 +14,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport/core"
-	"github.com/cloudflare/gokeyless"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
 )
@@ -41,7 +41,7 @@ type Remote interface {
 
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
-	*gokeyless.Conn
+	*protocol.Conn
 	addr string
 }
 
@@ -57,9 +57,9 @@ func init() {
 	}
 }
 
-// NewConn creates a new Conn based on a gokeyless.Conn and spawns a goroutine
+// NewConn creates a new Conn based on a protocol.Conn and spawns a goroutine
 // to periodically check that it is healthy.
-func NewConn(addr string, conn *gokeyless.Conn) *Conn {
+func NewConn(addr string, conn *protocol.Conn) *Conn {
 	c := Conn{
 		Conn: conn,
 		addr: addr,
@@ -69,9 +69,9 @@ func NewConn(addr string, conn *gokeyless.Conn) *Conn {
 	return &c
 }
 
-// NewStandaloneConn creates a new Conn based on a gokeyless.Conn. Unlike
+// NewStandaloneConn creates a new Conn based on a protocol.Conn. Unlike
 // NewConn, no healthcheck goroutine is spawned.
-func NewStandaloneConn(addr string, conn *gokeyless.Conn) *Conn {
+func NewStandaloneConn(addr string, conn *protocol.Conn) *Conn {
 	return &Conn{
 		Conn: conn,
 		addr: addr,
@@ -253,7 +253,7 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		return nil, err
 	}
 
-	gconn := gokeyless.NewConn(inner)
+	gconn := protocol.NewConn(inner)
 	conn = NewConn(s.String(), gconn)
 	connPool.Add(s.String(), conn)
 	go func() {

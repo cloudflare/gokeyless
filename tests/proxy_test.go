@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/internal/server"
 )
 
 const (

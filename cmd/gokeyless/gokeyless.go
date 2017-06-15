@@ -17,7 +17,7 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/internal/server"
 )
 
 var (

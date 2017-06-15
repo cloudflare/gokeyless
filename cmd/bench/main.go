@@ -14,9 +14,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/cloudflare/gokeyless"
-	"github.com/cloudflare/gokeyless/client"
 	bclient "github.com/cloudflare/gokeyless/cmd/bench/internal/client"
+	"github.com/cloudflare/gokeyless/internal/client"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
@@ -72,7 +72,7 @@ func main() {
 		flag.Usage()
 		os.Exit(2) // same code flag package uses for usage errors
 	}
-	var ski gokeyless.SKI
+	var ski protocol.SKI
 	copy(ski[:], skiBytes)
 
 	runtime.GOMAXPROCS(gmpFlag)
@@ -137,7 +137,7 @@ func readPacket(conn *tls.Conn) {
 		panic(err)
 	}
 
-	var pkt gokeyless.Packet
+	var pkt protocol.Packet
 	err = pkt.UnmarshalBinary(buf[:])
 	if err != nil {
 		panic(err)
@@ -150,9 +150,9 @@ func readPacket(conn *tls.Conn) {
 	}
 }
 
-func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *gokeyless.Operation) (bclient.BandwidthClient, error) {
+func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *protocol.Operation) (bclient.BandwidthClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := gokeyless.NewPacket(op).MarshalBinary()
+	pkt, err := protocol.NewPacket(op).MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -162,9 +162,9 @@ func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *goke
 	}, nil
 }
 
-func makeLatencyClientFromOp(cli *client.Client, server, port string, op *gokeyless.Operation) (bclient.LatencyClient, error) {
+func makeLatencyClientFromOp(cli *client.Client, server, port string, op *protocol.Operation) (bclient.LatencyClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := gokeyless.NewPacket(op).MarshalBinary()
+	pkt, err := protocol.NewPacket(op).MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -199,16 +199,16 @@ func dial(cli *client.Client, server, port string) *tls.Conn {
 	return conn
 }
 
-func makeRSASignOp(params params.RSASignParams, SKI gokeyless.SKI) *gokeyless.Operation {
-	return &gokeyless.Operation{
+func makeRSASignOp(params params.RSASignParams, SKI protocol.SKI) *protocol.Operation {
+	return &protocol.Operation{
 		Opcode:  params.Opcode,
 		Payload: randBytes(params.PayloadSize),
 		SKI:     SKI,
 	}
 }
 
-func makeECDSASignOp(params params.ECDSASignParams, SKI gokeyless.SKI) *gokeyless.Operation {
-	return &gokeyless.Operation{
+func makeECDSASignOp(params params.ECDSASignParams, SKI protocol.SKI) *protocol.Operation {
+	return &protocol.Operation{
 		Opcode:  params.Opcode,
 		Payload: randBytes(params.PayloadSize),
 		SKI:     SKI,

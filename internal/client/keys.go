@@ -11,50 +11,49 @@ import (
 	"net"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 )
-
 
 var (
-	rsaCrypto = map[crypto.Hash] gokeyless.Op {
-		crypto.MD5SHA1: gokeyless.OpRSASignMD5SHA1,
-		crypto.SHA1:    gokeyless.OpRSASignSHA1,
-		crypto.SHA224:  gokeyless.OpRSASignSHA224,
-		crypto.SHA256:  gokeyless.OpRSASignSHA256,
-		crypto.SHA384:  gokeyless.OpRSASignSHA384,
-		crypto.SHA512:  gokeyless.OpRSASignSHA512,
+	rsaCrypto = map[crypto.Hash]protocol.Op{
+		crypto.MD5SHA1: protocol.OpRSASignMD5SHA1,
+		crypto.SHA1:    protocol.OpRSASignSHA1,
+		crypto.SHA224:  protocol.OpRSASignSHA224,
+		crypto.SHA256:  protocol.OpRSASignSHA256,
+		crypto.SHA384:  protocol.OpRSASignSHA384,
+		crypto.SHA512:  protocol.OpRSASignSHA512,
 	}
-	ecdsaCrypto = map[crypto.Hash] gokeyless.Op {
-		crypto.MD5SHA1: gokeyless.OpECDSASignMD5SHA1,
-		crypto.SHA1: gokeyless.OpECDSASignSHA1,
-		crypto.SHA224: gokeyless.OpECDSASignSHA224,
-		crypto.SHA256: gokeyless.OpECDSASignSHA256,
-		crypto.SHA384: gokeyless.OpECDSASignSHA384,
-		crypto.SHA512: gokeyless.OpECDSASignSHA512,
+	ecdsaCrypto = map[crypto.Hash]protocol.Op{
+		crypto.MD5SHA1: protocol.OpECDSASignMD5SHA1,
+		crypto.SHA1:    protocol.OpECDSASignSHA1,
+		crypto.SHA224:  protocol.OpECDSASignSHA224,
+		crypto.SHA256:  protocol.OpECDSASignSHA256,
+		crypto.SHA384:  protocol.OpECDSASignSHA384,
+		crypto.SHA512:  protocol.OpECDSASignSHA512,
 	}
 )
 
-func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op {
+func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 	if opts, ok := opts.(*rsa.PSSOptions); ok {
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
-			return gokeyless.OpError
+			return protocol.OpError
 		}
 		// Keyless only implements RSA-PSS with salt length == hash length,
 		// as used in TLS 1.3.  Check that it's what the client is asking,
 		// either explicitly or with the magic value.
 		if opts.SaltLength != rsa.PSSSaltLengthEqualsHash &&
 			opts.SaltLength != opts.Hash.Size() {
-			return gokeyless.OpError
+			return protocol.OpError
 		}
 		switch opts.Hash {
 		case crypto.SHA256:
-			return gokeyless.OpRSAPSSSignSHA256
+			return protocol.OpRSAPSSSignSHA256
 		case crypto.SHA384:
-			return gokeyless.OpRSAPSSSignSHA384
+			return protocol.OpRSAPSSSignSHA384
 		case crypto.SHA512:
-			return gokeyless.OpRSAPSSSignSHA512
+			return protocol.OpRSAPSSSignSHA512
 		default:
-			return gokeyless.OpError
+			return protocol.OpError
 		}
 	}
 	switch key.Public().(type) {
@@ -62,16 +61,16 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 		if value, ok := rsaCrypto[opts.HashFunc()]; ok {
 			return value
 		} else {
-			return gokeyless.OpError
+			return protocol.OpError
 		}
 	case *ecdsa.PublicKey:
 		if value, ok := ecdsaCrypto[opts.HashFunc()]; ok {
 			return value
 		} else {
-			return gokeyless.OpError
+			return protocol.OpError
 		}
 	default:
-		return gokeyless.OpError
+		return protocol.OpError
 	}
 }
 
@@ -79,7 +78,7 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) gokeyless.Op 
 type PrivateKey struct {
 	public    crypto.PublicKey
 	client    *Client
-	ski       gokeyless.SKI
+	ski       protocol.SKI
 	clientIP  net.IP
 	serverIP  net.IP
 	keyserver string
@@ -93,8 +92,8 @@ func (key *PrivateKey) Public() crypto.PublicKey {
 
 // execute performs an opaque cryptographic operation on a server associated
 // with the key.
-func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
-	var result *gokeyless.Operation
+func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
+	var result *protocol.Operation
 	// retry once if connection returned by remote Dial is problematic.
 	for attempts := 2; attempts > 0; attempts-- {
 		r, err := key.client.getRemote(key.keyserver)
@@ -107,7 +106,7 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		result, err = conn.Conn.DoOperation(&gokeyless.Operation{
+		result, err = conn.Conn.DoOperation(&protocol.Operation{
 			Opcode:   op,
 			Payload:  msg,
 			SKI:      key.ski,
@@ -129,8 +128,8 @@ func (key *PrivateKey) execute(op gokeyless.Op, msg []byte) ([]byte, error) {
 		break
 	}
 
-	if result.Opcode != gokeyless.OpResponse {
-		if result.Opcode == gokeyless.OpError {
+	if result.Opcode != protocol.OpResponse {
+		if result.Opcode == protocol.OpError {
 			return nil, result.GetError()
 		}
 		return nil, fmt.Errorf("wrong response opcode: %v", result.Opcode)
@@ -150,7 +149,7 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	}
 
 	op := signOpFromSignerOpts(key, opts)
-	if op == gokeyless.OpError {
+	if op == protocol.OpError {
 		return nil, errors.New("invalid key type, hash or options")
 	}
 	return key.execute(op, msg)
@@ -168,7 +167,7 @@ func (key *Decrypter) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterO
 		return nil, errors.New("invalid options for Decrypt")
 	}
 
-	ptxt, err := key.execute(gokeyless.OpRSADecrypt, msg)
+	ptxt, err := key.execute(protocol.OpRSADecrypt, msg)
 	if err != nil {
 		return nil, err
 	}

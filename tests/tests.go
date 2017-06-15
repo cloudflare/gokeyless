@@ -15,8 +15,8 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
-	"github.com/cloudflare/gokeyless"
-	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/internal/client"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 )
 
 // Results is a registry of metrics representing the success stats of an entire test suite.
@@ -173,8 +173,8 @@ func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net
 			return err
 		}
 
-		got, err := conn.DoOperation(&gokeyless.Operation{
-			Opcode:   gokeyless.OpGetCertificate,
+		got, err := conn.DoOperation(&protocol.Operation{
+			Opcode:   protocol.OpGetCertificate,
 			SNI:      sni,
 			ServerIP: serverIP,
 			Payload:  payload,

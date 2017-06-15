@@ -19,8 +19,8 @@ import (
 
 	"go4.org/testing/functest"
 
-	"github.com/cloudflare/gokeyless"
-	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/internal/client"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 )
 
 func TestConnect(t *testing.T) {
@@ -186,11 +186,11 @@ func TestSeal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := conn.DoOperation(&gokeyless.Operation{
-		Opcode:  gokeyless.OpSeal,
+	resp, err := conn.DoOperation(&protocol.Operation{
+		Opcode:  protocol.OpSeal,
 		Payload: r,
 	})
-	if err != nil || resp.Opcode == gokeyless.OpError {
+	if err != nil || resp.Opcode == protocol.OpError {
 		t.Fatal(err, resp.GetError())
 	} else if !bytes.Equal([]byte("OpSeal "), resp.Payload[:len("OpSeal ")]) {
 		t.Fatal("payload type mismatch")
@@ -198,11 +198,11 @@ func TestSeal(t *testing.T) {
 		t.Fatal("payload value mismatch")
 	}
 
-	resp, err = conn.DoOperation(&gokeyless.Operation{
-		Opcode:  gokeyless.OpUnseal,
+	resp, err = conn.DoOperation(&protocol.Operation{
+		Opcode:  protocol.OpUnseal,
 		Payload: r,
 	})
-	if err != nil || resp.Opcode == gokeyless.OpError {
+	if err != nil || resp.Opcode == protocol.OpError {
 		t.Fatal(err, resp.GetError())
 	} else if !bytes.Equal([]byte("OpUnseal "), resp.Payload[:len("OpUnseal ")]) {
 		t.Fatal("payload type mismatch")
@@ -224,8 +224,8 @@ func TestGetCertificate(t *testing.T) {
 	}
 	defer conn.Close()
 
-	resp, err := conn.DoOperation(&gokeyless.Operation{
-		Opcode: gokeyless.OpGetCertificate,
+	resp, err := conn.DoOperation(&protocol.Operation{
+		Opcode: protocol.OpGetCertificate,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -252,8 +252,8 @@ func TestConcurrency(t *testing.T) {
 	go func() {
 		// Make a slow request first.
 		start := time.Now()
-		_, err := conn.DoOperation(&gokeyless.Operation{
-			Opcode:  gokeyless.OpGetCertificate,
+		_, err := conn.DoOperation(&protocol.Operation{
+			Opcode:  protocol.OpGetCertificate,
 			Payload: []byte("slow"),
 		})
 		if err != nil {
@@ -270,8 +270,8 @@ func TestConcurrency(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 
 		start := time.Now()
-		_, err := conn.DoOperation(&gokeyless.Operation{
-			Opcode:  gokeyless.OpGetCertificate,
+		_, err := conn.DoOperation(&protocol.Operation{
+			Opcode:  protocol.OpGetCertificate,
 			Payload: []byte("fast"),
 		})
 		if err != nil {

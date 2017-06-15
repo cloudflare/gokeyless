@@ -1,4 +1,4 @@
-package gokeyless
+package protocol
 
 import (
 	"bytes"

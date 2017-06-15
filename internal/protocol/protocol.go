@@ -1,4 +1,4 @@
-package gokeyless
+package protocol
 
 import (
 	"bytes"
@@ -104,6 +104,9 @@ const (
 type Error byte
 
 const (
+	// TODO(joshlf): Hard-code these (instead of using iota) to be consistent with
+	// the Opcode constants?
+
 	// ErrCrypto indicates a cryptography failure.
 	ErrCrypto Error = iota + 1
 	// ErrKeyNotFound indicates key can't be found using the operation packet.
@@ -170,14 +173,9 @@ func (ski SKI) String() string {
 	return hex.EncodeToString(ski[:])
 }
 
-// Equal compares two SKIs for equality.
-func (ski SKI) Equal(other SKI) bool {
-	return bytes.Equal(ski[:], other[:])
-}
-
 // Valid compares an SKI to 0 to determine if it is valid.
 func (ski SKI) Valid() bool {
-	return !ski.Equal(nilSKI)
+	return ski != nilSKI
 }
 
 // GetSKI returns the SKI of a public key.
@@ -410,6 +408,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 	}
 	return nil
 }
+
+// TODO(joshlf): Should GetError return nil if o.Opcode != OpError?
 
 // GetError returns string errors associated with error response codes.
 func (o *Operation) GetError() error {
