@@ -10,7 +10,8 @@ import (
 )
 
 // A LatencyBucket represents one bucket in a latency histogram, recording the
-// number of requests which took in the range [From, Until].
+// number of requests which took in the range [From, Until). This implies that
+// the maximum duration (time.Duration(math.MaxInt64)) cannot be represented.
 type LatencyBucket struct {
 	From, Until time.Duration
 	Count       uint64
@@ -221,25 +222,28 @@ func runLatencyUntil(c LatencyClient, bottom, top, skip time.Duration, stop func
 	latencyCounts := make([]uint64, nbuckets+2)
 	for !stop() {
 		dur := c.Do()
+		if dur == time.Duration(math.MaxInt64) {
+			dur--
+		}
 		if dur < bottom {
 			latencyCounts[0]++
-		} else if dur > top {
+		} else if dur >= top {
 			latencyCounts[nbuckets-1]++
 		} else {
 			bucketIdx := int((dur - bottom) / skip)
-			latencyCounts[bucketIdx]++
+			latencyCounts[bucketIdx+1]++
 		}
 	}
 
 	buckets := make([]LatencyBucket, nbuckets+2)
-	buckets[0].Until = bottom - 1
+	buckets[0].Until = bottom
 	buckets[0].Count = latencyCounts[0]
 	buckets[nbuckets-1].From = top
 	buckets[nbuckets-1].Until = time.Duration(math.MaxInt64)
 	buckets[nbuckets-1].Count = latencyCounts[nbuckets-1]
 	for i := 0; i < nbuckets-2; i++ {
 		buckets[i+1].From = bottom + (time.Duration(i) * skip)
-		buckets[i+1].Until = bottom + ((time.Duration(i) + 1) * skip) - 1
+		buckets[i+1].Until = bottom + ((time.Duration(i) + 1) * skip)
 		buckets[i+1].Count = latencyCounts[i+1]
 	}
 	return buckets
