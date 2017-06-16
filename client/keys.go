@@ -106,7 +106,7 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		result, err = conn.Conn.DoOperation(&protocol.Operation{
+		result, err = conn.conn.DoOperation(protocol.Operation{
 			Opcode:   op,
 			Payload:  msg,
 			SKI:      key.ski,
@@ -116,7 +116,7 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 		})
 		if err != nil {
 			conn.Close()
-			// not the last attempts, log error and retry
+			// not the last attempt, log error and retry
 			if attempts > 1 {
 				log.Info("failed remote operation:", err)
 				log.Infof("retry new connction")

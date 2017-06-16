@@ -14,8 +14,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/cloudflare/gokeyless/client"
 	bclient "github.com/cloudflare/gokeyless/cmd/bench/internal/client"
-	"github.com/cloudflare/gokeyless/internal/client"
 	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 )
@@ -150,9 +150,10 @@ func readPacket(conn *tls.Conn) {
 	}
 }
 
-func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *protocol.Operation) (bclient.BandwidthClient, error) {
+func makeBandwidthClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.BandwidthClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := protocol.NewPacket(op).MarshalBinary()
+	p := protocol.NewPacket(rand.Uint32(), op)
+	pkt, err := p.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -162,9 +163,10 @@ func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *prot
 	}, nil
 }
 
-func makeLatencyClientFromOp(cli *client.Client, server, port string, op *protocol.Operation) (bclient.LatencyClient, error) {
+func makeLatencyClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.LatencyClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := protocol.NewPacket(op).MarshalBinary()
+	p := protocol.NewPacket(rand.Uint32(), op)
+	pkt, err := p.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -199,16 +201,16 @@ func dial(cli *client.Client, server, port string) *tls.Conn {
 	return conn
 }
 
-func makeRSASignOp(params params.RSASignParams, SKI protocol.SKI) *protocol.Operation {
-	return &protocol.Operation{
+func makeRSASignOp(params params.RSASignParams, SKI protocol.SKI) protocol.Operation {
+	return protocol.Operation{
 		Opcode:  params.Opcode,
 		Payload: randBytes(params.PayloadSize),
 		SKI:     SKI,
 	}
 }
 
-func makeECDSASignOp(params params.ECDSASignParams, SKI protocol.SKI) *protocol.Operation {
-	return &protocol.Operation{
+func makeECDSASignOp(params params.ECDSASignParams, SKI protocol.SKI) protocol.Operation {
+	return protocol.Operation{
 		Opcode:  params.Opcode,
 		Payload: randBytes(params.PayloadSize),
 		SKI:     SKI,

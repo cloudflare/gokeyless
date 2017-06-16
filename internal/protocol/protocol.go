@@ -13,6 +13,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"math/rand"
 	"net"
 
@@ -230,50 +232,127 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 	return nilDigest, errors.New("can't compute digest for non-RSA public key")
 }
 
-// Packet represents the format for a Keyless protocol header and body.
-type Packet struct {
+// Header represents the header of a Keyless protocol message.
+type Header struct {
 	MajorVers, MinorVers uint8
 	ID                   uint32
-	// Length of marshaled Body. Only used in unmarshaling.
-	Length uint16
-	Body   *Operation
+	Length               uint16
 }
 
-// NewPacket returns a new Packet from a sequence of Items.
-func NewPacket(operation *Operation) *Packet {
-	return &Packet{
-		MajorVers: 0x01,
-		MinorVers: 0x00,
-		ID:        rand.Uint32(),
-		Body:      operation,
-	}
-}
-
-// MarshalBinary converts packet into on-the-wire format.
-func (h *Packet) MarshalBinary() ([]byte, error) {
+// MarshalBinary marshals h into its wire format. It will never return nil.
+func (h *Header) MarshalBinary() ([]byte, error) {
 	data := make([]byte, 8)
-	body, err := h.Body.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
 	data[0] = h.MajorVers
 	data[1] = h.MinorVers
-	binary.BigEndian.PutUint16(data[2:4], uint16(len(body)))
+	binary.BigEndian.PutUint16(data[2:4], h.Length)
 	binary.BigEndian.PutUint32(data[4:8], h.ID)
-	return append(data, body...), nil
+	return data, nil
 }
 
-// UnmarshalBinary convert a header from on-the-wire format.
-func (h *Packet) UnmarshalBinary(data []byte) error {
+// UnmarshalBinary parses data as a header stored in its wire format.
+func (h *Header) UnmarshalBinary(data []byte) error {
 	if len(data) < 8 {
-		return fmt.Errorf("header data incomplete (only %d bytes)", len(data))
+		return fmt.Errorf("cannot unmarshal into header: got %v bytes; need 8", len(data))
 	}
-
 	h.MajorVers = data[0]
 	h.MinorVers = data[1]
 	h.Length = binary.BigEndian.Uint16(data[2:4])
 	h.ID = binary.BigEndian.Uint32(data[4:8])
 	return nil
+}
+
+// WriteTo writes a wire format representation of h to w.
+func (h *Header) WriteTo(w io.Writer) (n int64, err error) {
+	var data [8]byte
+	data[0] = h.MajorVers
+	data[1] = h.MinorVers
+	binary.BigEndian.PutUint16(data[2:4], h.Length)
+	binary.BigEndian.PutUint32(data[4:8], h.ID)
+	nn, err := w.Write(data[:])
+	return int64(nn), err
+}
+
+// ReaderFrom reads a wire format representation of h from r.
+func (h *Header) ReadFrom(r io.Reader) (n int64, err error) {
+	var hdr [8]byte
+	nn, err := io.ReadFull(r, hdr[:])
+	if err != nil {
+		return int64(nn), err
+	}
+	h.MajorVers = hdr[0]
+	h.MinorVers = hdr[1]
+	h.Length = binary.BigEndian.Uint16(hdr[2:4])
+	h.ID = binary.BigEndian.Uint32(hdr[4:])
+	return 8, nil
+}
+
+// Packet represents the format for a Keyless protocol header and body.
+type Packet struct {
+	Header
+	Operation
+}
+
+// NewPacket constructs a new packet with the given ID and Operation. The
+// MajorVers, MinorVers, and Length fields are set automatically.
+func NewPacket(id uint32, op Operation) Packet {
+	return Packet{
+		Header: Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			ID:        rand.Uint32(),
+			Length:    op.Bytes(),
+		},
+		Operation: op,
+	}
+}
+
+// MarshalBinary converts a packet into the wire format.
+func (p *Packet) MarshalBinary() ([]byte, error) {
+	hdr, err := p.Header.MarshalBinary()
+	if err != nil {
+		panic(fmt.Sprintf("unexpected internal error: %v", err))
+	}
+	body, err := p.Operation.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return append(hdr, body...), nil
+}
+
+// UnmarshalBinary convert a header from on-the-wire format.
+func (h *Packet) UnmarshalBinary(data []byte) error {
+	err := h.Header.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+	// since h.Header.UnmarshalBinary succeeded, we know len(data) >= 8
+	return h.Operation.UnmarshalBinary(data[8:])
+}
+
+// WriteTo writes a binary representation of h to w. The representation is the
+// same representation used by h.MarshalBinary.
+func (h *Packet) WriteTo(w io.Writer) (n int64, err error) {
+	n, err = h.Header.WriteTo(w)
+	if err != nil {
+		return n, err
+	}
+	nn, err := h.Operation.WriteTo(w)
+	n += nn
+	return n, err
+}
+
+func (h *Packet) ReadFrom(r io.Reader) (n int64, err error) {
+	n, err = h.Header.ReadFrom(r)
+	if err != nil {
+		return n, err
+	}
+	body := make([]byte, int(h.Length))
+	nn, err := io.ReadFull(r, body)
+	n += int64(nn)
+	if err != nil {
+		return n, err
+	}
+	return n, h.Operation.UnmarshalBinary(body)
 }
 
 // Operation defines a single (repeatable) keyless operation.
@@ -306,8 +385,61 @@ func tlvBytes(tag Tag, data []byte) []byte {
 	return append(b, data...)
 }
 
-// MarshalBinary serialises the operation into a byte slice using a
-// TLV encoding.
+func tlvLen(datalen int) uint16 {
+	// while the uint16 field in TLV could technically handle up to three more
+	// bytes, the 3-byte header would cause the total encoded bytes to exceed
+	// 2^16, which would in turn overflow the Header.Length field.
+	if datalen > math.MaxUint16-3 {
+		panic(fmt.Sprintf("data exceeds TLV maximum length: %v", datalen))
+	}
+	return 3 + uint16(datalen)
+}
+
+// Bytes returns the number of bytes in o's wire format representation.
+func (o *Operation) Bytes() uint16 {
+	var length uint16
+
+	add := func(l uint16) {
+		if l+length < length {
+			panic("wire format representation of Operation exceeds maximum length")
+		}
+		length += l
+	}
+
+	add(tlvLen(1))
+	if len(o.Payload) > 0 {
+		add(tlvLen(len(o.Payload)))
+	}
+	if o.SKI.Valid() {
+		add(tlvLen(len(o.SKI[:])))
+	}
+	if o.Digest.Valid() {
+		add(tlvLen(len(o.Digest[:])))
+	}
+	if o.ClientIP != nil {
+		if o.ClientIP.To4() != nil {
+			add(tlvLen(4))
+		} else {
+			add(tlvLen(16))
+		}
+	}
+	if o.ServerIP != nil {
+		if o.ServerIP.To4() != nil {
+			add(tlvLen(4))
+		} else {
+			add(tlvLen(16))
+		}
+	}
+	if o.SNI != "" {
+		add(tlvLen(len(o.SNI)))
+	}
+	if int(length)+headerSize < paddedLength {
+		return paddedLength - headerSize
+	}
+	return length
+}
+
+// MarshalBinary serialises o using a TLV encoding.
 func (o *Operation) MarshalBinary() ([]byte, error) {
 	var b []byte
 
@@ -346,16 +478,22 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	}
 
 	if len(b)+headerSize < paddedLength {
-		padding := make([]byte, paddedLength-(len(b)+headerSize))
+		// TODO: Are we sure that's the right behavior?
+
+		// The +3 is to make room for the Tag and Length values in the TLV header.
+		padding := make([]byte, paddedLength-(len(b)+headerSize+3))
 		b = append(b, tlvBytes(TagPadding, padding)...)
 	}
 	return b, nil
 }
 
-// UnmarshalBinary unmarshals a binary-encoded TLV list of items into an Operation.
+// UnmarshalBinary unmarshals a binary-encoded TLV list of items into o.
 func (o *Operation) UnmarshalBinary(body []byte) error {
+	// seen has enough entires to be indexed by any valid Tag value. If more tags
+	// are added later, change this code!
+	var seen [32]bool
 	var length int
-	seen := make(map[Tag]bool)
+
 	for i := 0; i+2 < len(body); i += 3 + length {
 		tag := Tag(body[i])
 
@@ -366,47 +504,52 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		data := body[i+3 : i+3+length]
 
-		if seen[tag] {
-			return fmt.Errorf("tag %02x seen multiple times", tag)
-		}
-		seen[tag] = true
-
 		switch tag {
 		case TagOpcode:
 			if len(data) != 1 {
 				return fmt.Errorf("invalid opcode: %s", data)
 			}
 			o.Opcode = Op(data[0])
-
 		case TagPayload:
 			o.Payload = data
-
 		case TagSubjectKeyIdentifier:
 			if len(data) == sha1.Size {
 				copy(o.SKI[:], data)
 			}
-
 		case TagCertificateDigest:
 			if len(data) == sha256.Size {
 				copy(o.Digest[:], data)
 			}
-
 		case TagClientIP:
 			o.ClientIP = data
-
 		case TagServerIP:
 			o.ServerIP = data
-
 		case TagServerName:
 			o.SNI = string(data)
-
 		case TagPadding:
 			// ignore padding
 		default:
 			return fmt.Errorf("unknown tag: %02x", tag)
 		}
+
+		// only use tag as an index in seen after we've validated that it's a tag
+		// that we recognize, and thus won't be out of bounds.
+		if seen[tag] {
+			return fmt.Errorf("tag %02x seen multiple times", tag)
+		}
+		seen[tag] = true
 	}
 	return nil
+}
+
+func (o *Operation) WriteTo(w io.Writer) (n int64, err error) {
+	buf, err := o.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	nn, err := w.Write(buf)
+	n = int64(nn)
+	return n, err
 }
 
 // TODO(joshlf): Should GetError return nil if o.Opcode != OpError?

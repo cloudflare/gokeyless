@@ -14,7 +14,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport/core"
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/client/internal/conn"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
 )
@@ -41,7 +41,8 @@ type Remote interface {
 
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
-	*protocol.Conn
+	// *protocol.Conn
+	conn *conn.Conn
 	addr string
 }
 
@@ -57,31 +58,21 @@ func init() {
 	}
 }
 
-// NewConn creates a new Conn based on a protocol.Conn and spawns a goroutine
-// to periodically check that it is healthy.
-func NewConn(addr string, conn *protocol.Conn) *Conn {
-	c := Conn{
-		Conn: conn,
+func newConn(addr string, conn *conn.Conn) *Conn {
+	c := &Conn{
+		conn: conn,
 		addr: addr,
 	}
-
-	go healthchecker(&c)
-	return &c
-}
-
-// NewStandaloneConn creates a new Conn based on a protocol.Conn. Unlike
-// NewConn, no healthcheck goroutine is spawned.
-func NewStandaloneConn(addr string, conn *protocol.Conn) *Conn {
-	return &Conn{
-		Conn: conn,
-		addr: addr,
-	}
+	go healthchecker(c)
+	return c
 }
 
 // Close closes a Conn and remove it from the conn pool
-func (conn *Conn) Close() {
-	conn.Conn.Close()
+func (conn *Conn) Close() error {
+	// TODO(joshlf): This function seems fishy because it's meant to interact with
+	// the pool, and thus could close a connection out from somebody else's feet.
 	connPool.Remove(conn.addr)
+	return conn.conn.Close()
 }
 
 // KeepAlive keeps Conn reusable in the conn pool
@@ -90,7 +81,7 @@ func (conn *Conn) KeepAlive() {
 }
 
 // healthchecker is a recurrent timer function that tests the connections
-func healthchecker(conn *Conn) {
+func healthchecker(c *Conn) {
 	backoff := core.NewWithoutJitter(1*time.Hour, 1*time.Second)
 	// automatic reset timer to 1*second,  if backoff is greater than 20 minutes.
 	backoff.SetDecay(20 * time.Minute)
@@ -98,12 +89,15 @@ func healthchecker(conn *Conn) {
 	for {
 		time.Sleep(backoff.Duration())
 
-		err := conn.Ping(nil)
+		err := c.conn.Ping(nil)
 		if err != nil {
+			if err == conn.ErrClosed {
+				// somebody else closed the connection while we were sleeping
+				return
+			}
 			log.Debug("health check ping failed:", err)
-			// shut down the conn and remove it from the
-			// conn pool.
-			conn.Close()
+			// shut down the conn and remove it from the conn pool.
+			c.Close()
 			return
 		}
 
@@ -152,10 +146,9 @@ func UnixRemote(unixAddr, serverName string) (Remote, error) {
 	return NewServer(addr, serverName), nil
 }
 
-// LookupIPs resolves host with resolvers list sequentially unitl
-// one resolver can answer the request. It falls
-// back to use system default for final resolution if none of resolvers
-// can answer.
+// LookupIPs resolves host with resolvers list sequentially unitl one resolver
+// can answer the request. It falls back to use system default for final
+// resolution if none of resolvers can answer.
 func LookupIPs(resolvers []string, host string) (ips []net.IP, err error) {
 	m := new(dns.Msg)
 	dnsClient := new(dns.Client)
@@ -240,9 +233,9 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		return nil, fmt.Errorf("server %s on client blacklist", s.String())
 	}
 
-	conn := connPool.Get(s.String())
-	if conn != nil {
-		return conn, nil
+	cn := connPool.Get(s.String())
+	if cn != nil {
+		return cn, nil
 	}
 
 	config := copyTLSConfig(c.Config)
@@ -253,12 +246,11 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		return nil, err
 	}
 
-	gconn := protocol.NewConn(inner)
-	conn = NewConn(s.String(), gconn)
-	connPool.Add(s.String(), conn)
+	cn = newConn(s.String(), conn.NewConn(inner))
+	connPool.Add(s.String(), cn)
 	go func() {
 		for {
-			err := conn.DoRead()
+			err := cn.conn.DoRead()
 			if err != nil {
 				if err == io.EOF {
 					log.Debug("connection closed by server")
@@ -269,22 +261,22 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 			}
 		}
 
-		conn.Close()
+		cn.Close()
 	}()
 
-	return conn, nil
+	return cn, nil
 }
 
 // PingAll simply attempts to ping the singleRemote
 func (s *singleRemote) PingAll(c *Client, concurrency int) {
-	conn, err := s.Dial(c)
+	cn, err := s.Dial(c)
 	if err != nil {
 		return
 	}
 
-	err = conn.Ping(nil)
+	err = cn.conn.Ping(nil)
 	if err != nil {
-		conn.Close()
+		cn.Close()
 	}
 }
 
@@ -451,7 +443,7 @@ func (g *Group) PingAll(c *Client, concurrency int) {
 		go func(r mRemote) {
 			// defer returns a job slot to the queue
 			defer func() { jobQueue <- true }()
-			conn, err := r.Dial(c)
+			cn, err := r.Dial(c)
 			if err != nil {
 				r.latency.Reset()
 				log.Infof("PingAll's dial failed: %v", err)
@@ -460,11 +452,11 @@ func (g *Group) PingAll(c *Client, concurrency int) {
 			}
 
 			start := time.Now()
-			err = conn.Ping(nil)
+			err = cn.conn.Ping(nil)
 			duration := time.Since(start)
 
 			if err != nil {
-				defer conn.Close()
+				defer cn.Close()
 				r.latency.Reset()
 				log.Infof("PingAll's ping failed: %v", err)
 			} else {
