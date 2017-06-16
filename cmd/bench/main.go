@@ -3,13 +3,14 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
+	"net"
 	"os"
 	"runtime"
 	"time"
@@ -24,7 +25,10 @@ var (
 	certFileFlag string
 	keyFileFlag  string
 	caFileFlag   string
+	sniFlag      string
+	serverIPFlag string
 	skiFlag      string
+	opFlag       string
 	serverFlag   string
 	portFlag     uint64
 
@@ -34,13 +38,37 @@ var (
 	durFlag                    time.Duration
 	minFlag, maxFlag, stepFlag time.Duration
 	pauseFlag                  time.Duration
+
+	ops = map[string]func(protocol.Operation) protocol.Operation{
+		"ECDSA-SHA224": makeECDSASignOpMaker(params.ECDSASHA224Params),
+		"ECDSA-SHA256": makeECDSASignOpMaker(params.ECDSASHA256Params),
+		"ECDSA-SHA384": makeECDSASignOpMaker(params.ECDSASHA384Params),
+		"ECDSA-SHA512": makeECDSASignOpMaker(params.ECDSASHA512Params),
+		"RSA-MD5SHA1":  makeRSASignOpMaker(params.RSAMD5SHA1Params),
+		"RSA-SHA1":     makeRSASignOpMaker(params.RSASHA1Params),
+		"RSA-SHA224":   makeRSASignOpMaker(params.RSASHA224Params),
+		"RSA-SHA256":   makeRSASignOpMaker(params.RSASHA256Params),
+		"RSA-SHA384":   makeRSASignOpMaker(params.RSASHA384Params),
+		"RSA-SHA512":   makeRSASignOpMaker(params.RSASHA512Params),
+	}
 )
+
+func makeECDSASignOpMaker(params params.ECDSASignParams) func(op protocol.Operation) protocol.Operation {
+	return func(op protocol.Operation) protocol.Operation { return makeECDSASignOp(params, op) }
+}
+
+func makeRSASignOpMaker(params params.RSASignParams) func(op protocol.Operation) protocol.Operation {
+	return func(op protocol.Operation) protocol.Operation { return makeRSASignOp(params, op) }
+}
 
 func init() {
 	flag.StringVar(&certFileFlag, "cert", "../../client/testdata/client.pem", "file containing the client certificate")
 	flag.StringVar(&keyFileFlag, "key", "../../client/testdata/client-key.pem", "file containing the client key")
 	flag.StringVar(&caFileFlag, "ca", "../../client/testdata/ca.pem", "file containing the CA certificate")
+	flag.StringVar(&sniFlag, "sni", "localhost", "SNI of the certificate to request a signature for")
+	flag.StringVar(&serverIPFlag, "server-ip", "127.0.0.1", "IP address of the certificate to request a signature for")
 	flag.StringVar(&skiFlag, "ski", "D9C69B8E23ABBA7C26FD5D0E282F3DD679741036", "SKI of the key to request a signature from")
+	flag.StringVar(&opFlag, "op", "ECDSA-SHA512", "the operation to request from the server")
 	flag.StringVar(&serverFlag, "server", "localhost", "keyless server to connect to")
 	flag.Uint64Var(&portFlag, "port", 2407, "port to connect to the keyless server on")
 
@@ -62,6 +90,8 @@ func main() {
 		os.Exit(2) // same code flag package uses for usage errors
 	}
 
+	var op protocol.Operation
+
 	skiBytes, err := hex.DecodeString(skiFlag)
 	if err != nil || len(skiBytes) != 20 {
 		if err != nil {
@@ -72,8 +102,28 @@ func main() {
 		flag.Usage()
 		os.Exit(2) // same code flag package uses for usage errors
 	}
-	var ski protocol.SKI
-	copy(ski[:], skiBytes)
+	copy(op.SKI[:], skiBytes)
+
+	if serverIPFlag != "" {
+		ip := net.ParseIP(serverIPFlag)
+		if ip == nil {
+			fmt.Fprintf(os.Stderr, "could not parse IP %q\n", ip)
+			os.Exit(2) // same code flag package uses for usage errors
+		}
+		op.ServerIP = ip
+	}
+
+	if sniFlag != "" {
+		op.SNI = sniFlag
+	}
+
+	opFn, ok := ops[opFlag]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unrecognized signing operation: %v", opFlag)
+		os.Exit(2) // same code flag package uses for usage errors
+	}
+
+	op = opFn(op)
 
 	runtime.GOMAXPROCS(gmpFlag)
 
@@ -86,7 +136,6 @@ func main() {
 		// Run a bandwidth test
 		var clients []bclient.BandwidthClient
 		for i := 0; i < workersFlag; i++ {
-			op := makeECDSASignOp(params.ECDSASHA512Params, ski)
 			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
 			if err != nil {
 				panic(err)
@@ -101,7 +150,6 @@ func main() {
 		// Run a latency test
 		var clients []bclient.LatencyClient
 		for i := 0; i < workersFlag; i++ {
-			op := makeECDSASignOp(params.ECDSASHA512Params, ski)
 			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
 			if err != nil {
 				panic(err)
@@ -152,27 +200,27 @@ func readPacket(conn *tls.Conn) {
 
 func makeBandwidthClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.BandwidthClient, error) {
 	conn := dial(cli, server, port)
-	p := protocol.NewPacket(rand.Uint32(), op)
-	pkt, err := p.MarshalBinary()
+	pkt := protocol.NewPacket(0, op)
+	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	return &bwClient{
-		pkt:  pkt,
+		pkt:  buf,
 		conn: conn,
 	}, nil
 }
 
 func makeLatencyClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.LatencyClient, error) {
 	conn := dial(cli, server, port)
-	p := protocol.NewPacket(rand.Uint32(), op)
-	pkt, err := p.MarshalBinary()
+	pkt := protocol.NewPacket(0, op)
+	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	return bclient.FuncLatencyClient(func() time.Duration {
 		t0 := time.Now()
-		_, err := conn.Write(pkt)
+		_, err := conn.Write(buf)
 		if err != nil {
 			panic(err)
 		}
@@ -201,25 +249,21 @@ func dial(cli *client.Client, server, port string) *tls.Conn {
 	return conn
 }
 
-func makeRSASignOp(params params.RSASignParams, SKI protocol.SKI) protocol.Operation {
-	return protocol.Operation{
-		Opcode:  params.Opcode,
-		Payload: randBytes(params.PayloadSize),
-		SKI:     SKI,
-	}
+func makeRSASignOp(params params.RSASignParams, op protocol.Operation) protocol.Operation {
+	op.Opcode = params.Opcode
+	op.Payload = randBytes(params.PayloadSize)
+	return op
 }
 
-func makeECDSASignOp(params params.ECDSASignParams, SKI protocol.SKI) protocol.Operation {
-	return protocol.Operation{
-		Opcode:  params.Opcode,
-		Payload: randBytes(params.PayloadSize),
-		SKI:     SKI,
-	}
+func makeECDSASignOp(params params.ECDSASignParams, op protocol.Operation) protocol.Operation {
+	op.Opcode = params.Opcode
+	op.Payload = randBytes(params.PayloadSize)
+	return op
 }
 
 func randBytes(n int) []byte {
 	b := make([]byte, n)
-	_, err := io.ReadFull(rand.New(rand.NewSource(time.Now().UnixNano())), b)
+	_, err := io.ReadFull(rand.Reader, b)
 	if err != nil {
 		panic(err)
 	}
