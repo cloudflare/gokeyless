@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 
@@ -204,6 +205,11 @@ func (c *Conn) DoRead() error {
 		// too
 		return nil
 	}
+
+	// In practice, the Go scheduler seems to have a tough time efficiently
+	// scheduling client goroutines. Empirically, adding this line speeds things
+	// up significantly.
+	runtime.Gosched()
 
 	l <- &pkt.Operation
 	return nil

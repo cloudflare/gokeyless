@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
@@ -22,11 +23,6 @@ import (
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
-
-const (
-	UnixConnTimeout = time.Hour
-	TCPConnTimeout  = time.Second * 30
-)
 
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
@@ -130,6 +126,9 @@ type Server struct {
 	UnixListener net.Listener
 	// TCPListener is the listener serving tcp://[Addr]
 	TCPListener net.Listener
+
+	// atomically loaded and stored to signal to readers to quit
+	closed uint32
 }
 
 // GetCertificate is a function that returns a certificate given a request.
@@ -140,6 +139,12 @@ type GetCertificate func(op *protocol.Operation) (certChain []byte, err error)
 type Sealer interface {
 	Seal(*protocol.Operation) ([]byte, error)
 	Unseal(*protocol.Operation) ([]byte, error)
+}
+
+type req struct {
+	conn   *tls.Conn
+	mtx    *sync.Mutex
+	packet *protocol.Packet
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
@@ -180,31 +185,34 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *tls.Conn, timeout time.Duration) {
+func (s *Server) handle(conn *tls.Conn, ch chan req) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
 
-	// used to protect writing to the connection; we're the only goroutine that
-	// reads from the connection, so we don't need a mutex for that
-	var mtx sync.Mutex
-	ch := make(chan *protocol.Packet, 10)
-	defer close(ch)
-	for i := 0; i < 10; i++ {
-		go s.handleReq(conn, &mtx, ch)
-	}
+	// This mutex is used by the workers to synchronize access to writing to
+	// the connection. Since we're only reading from the connection, we don't
+	// need it.
+	var writeMtx sync.Mutex
 
 	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
 	for connError == nil {
-		conn.SetDeadline(time.Now().Add(timeout))
+		conn.SetDeadline(time.Now().Add(time.Hour))
 
-		var pkt protocol.Packet
-		if _, connError = pkt.ReadFrom(conn); connError != nil {
+		var h protocol.Packet
+		if _, connError = h.ReadFrom(conn); connError != nil {
 			break
 		}
 
-		ch <- &pkt
+		if atomic.LoadUint32(&s.closed) == 1 {
+			break
+		}
+		ch <- req{
+			conn:   conn,
+			mtx:    &writeMtx,
+			packet: &h,
+		}
 	}
 
 	if connError == io.EOF {
@@ -238,67 +246,68 @@ func respondError(conn *tls.Conn, mtx *sync.Mutex, id uint32, err protocol.Error
 	return e
 }
 
-func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Packet) {
+func (s *Server) handleReqs(ch chan req) {
 	runtime.LockOSThread()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("panic while handling request: %v", err)
-			go s.handleReq(conn, mtx, ch)
+			go s.handleReqs(ch)
 		}
 	}()
 
 	var connError error
 	for connError == nil {
-		pkt, more := <-ch
+		r, more := <-ch
 		if !more {
 			break
 		}
+		conn, mtx, h := r.conn, r.mtx, r.packet
 
 		requestBegin := time.Now()
-		log.Debugf("version:%d.%d id:%d body:%s", pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
+		log.Debugf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Operation)
 
 		var opts crypto.SignerOpts
 		var key crypto.Signer
 		var ok bool
-		switch pkt.Operation.Opcode {
+		switch h.Operation.Opcode {
 		case protocol.OpPing:
-			connError = respondPong(conn, mtx, pkt.ID, pkt.Operation.Payload)
+			connError = respondPong(conn, mtx, h.ID, h.Operation.Payload)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
 		case protocol.OpGetCertificate:
 			if s.GetCertificate == nil {
 				log.Error("GetCertificate is nil")
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCertNotFound)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrCertNotFound)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			certChain, err := s.GetCertificate(&pkt.Operation)
+			certChain, err := s.GetCertificate(&h.Operation)
 			if err != nil {
 				log.Errorf("GetCertificate: %v", err)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrInternal)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrInternal)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
-			connError = respond(conn, mtx, pkt.ID, certChain)
+			connError = respond(conn, mtx, h.ID, certChain)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
 		case protocol.OpSeal, protocol.OpUnseal:
 			if s.Sealer == nil {
 				log.Error("Sealer is nil")
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrInternal)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrInternal)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			var res []byte
 			var err error
-			if pkt.Operation.Opcode == protocol.OpSeal {
-				res, err = s.Sealer.Seal(&pkt.Operation)
+			if h.Operation.Opcode == protocol.OpSeal {
+				res, err = s.Sealer.Seal(&h.Operation)
 			} else {
-				res, err = s.Sealer.Unseal(&pkt.Operation)
+				res, err = s.Sealer.Unseal(&h.Operation)
 			}
 			if err != nil {
 				log.Errorf("Sealer: %v", err)
@@ -306,27 +315,25 @@ func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Pa
 				if err, ok := err.(protocol.Error); ok {
 					code = err
 				}
-
-				connError = respondError(conn, mtx, pkt.ID, code)
+				connError = respondError(conn, mtx, h.ID, code)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
-
-			connError = respond(conn, mtx, pkt.ID, res)
+			connError = respond(conn, mtx, h.ID, res)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
 		case protocol.OpRSADecrypt:
-			if key, ok = s.Keys.Get(&pkt.Operation); !ok {
+			if key, ok = s.Keys.Get(&h.Operation); !ok {
 				log.Error(protocol.ErrKeyNotFound)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrKeyNotFound)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrKeyNotFound)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			if _, ok = key.Public().(*rsa.PublicKey); !ok {
 				log.Errorf("%s: Key is not RSA\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
@@ -334,20 +341,20 @@ func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Pa
 			rsaKey, ok := key.(crypto.Decrypter)
 			if !ok {
 				log.Errorf("%s: Key is not Decrypter\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
+			ptxt, err := rsaKey.Decrypt(nil, h.Operation.Payload, nil)
 			if err != nil {
 				log.Errorf("%s: Decryption error: %v", protocol.ErrCrypto, err)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			respond(conn, mtx, pkt.ID, ptxt)
+			connError = respond(conn, mtx, h.ID, ptxt)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 		case protocol.OpRSASignMD5SHA1, protocol.OpECDSASignMD5SHA1:
@@ -363,30 +370,30 @@ func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Pa
 		case protocol.OpRSASignSHA512, protocol.OpECDSASignSHA512, protocol.OpRSAPSSSignSHA512:
 			opts = crypto.SHA512
 		case protocol.OpPong, protocol.OpResponse, protocol.OpError:
-			log.Errorf("%s: %s is not a valid request Opcode\n", protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
-			connError = respondError(conn, mtx, pkt.ID, protocol.ErrUnexpectedOpcode)
+			log.Errorf("%s: %s is not a valid request Opcode\n", protocol.ErrUnexpectedOpcode, h.Operation.Opcode)
+			connError = respondError(conn, mtx, h.ID, protocol.ErrUnexpectedOpcode)
 			s.stats.logInvalid(requestBegin)
 			continue
 		default:
-			connError = respondError(conn, mtx, pkt.ID, protocol.ErrBadOpcode)
+			connError = respondError(conn, mtx, h.ID, protocol.ErrBadOpcode)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
-		switch pkt.Operation.Opcode {
+		switch h.Operation.Opcode {
 		case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
 			opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 		}
 
-		if key, ok = s.Keys.Get(&pkt.Operation); !ok {
+		if key, ok = s.Keys.Get(&h.Operation); !ok {
 			log.Error(protocol.ErrKeyNotFound)
-			connError = respondError(conn, mtx, pkt.ID, protocol.ErrKeyNotFound)
+			connError = respondError(conn, mtx, h.ID, protocol.ErrKeyNotFound)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
 		// Ensure we don't perform an ECDSA sign for an RSA request.
-		switch pkt.Operation.Opcode {
+		switch h.Operation.Opcode {
 		case protocol.OpRSASignMD5SHA1,
 			protocol.OpRSASignSHA1,
 			protocol.OpRSASignSHA224,
@@ -398,35 +405,45 @@ func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Pa
 			protocol.OpRSAPSSSignSHA512:
 			if _, ok := key.Public().(*rsa.PublicKey); !ok {
 				log.Errorf("%s: request is RSA, but key isn't\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
+				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 		}
 
-		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, opts)
+		sig, err := key.Sign(rand.Reader, h.Operation.Payload, opts)
 		if err != nil {
 			log.Errorf("%s: Signing error: %v\n", protocol.ErrCrypto, err)
-			connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
+			connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
-		connError = respond(conn, mtx, pkt.ID, sig)
+		connError = respond(conn, mtx, h.ID, sig)
 		s.stats.logRequestDuration(requestBegin)
 	}
 }
 
-// Serve accepts incoming connections on the Listener l, creating a new service goroutine for eacpkt.
-func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
+// Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
+func (s *Server) Serve(l net.Listener) error {
 	defer l.Close()
+
+	ch := make(chan req, 8)
+	for i := 0; i < 8; i++ {
+		go s.handleReqs(ch)
+	}
+	defer func() {
+		atomic.StoreUint32(&s.closed, 1)
+		close(ch)
+	}()
+
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			log.Error(err)
 			return err
 		}
-		go s.handle(tls.Server(c, s.Config), timeout)
+		go s.handle(tls.Server(c, s.Config), ch)
 	}
 }
 
@@ -442,7 +459,7 @@ func (s *Server) ListenAndServe() error {
 	s.TCPListener = l
 
 	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.Serve(l, TCPConnTimeout)
+	return s.Serve(l)
 }
 
 // UnixListenAndServe listens on the Unix socket address and handles keyless requests.
@@ -455,7 +472,7 @@ func (s *Server) UnixListenAndServe() error {
 		s.UnixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
-		return s.Serve(l, UnixConnTimeout)
+		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty path")
 }
