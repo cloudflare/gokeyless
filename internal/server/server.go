@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
@@ -31,26 +31,26 @@ const (
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
-	Get(*gokeyless.Operation) (crypto.Signer, bool)
+	Get(*protocol.Operation) (crypto.Signer, bool)
 }
 
 // NewDefaultKeystore returns a new default memory-based static keystore.
 func NewDefaultKeystore() *DefaultKeystore {
 	return &DefaultKeystore{
-		skis: make(map[gokeyless.SKI]crypto.Signer),
+		skis: make(map[protocol.SKI]crypto.Signer),
 	}
 }
 
 // DefaultKeystore is a simple in-memory key store.
 type DefaultKeystore struct {
 	sync.RWMutex
-	skis map[gokeyless.SKI]crypto.Signer
+	skis map[protocol.SKI]crypto.Signer
 }
 
 // Add adds a new key to the server's internal repertoire.
 // Stores in maps by SKI and (if possible) Digest, SNI, Server IP, and Client IP.
-func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) error {
-	ski, err := gokeyless.GetSKI(priv.Public())
+func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {
+	ski, err := protocol.GetSKI(priv.Public())
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (keys *DefaultKeystore) Add(op *gokeyless.Operation, priv crypto.Signer) er
 }
 
 // Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(op *gokeyless.Operation) (crypto.Signer, bool) {
+func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
 	keys.RLock()
 	defer keys.RUnlock()
 
@@ -133,13 +133,13 @@ type Server struct {
 }
 
 // GetCertificate is a function that returns a certificate given a request.
-type GetCertificate func(op *gokeyless.Operation) (certChain []byte, err error)
+type GetCertificate func(op *protocol.Operation) (certChain []byte, err error)
 
 // Sealer is an interface for an handler for OpSeal and OpUnseal. Seal and
-// Unseal can return a gokeyless.Error to send a custom error code.
+// Unseal can return a protocol.Error to send a custom error code.
 type Sealer interface {
-	Seal(*gokeyless.Operation) ([]byte, error)
-	Unseal(*gokeyless.Operation) ([]byte, error)
+	Seal(*protocol.Operation) ([]byte, error)
+	Unseal(*protocol.Operation) ([]byte, error)
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
@@ -180,28 +180,31 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
+func (s *Server) handle(conn *tls.Conn, timeout time.Duration) {
 	defer conn.Close()
 	log.Debug("Handling new connection...")
 
-	ch := make(chan *gokeyless.Packet, 10)
+	// used to protect writing to the connection; we're the only goroutine that
+	// reads from the connection, so we don't need a mutex for that
+	var mtx sync.Mutex
+	ch := make(chan *protocol.Packet, 10)
 	defer close(ch)
 	for i := 0; i < 10; i++ {
-		go s.handleReq(conn, ch)
+		go s.handleReq(conn, &mtx, ch)
 	}
 
 	// Continuosly read request Packets from conn and respond
 	// until a connection error (Read/Write failure) is encountered.
 	var connError error
-	var h *gokeyless.Packet
 	for connError == nil {
 		conn.SetDeadline(time.Now().Add(timeout))
 
-		if h, connError = conn.ReadPacket(); connError != nil {
+		var pkt protocol.Packet
+		if _, connError = pkt.ReadFrom(conn); connError != nil {
 			break
 		}
 
-		ch <- h
+		ch <- &pkt
 	}
 
 	if connError == io.EOF {
@@ -214,184 +217,207 @@ func (s *Server) handle(conn *gokeyless.Conn, timeout time.Duration) {
 	}
 }
 
-func (s *Server) handleReq(conn *gokeyless.Conn, ch chan *gokeyless.Packet) {
+func respond(conn *tls.Conn, mtx *sync.Mutex, id uint32, payload []byte) error {
+	mtx.Lock()
+	err := protocol.Respond(conn, id, payload)
+	mtx.Unlock()
+	return err
+}
+
+func respondPong(conn *tls.Conn, mtx *sync.Mutex, id uint32, payload []byte) error {
+	mtx.Lock()
+	err := protocol.RespondPong(conn, id, payload)
+	mtx.Unlock()
+	return err
+}
+
+func respondError(conn *tls.Conn, mtx *sync.Mutex, id uint32, err protocol.Error) error {
+	mtx.Lock()
+	e := protocol.RespondError(conn, id, err)
+	mtx.Unlock()
+	return e
+}
+
+func (s *Server) handleReq(conn *tls.Conn, mtx *sync.Mutex, ch chan *protocol.Packet) {
 	runtime.LockOSThread()
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("panic while handling request: %v", err)
-			go s.handleReq(conn, ch)
+			go s.handleReq(conn, mtx, ch)
 		}
 	}()
 
 	var connError error
 	for connError == nil {
-		h, more := <-ch
+		pkt, more := <-ch
 		if !more {
 			break
 		}
 
 		requestBegin := time.Now()
-		log.Debugf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Body)
+		log.Debugf("version:%d.%d id:%d body:%s", pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
 
 		var opts crypto.SignerOpts
 		var key crypto.Signer
 		var ok bool
-		switch h.Body.Opcode {
-		case gokeyless.OpPing:
-			connError = conn.RespondPong(h.ID, h.Body.Payload)
+		switch pkt.Operation.Opcode {
+		case protocol.OpPing:
+			connError = respondPong(conn, mtx, pkt.ID, pkt.Operation.Payload)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
-		case gokeyless.OpGetCertificate:
+		case protocol.OpGetCertificate:
 			if s.GetCertificate == nil {
 				log.Error("GetCertificate is nil")
-				connError = conn.RespondError(h.ID, gokeyless.ErrCertNotFound)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCertNotFound)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			certChain, err := s.GetCertificate(h.Body)
+			certChain, err := s.GetCertificate(&pkt.Operation)
 			if err != nil {
 				log.Errorf("GetCertificate: %v", err)
-				connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrInternal)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
-			connError = conn.Respond(h.ID, certChain)
+			connError = respond(conn, mtx, pkt.ID, certChain)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
-		case gokeyless.OpSeal, gokeyless.OpUnseal:
+		case protocol.OpSeal, protocol.OpUnseal:
 			if s.Sealer == nil {
 				log.Error("Sealer is nil")
-				connError = conn.RespondError(h.ID, gokeyless.ErrInternal)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrInternal)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			var res []byte
 			var err error
-			if h.Body.Opcode == gokeyless.OpSeal {
-				res, err = s.Sealer.Seal(h.Body)
+			if pkt.Operation.Opcode == protocol.OpSeal {
+				res, err = s.Sealer.Seal(&pkt.Operation)
 			} else {
-				res, err = s.Sealer.Unseal(h.Body)
+				res, err = s.Sealer.Unseal(&pkt.Operation)
 			}
 			if err != nil {
 				log.Errorf("Sealer: %v", err)
-				code := gokeyless.ErrInternal
-				if err, ok := err.(gokeyless.Error); ok {
+				code := protocol.ErrInternal
+				if err, ok := err.(protocol.Error); ok {
 					code = err
 				}
-				connError = conn.RespondError(h.ID, code)
+
+				connError = respondError(conn, mtx, pkt.ID, code)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
-			connError = conn.Respond(h.ID, res)
+
+			connError = respond(conn, mtx, pkt.ID, res)
 			s.stats.logRequestDuration(requestBegin)
 			continue
 
-		case gokeyless.OpRSADecrypt:
-			if key, ok = s.Keys.Get(h.Body); !ok {
-				log.Error(gokeyless.ErrKeyNotFound)
-				connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
+		case protocol.OpRSADecrypt:
+			if key, ok = s.Keys.Get(&pkt.Operation); !ok {
+				log.Error(protocol.ErrKeyNotFound)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrKeyNotFound)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			if _, ok = key.Public().(*rsa.PublicKey); !ok {
-				log.Errorf("%s: Key is not RSA\n", gokeyless.ErrCrypto)
-				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				log.Errorf("%s: Key is not RSA\n", protocol.ErrCrypto)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
 			rsaKey, ok := key.(crypto.Decrypter)
 			if !ok {
-				log.Errorf("%s: Key is not Decrypter\n", gokeyless.ErrCrypto)
-				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				log.Errorf("%s: Key is not Decrypter\n", protocol.ErrCrypto)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			ptxt, err := rsaKey.Decrypt(nil, h.Body.Payload, nil)
+			ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
 			if err != nil {
-				log.Errorf("%s: Decryption error: %v", gokeyless.ErrCrypto, err)
-				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				log.Errorf("%s: Decryption error: %v", protocol.ErrCrypto, err)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 
-			connError = conn.Respond(h.ID, ptxt)
+			respond(conn, mtx, pkt.ID, ptxt)
 			s.stats.logRequestDuration(requestBegin)
 			continue
-		case gokeyless.OpRSASignMD5SHA1, gokeyless.OpECDSASignMD5SHA1:
+		case protocol.OpRSASignMD5SHA1, protocol.OpECDSASignMD5SHA1:
 			opts = crypto.MD5SHA1
-		case gokeyless.OpRSASignSHA1, gokeyless.OpECDSASignSHA1:
+		case protocol.OpRSASignSHA1, protocol.OpECDSASignSHA1:
 			opts = crypto.SHA1
-		case gokeyless.OpRSASignSHA224, gokeyless.OpECDSASignSHA224:
+		case protocol.OpRSASignSHA224, protocol.OpECDSASignSHA224:
 			opts = crypto.SHA224
-		case gokeyless.OpRSASignSHA256, gokeyless.OpECDSASignSHA256, gokeyless.OpRSAPSSSignSHA256:
+		case protocol.OpRSASignSHA256, protocol.OpECDSASignSHA256, protocol.OpRSAPSSSignSHA256:
 			opts = crypto.SHA256
-		case gokeyless.OpRSASignSHA384, gokeyless.OpECDSASignSHA384, gokeyless.OpRSAPSSSignSHA384:
+		case protocol.OpRSASignSHA384, protocol.OpECDSASignSHA384, protocol.OpRSAPSSSignSHA384:
 			opts = crypto.SHA384
-		case gokeyless.OpRSASignSHA512, gokeyless.OpECDSASignSHA512, gokeyless.OpRSAPSSSignSHA512:
+		case protocol.OpRSASignSHA512, protocol.OpECDSASignSHA512, protocol.OpRSAPSSSignSHA512:
 			opts = crypto.SHA512
-		case gokeyless.OpPong, gokeyless.OpResponse, gokeyless.OpError:
-			log.Errorf("%s: %s is not a valid request Opcode\n", gokeyless.ErrUnexpectedOpcode, h.Body.Opcode)
-			connError = conn.RespondError(h.ID, gokeyless.ErrUnexpectedOpcode)
+		case protocol.OpPong, protocol.OpResponse, protocol.OpError:
+			log.Errorf("%s: %s is not a valid request Opcode\n", protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
+			connError = respondError(conn, mtx, pkt.ID, protocol.ErrUnexpectedOpcode)
 			s.stats.logInvalid(requestBegin)
 			continue
 		default:
-			connError = conn.RespondError(h.ID, gokeyless.ErrBadOpcode)
+			connError = respondError(conn, mtx, pkt.ID, protocol.ErrBadOpcode)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
-		switch h.Body.Opcode {
-		case gokeyless.OpRSAPSSSignSHA256, gokeyless.OpRSAPSSSignSHA384, gokeyless.OpRSAPSSSignSHA512:
+		switch pkt.Operation.Opcode {
+		case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
 			opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 		}
 
-		if key, ok = s.Keys.Get(h.Body); !ok {
-			log.Error(gokeyless.ErrKeyNotFound)
-			connError = conn.RespondError(h.ID, gokeyless.ErrKeyNotFound)
+		if key, ok = s.Keys.Get(&pkt.Operation); !ok {
+			log.Error(protocol.ErrKeyNotFound)
+			connError = respondError(conn, mtx, pkt.ID, protocol.ErrKeyNotFound)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
 		// Ensure we don't perform an ECDSA sign for an RSA request.
-		switch h.Body.Opcode {
-		case gokeyless.OpRSASignMD5SHA1,
-			gokeyless.OpRSASignSHA1,
-			gokeyless.OpRSASignSHA224,
-			gokeyless.OpRSASignSHA256,
-			gokeyless.OpRSASignSHA384,
-			gokeyless.OpRSASignSHA512,
-			gokeyless.OpRSAPSSSignSHA256,
-			gokeyless.OpRSAPSSSignSHA384,
-			gokeyless.OpRSAPSSSignSHA512:
+		switch pkt.Operation.Opcode {
+		case protocol.OpRSASignMD5SHA1,
+			protocol.OpRSASignSHA1,
+			protocol.OpRSASignSHA224,
+			protocol.OpRSASignSHA256,
+			protocol.OpRSASignSHA384,
+			protocol.OpRSASignSHA512,
+			protocol.OpRSAPSSSignSHA256,
+			protocol.OpRSAPSSSignSHA384,
+			protocol.OpRSAPSSSignSHA512:
 			if _, ok := key.Public().(*rsa.PublicKey); !ok {
-				log.Errorf("%s: request is RSA, but key isn't\n", gokeyless.ErrCrypto)
-				connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+				log.Errorf("%s: request is RSA, but key isn't\n", protocol.ErrCrypto)
+				connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
 				s.stats.logInvalid(requestBegin)
 				continue
 			}
 		}
 
-		sig, err := key.Sign(rand.Reader, h.Body.Payload, opts)
+		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 		if err != nil {
-			log.Errorf("%s: Signing error: %v\n", gokeyless.ErrCrypto, err)
-			connError = conn.RespondError(h.ID, gokeyless.ErrCrypto)
+			log.Errorf("%s: Signing error: %v\n", protocol.ErrCrypto, err)
+			connError = respondError(conn, mtx, pkt.ID, protocol.ErrCrypto)
 			s.stats.logInvalid(requestBegin)
 			continue
 		}
 
-		connError = conn.Respond(h.ID, sig)
+		connError = respond(conn, mtx, pkt.ID, sig)
 		s.stats.logRequestDuration(requestBegin)
 	}
 }
 
-// Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
+// Serve accepts incoming connections on the Listener l, creating a new service goroutine for eacpkt.
 func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
 	defer l.Close()
 	for {
@@ -400,7 +426,7 @@ func (s *Server) Serve(l net.Listener, timeout time.Duration) error {
 			log.Error(err)
 			return err
 		}
-		go s.handle(gokeyless.NewConn(tls.Server(c, s.Config)), timeout)
+		go s.handle(tls.Server(c, s.Config), timeout)
 	}
 }
 

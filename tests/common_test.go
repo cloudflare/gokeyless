@@ -10,9 +10,9 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/internal/server"
 )
 
 const (
@@ -40,7 +40,7 @@ var (
 
 // dummyGetCertificate is a GetCertificate function which reads a static cert
 // from disk and simulates latency.
-func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
+func dummyGetCertificate(op *protocol.Operation) ([]byte, error) {
 	if string(op.Payload) == "slow" {
 		time.Sleep(time.Second)
 	}
@@ -49,8 +49,8 @@ func dummyGetCertificate(op *gokeyless.Operation) ([]byte, error) {
 
 type dummySealer struct{}
 
-func (dummySealer) Seal(op *gokeyless.Operation) (res []byte, err error) {
-	if op.Opcode != gokeyless.OpSeal {
+func (dummySealer) Seal(op *protocol.Operation) (res []byte, err error) {
+	if op.Opcode != protocol.OpSeal {
 		panic("wrong op")
 	}
 	res = []byte("OpSeal ")
@@ -58,8 +58,8 @@ func (dummySealer) Seal(op *gokeyless.Operation) (res []byte, err error) {
 	return
 }
 
-func (dummySealer) Unseal(op *gokeyless.Operation) (res []byte, err error) {
-	if op.Opcode != gokeyless.OpUnseal {
+func (dummySealer) Unseal(op *protocol.Operation) (res []byte, err error) {
+	if op.Opcode != protocol.OpUnseal {
 		panic("wrong op")
 	}
 	res = []byte("OpUnseal ")

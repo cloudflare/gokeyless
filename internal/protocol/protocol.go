@@ -1,4 +1,4 @@
-package gokeyless
+package protocol
 
 import (
 	"bytes"
@@ -13,7 +13,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/rand"
+	"io"
+	"math"
 	"net"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -104,6 +105,9 @@ const (
 type Error byte
 
 const (
+	// TODO(joshlf): Hard-code these (instead of using iota) to be consistent with
+	// the Opcode constants?
+
 	// ErrCrypto indicates a cryptography failure.
 	ErrCrypto Error = iota + 1
 	// ErrKeyNotFound indicates key can't be found using the operation packet.
@@ -170,14 +174,9 @@ func (ski SKI) String() string {
 	return hex.EncodeToString(ski[:])
 }
 
-// Equal compares two SKIs for equality.
-func (ski SKI) Equal(other SKI) bool {
-	return bytes.Equal(ski[:], other[:])
-}
-
 // Valid compares an SKI to 0 to determine if it is valid.
 func (ski SKI) Valid() bool {
-	return !ski.Equal(nilSKI)
+	return ski != nilSKI
 }
 
 // GetSKI returns the SKI of a public key.
@@ -232,50 +231,127 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 	return nilDigest, errors.New("can't compute digest for non-RSA public key")
 }
 
-// Packet represents the format for a Keyless protocol header and body.
-type Packet struct {
+// Header represents the header of a Keyless protocol message.
+type Header struct {
 	MajorVers, MinorVers uint8
+	Length               uint16
 	ID                   uint32
-	// Length of marshaled Body. Only used in unmarshaling.
-	Length uint16
-	Body   *Operation
 }
 
-// NewPacket returns a new Packet from a sequence of Items.
-func NewPacket(operation *Operation) *Packet {
-	return &Packet{
-		MajorVers: 0x01,
-		MinorVers: 0x00,
-		ID:        rand.Uint32(),
-		Body:      operation,
-	}
-}
-
-// MarshalBinary converts packet into on-the-wire format.
-func (h *Packet) MarshalBinary() ([]byte, error) {
+// MarshalBinary marshals h into its wire format. It will never return nil.
+func (h *Header) MarshalBinary() ([]byte, error) {
 	data := make([]byte, 8)
-	body, err := h.Body.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
 	data[0] = h.MajorVers
 	data[1] = h.MinorVers
-	binary.BigEndian.PutUint16(data[2:4], uint16(len(body)))
+	binary.BigEndian.PutUint16(data[2:4], h.Length)
 	binary.BigEndian.PutUint32(data[4:8], h.ID)
-	return append(data, body...), nil
+	return data, nil
 }
 
-// UnmarshalBinary convert a header from on-the-wire format.
-func (h *Packet) UnmarshalBinary(data []byte) error {
+// UnmarshalBinary parses data as a header stored in its wire format.
+func (h *Header) UnmarshalBinary(data []byte) error {
 	if len(data) < 8 {
-		return fmt.Errorf("header data incomplete (only %d bytes)", len(data))
+		return fmt.Errorf("cannot unmarshal into header: got %v bytes; need 8", len(data))
 	}
-
 	h.MajorVers = data[0]
 	h.MinorVers = data[1]
 	h.Length = binary.BigEndian.Uint16(data[2:4])
 	h.ID = binary.BigEndian.Uint32(data[4:8])
 	return nil
+}
+
+// WriteTo serializes h in its wire format into w.
+func (h *Header) WriteTo(w io.Writer) (n int64, err error) {
+	var data [8]byte
+	data[0] = h.MajorVers
+	data[1] = h.MinorVers
+	binary.BigEndian.PutUint16(data[2:4], h.Length)
+	binary.BigEndian.PutUint32(data[4:8], h.ID)
+	nn, err := w.Write(data[:])
+	return int64(nn), err
+}
+
+// ReadFrom deserializes into h from its wire format read from r.
+func (h *Header) ReadFrom(r io.Reader) (n int64, err error) {
+	var hdr [8]byte
+	nn, err := io.ReadFull(r, hdr[:])
+	if err != nil {
+		return int64(nn), err
+	}
+	h.MajorVers = hdr[0]
+	h.MinorVers = hdr[1]
+	h.Length = binary.BigEndian.Uint16(hdr[2:4])
+	h.ID = binary.BigEndian.Uint32(hdr[4:8])
+	return 8, nil
+}
+
+// Packet represents the format for a Keyless protocol header and body.
+type Packet struct {
+	Header
+	Operation
+}
+
+// NewPacket constructs a new packet with the given ID and Operation. The
+// MajorVers, MinorVers, and Length fields are set automatically.
+func NewPacket(id uint32, op Operation) Packet {
+	return Packet{
+		Header: Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			ID:        id,
+			Length:    op.Bytes(),
+		},
+		Operation: op,
+	}
+}
+
+// MarshalBinary serializes p into its wire format.
+func (p *Packet) MarshalBinary() ([]byte, error) {
+	hdr, err := p.Header.MarshalBinary()
+	if err != nil {
+		panic(fmt.Sprintf("unexpected internal error: %v", err))
+	}
+	body, err := p.Operation.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	return append(hdr, body...), nil
+}
+
+// UnmarshalBinary deserializes into p from its wire format.
+func (p *Packet) UnmarshalBinary(data []byte) error {
+	err := p.Header.UnmarshalBinary(data)
+	if err != nil {
+		return err
+	}
+	// since h.Header.UnmarshalBinary succeeded, we know len(data) >= 8
+	return p.Operation.UnmarshalBinary(data[8:])
+}
+
+// WriteTo serializes p in its wire format into w.
+func (p *Packet) WriteTo(w io.Writer) (n int64, err error) {
+	n, err = p.Header.WriteTo(w)
+	if err != nil {
+		return n, err
+	}
+	nn, err := p.Operation.WriteTo(w)
+	n += nn
+	return n, err
+}
+
+// ReadFrom deserializes into p from its wire format read from r.
+func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
+	n, err = p.Header.ReadFrom(r)
+	if err != nil {
+		return n, err
+	}
+	body := make([]byte, int(p.Length))
+	nn, err := io.ReadFull(r, body)
+	n += int64(nn)
+	if err != nil {
+		return n, err
+	}
+	return n, p.Operation.UnmarshalBinary(body)
 }
 
 // Operation defines a single (repeatable) keyless operation.
@@ -308,8 +384,83 @@ func tlvBytes(tag Tag, data []byte) []byte {
 	return append(b, data...)
 }
 
-// MarshalBinary serialises the operation into a byte slice using a
-// TLV encoding.
+// tlvLen returns the number of bytes taken up by a TLV encoding of a blob of
+// datalen bytes. It returns 3 + len(datalen).
+func tlvLen(datalen int) uint16 {
+	// while the uint16 field in TLV could technically handle up to three more
+	// bytes, the 3-byte header would cause the total encoded bytes to exceed
+	// 2^16, which would in turn overflow the Header.Length field.
+	if datalen > math.MaxUint16-3 {
+		panic(fmt.Sprintf("data exceeds TLV maximum length: %v", datalen))
+	}
+	return 3 + uint16(datalen)
+}
+
+// Bytes returns the number of bytes in o's wire format representation.
+func (o *Operation) Bytes() uint16 {
+	var length uint16
+
+	add := func(l uint16) {
+		if l+length < length {
+			// this happens if l + length overflows uint16
+			panic("wire format representation of Operation exceeds maximum length")
+		}
+		length += l
+	}
+
+	// opcode
+	add(tlvLen(1))
+	if len(o.Payload) > 0 {
+		add(tlvLen(len(o.Payload)))
+	}
+	if o.SKI.Valid() {
+		add(tlvLen(len(o.SKI[:])))
+	}
+	if o.Digest.Valid() {
+		add(tlvLen(len(o.Digest[:])))
+	}
+	if o.ClientIP != nil {
+		if o.ClientIP.To4() != nil {
+			// IPv4
+			add(tlvLen(4))
+		} else {
+			// IPv6
+			add(tlvLen(16))
+		}
+	}
+	if o.ServerIP != nil {
+		if o.ServerIP.To4() != nil {
+			// IPv4
+			add(tlvLen(4))
+		} else {
+			// IPv6
+			add(tlvLen(16))
+		}
+	}
+	if o.SNI != "" {
+		// TODO(joshlf): Is len([]byte(o.SNI)) guaranteed to be the same as len(o.SNI)?
+		add(tlvLen(len([]byte(o.SNI))))
+	}
+	if int(length)+headerSize < paddedLength {
+		// TODO: Are we sure that's the right behavior?
+
+		// The +3 is to make room for the Tag and Length values in the TLV header.
+		left := paddedLength - (int(length) + headerSize + 3)
+		if left < 0 {
+			// It's possible that we were within 2 or 1 bytes of the padded length,
+			// in which case the 3 bytes of the TLV header take us past the end, so
+			// we calculate a negative length for the padding bytes. In that case,
+			// just use 0 padding bytes (and we'll go over the padding minimum by
+			// 1 or 2 bytes; oh well).
+			left = 0
+		}
+
+		add(tlvLen(left))
+	}
+	return length
+}
+
+// MarshalBinary serialises o using a TLV encoding.
 func (o *Operation) MarshalBinary() ([]byte, error) {
 	var b []byte
 
@@ -348,16 +499,32 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	}
 
 	if len(b)+headerSize < paddedLength {
-		padding := make([]byte, paddedLength-(len(b)+headerSize))
+		// TODO: Are we sure that's the right behavior?
+
+		// The +3 is to make room for the Tag and Length values in the TLV header.
+		left := paddedLength - (len(b) + headerSize + 3)
+		if left < 0 {
+			// It's possible that we were within 2 or 1 bytes of the padded length,
+			// in which case the 3 bytes of the TLV header take us past the end, so
+			// we calculate a negative length for the padding bytes. In that case,
+			// just use 0 padding bytes (and we'll go over the padding minimum by
+			// 1 or 2 bytes; oh well).
+			left = 0
+		}
+
+		padding := make([]byte, left)
 		b = append(b, tlvBytes(TagPadding, padding)...)
 	}
 	return b, nil
 }
 
-// UnmarshalBinary unmarshals a binary-encoded TLV list of items into an Operation.
+// UnmarshalBinary unmarshals a binary-encoded TLV list of items into o.
 func (o *Operation) UnmarshalBinary(body []byte) error {
+	// seen has enough entires to be indexed by any valid Tag value. If more tags
+	// are added later, change this code!
+	var seen [33]bool
 	var length int
-	seen := make(map[Tag]bool)
+
 	for i := 0; i+2 < len(body); i += 3 + length {
 		tag := Tag(body[i])
 
@@ -368,48 +535,56 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 
 		data := body[i+3 : i+3+length]
 
-		if seen[tag] {
-			return fmt.Errorf("tag %02x seen multiple times", tag)
-		}
-		seen[tag] = true
-
 		switch tag {
 		case TagOpcode:
 			if len(data) != 1 {
 				return fmt.Errorf("invalid opcode: %s", data)
 			}
 			o.Opcode = Op(data[0])
-
 		case TagPayload:
 			o.Payload = data
-
 		case TagSubjectKeyIdentifier:
 			if len(data) == sha1.Size {
 				copy(o.SKI[:], data)
 			}
-
 		case TagCertificateDigest:
 			if len(data) == sha256.Size {
 				copy(o.Digest[:], data)
 			}
-
 		case TagClientIP:
 			o.ClientIP = data
-
 		case TagServerIP:
 			o.ServerIP = data
-
 		case TagServerName:
 			o.SNI = string(data)
-
 		case TagPadding:
 			// ignore padding
 		default:
 			return fmt.Errorf("unknown tag: %02x", tag)
 		}
+
+		// only use tag as an index in seen after we've validated that it's a tag
+		// that we recognize, and thus won't be out of bounds.
+		if seen[tag] {
+			return fmt.Errorf("tag %02x seen multiple times", tag)
+		}
+		seen[tag] = true
 	}
 	return nil
 }
+
+// WriteTo serializes o in its wire format into w.
+func (o *Operation) WriteTo(w io.Writer) (n int64, err error) {
+	buf, err := o.MarshalBinary()
+	if err != nil {
+		return 0, err
+	}
+	nn, err := w.Write(buf)
+	n = int64(nn)
+	return n, err
+}
+
+// TODO(joshlf): Should GetError return nil if o.Opcode != OpError?
 
 // GetError returns string errors associated with error response codes.
 func (o *Operation) GetError() error {

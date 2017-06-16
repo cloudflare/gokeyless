@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/cloudflare/gokeyless/tests"
 )
 
@@ -54,7 +54,7 @@ func main() {
 	results := tests.NewResults()
 	results.RegisterTest("ping", tests.NewPingTest(c, keyserver))
 	for _, priv := range privs {
-		ski, _ := gokeyless.GetSKI(priv.Public())
+		ski, _ := protocol.GetSKI(priv.Public())
 		for name, test := range tests.NewSignTests(priv) {
 			results.RegisterTest(ski.String()+"."+name, test)
 		}
