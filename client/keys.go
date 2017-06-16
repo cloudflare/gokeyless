@@ -106,7 +106,7 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		result, err = conn.conn.DoOperation(protocol.Operation{
+		result, err = conn.Conn.DoOperation(protocol.Operation{
 			Opcode:   op,
 			Payload:  msg,
 			SKI:      key.ski,

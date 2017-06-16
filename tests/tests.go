@@ -15,7 +15,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
-	"github.com/cloudflare/gokeyless/internal/client"
+	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/internal/protocol"
 )
 
@@ -173,7 +173,7 @@ func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net
 			return err
 		}
 
-		got, err := conn.DoOperation(&protocol.Operation{
+		got, err := conn.DoOperation(protocol.Operation{
 			Opcode:   protocol.OpGetCertificate,
 			SNI:      sni,
 			ServerIP: serverIP,

@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"net"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -235,8 +234,8 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 // Header represents the header of a Keyless protocol message.
 type Header struct {
 	MajorVers, MinorVers uint8
-	ID                   uint32
 	Length               uint16
+	ID                   uint32
 }
 
 // MarshalBinary marshals h into its wire format. It will never return nil.
@@ -261,7 +260,7 @@ func (h *Header) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// WriteTo writes a wire format representation of h to w.
+// WriteTo serializes h in its wire format into w.
 func (h *Header) WriteTo(w io.Writer) (n int64, err error) {
 	var data [8]byte
 	data[0] = h.MajorVers
@@ -272,7 +271,7 @@ func (h *Header) WriteTo(w io.Writer) (n int64, err error) {
 	return int64(nn), err
 }
 
-// ReaderFrom reads a wire format representation of h from r.
+// ReadFrom deserializes into h from its wire format read from r.
 func (h *Header) ReadFrom(r io.Reader) (n int64, err error) {
 	var hdr [8]byte
 	nn, err := io.ReadFull(r, hdr[:])
@@ -282,7 +281,7 @@ func (h *Header) ReadFrom(r io.Reader) (n int64, err error) {
 	h.MajorVers = hdr[0]
 	h.MinorVers = hdr[1]
 	h.Length = binary.BigEndian.Uint16(hdr[2:4])
-	h.ID = binary.BigEndian.Uint32(hdr[4:])
+	h.ID = binary.BigEndian.Uint32(hdr[4:8])
 	return 8, nil
 }
 
@@ -299,14 +298,14 @@ func NewPacket(id uint32, op Operation) Packet {
 		Header: Header{
 			MajorVers: 0x01,
 			MinorVers: 0x00,
-			ID:        rand.Uint32(),
+			ID:        id,
 			Length:    op.Bytes(),
 		},
 		Operation: op,
 	}
 }
 
-// MarshalBinary converts a packet into the wire format.
+// MarshalBinary serializes p into its wire format.
 func (p *Packet) MarshalBinary() ([]byte, error) {
 	hdr, err := p.Header.MarshalBinary()
 	if err != nil {
@@ -319,40 +318,40 @@ func (p *Packet) MarshalBinary() ([]byte, error) {
 	return append(hdr, body...), nil
 }
 
-// UnmarshalBinary convert a header from on-the-wire format.
-func (h *Packet) UnmarshalBinary(data []byte) error {
-	err := h.Header.UnmarshalBinary(data)
+// UnmarshalBinary deserializes into p from its wire format.
+func (p *Packet) UnmarshalBinary(data []byte) error {
+	err := p.Header.UnmarshalBinary(data)
 	if err != nil {
 		return err
 	}
 	// since h.Header.UnmarshalBinary succeeded, we know len(data) >= 8
-	return h.Operation.UnmarshalBinary(data[8:])
+	return p.Operation.UnmarshalBinary(data[8:])
 }
 
-// WriteTo writes a binary representation of h to w. The representation is the
-// same representation used by h.MarshalBinary.
-func (h *Packet) WriteTo(w io.Writer) (n int64, err error) {
-	n, err = h.Header.WriteTo(w)
+// WriteTo serializes p in its wire format into w.
+func (p *Packet) WriteTo(w io.Writer) (n int64, err error) {
+	n, err = p.Header.WriteTo(w)
 	if err != nil {
 		return n, err
 	}
-	nn, err := h.Operation.WriteTo(w)
+	nn, err := p.Operation.WriteTo(w)
 	n += nn
 	return n, err
 }
 
-func (h *Packet) ReadFrom(r io.Reader) (n int64, err error) {
-	n, err = h.Header.ReadFrom(r)
+// ReadFrom deserializes into p from its wire format read from r.
+func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
+	n, err = p.Header.ReadFrom(r)
 	if err != nil {
 		return n, err
 	}
-	body := make([]byte, int(h.Length))
+	body := make([]byte, int(p.Length))
 	nn, err := io.ReadFull(r, body)
 	n += int64(nn)
 	if err != nil {
 		return n, err
 	}
-	return n, h.Operation.UnmarshalBinary(body)
+	return n, p.Operation.UnmarshalBinary(body)
 }
 
 // Operation defines a single (repeatable) keyless operation.
@@ -385,6 +384,8 @@ func tlvBytes(tag Tag, data []byte) []byte {
 	return append(b, data...)
 }
 
+// tlvLen returns the number of bytes taken up by a TLV encoding of a blob of
+// datalen bytes. It returns 3 + len(datalen).
 func tlvLen(datalen int) uint16 {
 	// while the uint16 field in TLV could technically handle up to three more
 	// bytes, the 3-byte header would cause the total encoded bytes to exceed
@@ -401,11 +402,13 @@ func (o *Operation) Bytes() uint16 {
 
 	add := func(l uint16) {
 		if l+length < length {
+			// this happens if l + length overflows uint16
 			panic("wire format representation of Operation exceeds maximum length")
 		}
 		length += l
 	}
 
+	// opcode
 	add(tlvLen(1))
 	if len(o.Payload) > 0 {
 		add(tlvLen(len(o.Payload)))
@@ -418,23 +421,41 @@ func (o *Operation) Bytes() uint16 {
 	}
 	if o.ClientIP != nil {
 		if o.ClientIP.To4() != nil {
+			// IPv4
 			add(tlvLen(4))
 		} else {
+			// IPv6
 			add(tlvLen(16))
 		}
 	}
 	if o.ServerIP != nil {
 		if o.ServerIP.To4() != nil {
+			// IPv4
 			add(tlvLen(4))
 		} else {
+			// IPv6
 			add(tlvLen(16))
 		}
 	}
 	if o.SNI != "" {
-		add(tlvLen(len(o.SNI)))
+		// TODO(joshlf): Is len([]byte(o.SNI)) guaranteed to be the same as len(o.SNI)?
+		add(tlvLen(len([]byte(o.SNI))))
 	}
 	if int(length)+headerSize < paddedLength {
-		return paddedLength - headerSize
+		// TODO: Are we sure that's the right behavior?
+
+		// The +3 is to make room for the Tag and Length values in the TLV header.
+		left := paddedLength - (int(length) + headerSize + 3)
+		if left < 0 {
+			// It's possible that we were within 2 or 1 bytes of the padded length,
+			// in which case the 3 bytes of the TLV header take us past the end, so
+			// we calculate a negative length for the padding bytes. In that case,
+			// just use 0 padding bytes (and we'll go over the padding minimum by
+			// 1 or 2 bytes; oh well).
+			left = 0
+		}
+
+		add(tlvLen(left))
 	}
 	return length
 }
@@ -481,7 +502,17 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		// TODO: Are we sure that's the right behavior?
 
 		// The +3 is to make room for the Tag and Length values in the TLV header.
-		padding := make([]byte, paddedLength-(len(b)+headerSize+3))
+		left := paddedLength - (len(b) + headerSize + 3)
+		if left < 0 {
+			// It's possible that we were within 2 or 1 bytes of the padded length,
+			// in which case the 3 bytes of the TLV header take us past the end, so
+			// we calculate a negative length for the padding bytes. In that case,
+			// just use 0 padding bytes (and we'll go over the padding minimum by
+			// 1 or 2 bytes; oh well).
+			left = 0
+		}
+
+		padding := make([]byte, left)
 		b = append(b, tlvBytes(TagPadding, padding)...)
 	}
 	return b, nil
@@ -491,7 +522,7 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 func (o *Operation) UnmarshalBinary(body []byte) error {
 	// seen has enough entires to be indexed by any valid Tag value. If more tags
 	// are added later, change this code!
-	var seen [32]bool
+	var seen [33]bool
 	var length int
 
 	for i := 0; i+2 < len(body); i += 3 + length {
@@ -542,6 +573,7 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 	return nil
 }
 
+// WriteTo serializes o in its wire format into w.
 func (o *Operation) WriteTo(w io.Writer) (n int64, err error) {
 	buf, err := o.MarshalBinary()
 	if err != nil {

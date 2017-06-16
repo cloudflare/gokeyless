@@ -19,7 +19,7 @@ import (
 
 	"go4.org/testing/functest"
 
-	"github.com/cloudflare/gokeyless/internal/client"
+	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/internal/protocol"
 )
 
@@ -186,7 +186,7 @@ func TestSeal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := conn.DoOperation(&protocol.Operation{
+	resp, err := conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpSeal,
 		Payload: r,
 	})
@@ -198,7 +198,7 @@ func TestSeal(t *testing.T) {
 		t.Fatal("payload value mismatch")
 	}
 
-	resp, err = conn.DoOperation(&protocol.Operation{
+	resp, err = conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpUnseal,
 		Payload: r,
 	})
@@ -224,7 +224,7 @@ func TestGetCertificate(t *testing.T) {
 	}
 	defer conn.Close()
 
-	resp, err := conn.DoOperation(&protocol.Operation{
+	resp, err := conn.DoOperation(protocol.Operation{
 		Opcode: protocol.OpGetCertificate,
 	})
 	if err != nil {
@@ -252,7 +252,7 @@ func TestConcurrency(t *testing.T) {
 	go func() {
 		// Make a slow request first.
 		start := time.Now()
-		_, err := conn.DoOperation(&protocol.Operation{
+		_, err := conn.DoOperation(protocol.Operation{
 			Opcode:  protocol.OpGetCertificate,
 			Payload: []byte("slow"),
 		})
@@ -270,7 +270,7 @@ func TestConcurrency(t *testing.T) {
 		time.Sleep(250 * time.Millisecond)
 
 		start := time.Now()
-		_, err := conn.DoOperation(&protocol.Operation{
+		_, err := conn.DoOperation(protocol.Operation{
 			Opcode:  protocol.OpGetCertificate,
 			Payload: []byte("fast"),
 		})

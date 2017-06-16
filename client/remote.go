@@ -14,7 +14,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cfssl/transport/core"
-	"github.com/cloudflare/gokeyless/client/internal/conn"
+	"github.com/cloudflare/gokeyless/conn"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
 )
@@ -41,8 +41,7 @@ type Remote interface {
 
 // A Conn represents a long-lived client connection to a keyserver.
 type Conn struct {
-	// *protocol.Conn
-	conn *conn.Conn
+	*conn.Conn
 	addr string
 }
 
@@ -58,13 +57,25 @@ func init() {
 	}
 }
 
-func newConn(addr string, conn *conn.Conn) *Conn {
+// NewConn creates a new Conn based on a conn.Conn and spawns a goroutine to
+// periodically check that it is healthy. This goroutine will automatically
+// quit if it detects that the connection has been closed.
+func NewConn(addr string, conn *conn.Conn) *Conn {
 	c := &Conn{
-		conn: conn,
+		Conn: conn,
 		addr: addr,
 	}
 	go healthchecker(c)
 	return c
+}
+
+// NewStandaloneConn creates a new Conn based on a conn.Conn. Unlike NewConn,
+// no health-checking goroutine is spawned.
+func NewStandaloneConn(addr string, conn *conn.Conn) *Conn {
+	return &Conn{
+		Conn: conn,
+		addr: addr,
+	}
 }
 
 // Close closes a Conn and remove it from the conn pool
@@ -72,7 +83,7 @@ func (conn *Conn) Close() error {
 	// TODO(joshlf): This function seems fishy because it's meant to interact with
 	// the pool, and thus could close a connection out from somebody else's feet.
 	connPool.Remove(conn.addr)
-	return conn.conn.Close()
+	return conn.Conn.Close()
 }
 
 // KeepAlive keeps Conn reusable in the conn pool
@@ -89,7 +100,7 @@ func healthchecker(c *Conn) {
 	for {
 		time.Sleep(backoff.Duration())
 
-		err := c.conn.Ping(nil)
+		err := c.Conn.Ping(nil)
 		if err != nil {
 			if err == conn.ErrClosed {
 				// somebody else closed the connection while we were sleeping
@@ -246,11 +257,11 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		return nil, err
 	}
 
-	cn = newConn(s.String(), conn.NewConn(inner))
+	cn = NewConn(s.String(), conn.NewConn(inner))
 	connPool.Add(s.String(), cn)
 	go func() {
 		for {
-			err := cn.conn.DoRead()
+			err := cn.Conn.DoRead()
 			if err != nil {
 				if err == io.EOF {
 					log.Debug("connection closed by server")
@@ -274,7 +285,7 @@ func (s *singleRemote) PingAll(c *Client, concurrency int) {
 		return
 	}
 
-	err = cn.conn.Ping(nil)
+	err = cn.Conn.Ping(nil)
 	if err != nil {
 		cn.Close()
 	}
@@ -452,7 +463,7 @@ func (g *Group) PingAll(c *Client, concurrency int) {
 			}
 
 			start := time.Now()
-			err = cn.conn.Ping(nil)
+			err = cn.Conn.Ping(nil)
 			duration := time.Since(start)
 
 			if err != nil {
