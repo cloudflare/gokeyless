@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"os"
 	"runtime"
 	"time"
@@ -24,6 +25,8 @@ var (
 	certFileFlag string
 	keyFileFlag  string
 	caFileFlag   string
+	sniFlag      string
+	serverIPFlag string
 	skiFlag      string
 	opFlag       string
 	serverFlag   string
@@ -36,7 +39,7 @@ var (
 	minFlag, maxFlag, stepFlag time.Duration
 	pauseFlag                  time.Duration
 
-	ops = map[string]func(ski gokeyless.SKI) *gokeyless.Operation{
+	ops = map[string]func(gokeyless.Operation) gokeyless.Operation{
 		"ECDSA-SHA224": makeECDSASignOpMaker(params.ECDSASHA224Params),
 		"ECDSA-SHA256": makeECDSASignOpMaker(params.ECDSASHA256Params),
 		"ECDSA-SHA384": makeECDSASignOpMaker(params.ECDSASHA384Params),
@@ -50,18 +53,20 @@ var (
 	}
 )
 
-func makeECDSASignOpMaker(op params.ECDSASignParams) func(ski gokeyless.SKI) *gokeyless.Operation {
-	return func(ski gokeyless.SKI) *gokeyless.Operation { return makeECDSASignOp(op, ski) }
+func makeECDSASignOpMaker(params params.ECDSASignParams) func(op gokeyless.Operation) gokeyless.Operation {
+	return func(op gokeyless.Operation) gokeyless.Operation { return makeECDSASignOp(params, op) }
 }
 
-func makeRSASignOpMaker(op params.RSASignParams) func(ski gokeyless.SKI) *gokeyless.Operation {
-	return func(ski gokeyless.SKI) *gokeyless.Operation { return makeRSASignOp(op, ski) }
+func makeRSASignOpMaker(params params.RSASignParams) func(op gokeyless.Operation) gokeyless.Operation {
+	return func(op gokeyless.Operation) gokeyless.Operation { return makeRSASignOp(params, op) }
 }
 
 func init() {
 	flag.StringVar(&certFileFlag, "cert", "../../client/testdata/client.pem", "file containing the client certificate")
 	flag.StringVar(&keyFileFlag, "key", "../../client/testdata/client-key.pem", "file containing the client key")
 	flag.StringVar(&caFileFlag, "ca", "../../client/testdata/ca.pem", "file containing the CA certificate")
+	flag.StringVar(&sniFlag, "sni", "localhost", "SNI of the certificate to request a signature for")
+	flag.StringVar(&serverIPFlag, "server-ip", "127.0.0.1", "IP address of the certificate to request a signature for")
 	flag.StringVar(&skiFlag, "ski", "D9C69B8E23ABBA7C26FD5D0E282F3DD679741036", "SKI of the key to request a signature from")
 	flag.StringVar(&opFlag, "op", "ECDSA-SHA512", "the operation to request from the server")
 	flag.StringVar(&serverFlag, "server", "localhost", "keyless server to connect to")
@@ -85,6 +90,8 @@ func main() {
 		os.Exit(2) // same code flag package uses for usage errors
 	}
 
+	var op gokeyless.Operation
+
 	skiBytes, err := hex.DecodeString(skiFlag)
 	if err != nil || len(skiBytes) != 20 {
 		if err != nil {
@@ -95,14 +102,28 @@ func main() {
 		flag.Usage()
 		os.Exit(2) // same code flag package uses for usage errors
 	}
-	var ski gokeyless.SKI
-	copy(ski[:], skiBytes)
+	copy(op.SKI[:], skiBytes)
 
-	op, ok := ops[opFlag]
+	if serverIPFlag != "" {
+		ip := net.ParseIP(serverIPFlag)
+		if ip == nil {
+			fmt.Fprintf(os.Stderr, "could not parse IP %q\n", ip)
+			os.Exit(2) // same code flag package uses for usage errors
+		}
+		op.ServerIP = ip
+	}
+
+	if sniFlag != "" {
+		op.SNI = sniFlag
+	}
+
+	opFn, ok := ops[opFlag]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unrecognized signing operation: %v", opFlag)
 		os.Exit(2) // same code flag package uses for usage errors
 	}
+
+	op = opFn(op)
 
 	runtime.GOMAXPROCS(gmpFlag)
 
@@ -115,7 +136,7 @@ func main() {
 		// Run a bandwidth test
 		var clients []bclient.BandwidthClient
 		for i := 0; i < workersFlag; i++ {
-			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op(ski))
+			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), &op)
 			if err != nil {
 				panic(err)
 			}
@@ -129,7 +150,7 @@ func main() {
 		// Run a latency test
 		var clients []bclient.LatencyClient
 		for i := 0; i < workersFlag; i++ {
-			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op(ski))
+			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), &op)
 			if err != nil {
 				panic(err)
 			}
@@ -226,20 +247,16 @@ func dial(cli *client.Client, server, port string) *tls.Conn {
 	return conn
 }
 
-func makeRSASignOp(params params.RSASignParams, SKI gokeyless.SKI) *gokeyless.Operation {
-	return &gokeyless.Operation{
-		Opcode:  params.Opcode,
-		Payload: randBytes(params.PayloadSize),
-		SKI:     SKI,
-	}
+func makeRSASignOp(params params.RSASignParams, op gokeyless.Operation) gokeyless.Operation {
+	op.Opcode = params.Opcode
+	op.Payload = randBytes(params.PayloadSize)
+	return op
 }
 
-func makeECDSASignOp(params params.ECDSASignParams, SKI gokeyless.SKI) *gokeyless.Operation {
-	return &gokeyless.Operation{
-		Opcode:  params.Opcode,
-		Payload: randBytes(params.PayloadSize),
-		SKI:     SKI,
-	}
+func makeECDSASignOp(params params.ECDSASignParams, op gokeyless.Operation) gokeyless.Operation {
+	op.Opcode = params.Opcode
+	op.Payload = randBytes(params.PayloadSize)
+	return op
 }
 
 func randBytes(n int) []byte {
