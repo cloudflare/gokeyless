@@ -25,6 +25,7 @@ var (
 	keyFileFlag  string
 	caFileFlag   string
 	skiFlag      string
+	opFlag       string
 	serverFlag   string
 	portFlag     uint64
 
@@ -34,13 +35,35 @@ var (
 	durFlag                    time.Duration
 	minFlag, maxFlag, stepFlag time.Duration
 	pauseFlag                  time.Duration
+
+	ops = map[string]func(ski gokeyless.SKI) *gokeyless.Operation{
+		"ECDSA-SHA224": makeECDSASignOpMaker(params.ECDSASHA224Params),
+		"ECDSA-SHA256": makeECDSASignOpMaker(params.ECDSASHA256Params),
+		"ECDSA-SHA384": makeECDSASignOpMaker(params.ECDSASHA384Params),
+		"ECDSA-SHA512": makeECDSASignOpMaker(params.ECDSASHA512Params),
+		"RSA-MD5SHA1":  makeRSASignOpMaker(params.RSAMD5SHA1Params),
+		"RSA-SHA1":     makeRSASignOpMaker(params.RSASHA1Params),
+		"RSA-SHA224":   makeRSASignOpMaker(params.RSASHA224Params),
+		"RSA-SHA256":   makeRSASignOpMaker(params.RSASHA256Params),
+		"RSA-SHA384":   makeRSASignOpMaker(params.RSASHA384Params),
+		"RSA-SHA512":   makeRSASignOpMaker(params.RSASHA512Params),
+	}
 )
+
+func makeECDSASignOpMaker(op params.ECDSASignParams) func(ski gokeyless.SKI) *gokeyless.Operation {
+	return func(ski gokeyless.SKI) *gokeyless.Operation { return makeECDSASignOp(op, ski) }
+}
+
+func makeRSASignOpMaker(op params.RSASignParams) func(ski gokeyless.SKI) *gokeyless.Operation {
+	return func(ski gokeyless.SKI) *gokeyless.Operation { return makeRSASignOp(op, ski) }
+}
 
 func init() {
 	flag.StringVar(&certFileFlag, "cert", "../../client/testdata/client.pem", "file containing the client certificate")
 	flag.StringVar(&keyFileFlag, "key", "../../client/testdata/client-key.pem", "file containing the client key")
 	flag.StringVar(&caFileFlag, "ca", "../../client/testdata/ca.pem", "file containing the CA certificate")
 	flag.StringVar(&skiFlag, "ski", "D9C69B8E23ABBA7C26FD5D0E282F3DD679741036", "SKI of the key to request a signature from")
+	flag.StringVar(&opFlag, "op", "ECDSA-SHA512", "the operation to request from the server")
 	flag.StringVar(&serverFlag, "server", "localhost", "keyless server to connect to")
 	flag.Uint64Var(&portFlag, "port", 2407, "port to connect to the keyless server on")
 
@@ -75,6 +98,12 @@ func main() {
 	var ski gokeyless.SKI
 	copy(ski[:], skiBytes)
 
+	op, ok := ops[opFlag]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "unrecognized signing operation: %v", opFlag)
+		os.Exit(2) // same code flag package uses for usage errors
+	}
+
 	runtime.GOMAXPROCS(gmpFlag)
 
 	cli, err := client.NewClientFromFile(certFileFlag, keyFileFlag, caFileFlag)
@@ -86,8 +115,7 @@ func main() {
 		// Run a bandwidth test
 		var clients []bclient.BandwidthClient
 		for i := 0; i < workersFlag; i++ {
-			op := makeECDSASignOp(params.ECDSASHA512Params, ski)
-			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
+			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op(ski))
 			if err != nil {
 				panic(err)
 			}
@@ -101,8 +129,7 @@ func main() {
 		// Run a latency test
 		var clients []bclient.LatencyClient
 		for i := 0; i < workersFlag; i++ {
-			op := makeECDSASignOp(params.ECDSASHA512Params, ski)
-			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
+			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op(ski))
 			if err != nil {
 				panic(err)
 			}
