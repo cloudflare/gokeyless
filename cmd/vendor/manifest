@@ -4,6 +4,7 @@
 		{
 			"importpath": "github.com/beorn7/perks/quantile",
 			"repository": "https://github.com/beorn7/perks",
+			"vcs": "",
 			"revision": "b965b613227fddccbfffe13eae360ed3fa822f8d",
 			"branch": "master",
 			"path": "/quantile"
@@ -11,6 +12,7 @@
 		{
 			"importpath": "github.com/cloudflare/cfssl/crypto/pkcs7",
 			"repository": "https://github.com/cloudflare/cfssl",
+			"vcs": "",
 			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
 			"branch": "master",
 			"path": "/crypto/pkcs7"
@@ -18,6 +20,7 @@
 		{
 			"importpath": "github.com/cloudflare/cfssl/csr",
 			"repository": "https://github.com/cloudflare/cfssl",
+			"vcs": "",
 			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
 			"branch": "master",
 			"path": "/csr"
@@ -25,6 +28,7 @@
 		{
 			"importpath": "github.com/cloudflare/cfssl/errors",
 			"repository": "https://github.com/cloudflare/cfssl",
+			"vcs": "",
 			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
 			"branch": "master",
 			"path": "/errors"
@@ -32,20 +36,15 @@
 		{
 			"importpath": "github.com/cloudflare/cfssl/helpers",
 			"repository": "https://github.com/cloudflare/cfssl",
+			"vcs": "",
 			"revision": "48ec0e4dc1fdb86e5a1d6d33c1d36cf0990a39b4",
 			"branch": "master",
 			"path": "/helpers"
 		},
 		{
-			"importpath": "github.com/cloudflare/cfssl/helpers/derhelpers",
-			"repository": "https://github.com/cloudflare/cfssl",
-			"revision": "0ec15debaac95e372ef331c76d80e8aa4887ae8e",
-			"branch": "master",
-			"path": "/helpers/derhelpers"
-		},
-		{
 			"importpath": "github.com/cloudflare/cfssl/log",
 			"repository": "https://github.com/cloudflare/cfssl",
+			"vcs": "",
 			"revision": "737cb1da8f508eb43b50bde3c3ccbbf2f8050deb",
 			"branch": "master",
 			"path": "/log"
@@ -53,13 +52,23 @@
 		{
 			"importpath": "github.com/golang/protobuf/proto",
 			"repository": "https://github.com/golang/protobuf",
+			"vcs": "",
 			"revision": "3c84672111d91bb5ac31719e112f9f7126a0e26e",
 			"branch": "master",
 			"path": "/proto"
 		},
 		{
+			"importpath": "github.com/joshlf/testutil",
+			"repository": "https://github.com/joshlf/testutil",
+			"vcs": "git",
+			"revision": "b5d8aa79d93d48182827b15fe02ba8678687351e",
+			"branch": "master",
+			"notests": true
+		},
+		{
 			"importpath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
 			"repository": "https://github.com/matttproud/golang_protobuf_extensions",
+			"vcs": "",
 			"revision": "d0c3fe89de86839aecf2e0579c40ba3bb336a453",
 			"branch": "master",
 			"path": "/pbutil"
@@ -67,12 +76,14 @@
 		{
 			"importpath": "github.com/miekg/dns",
 			"repository": "https://github.com/miekg/dns",
+			"vcs": "",
 			"revision": "297a77c2fb5ebf0f261733e3c03f0c3bb9fdd917",
 			"branch": "master"
 		},
 		{
 			"importpath": "github.com/prometheus/client_golang/prometheus",
 			"repository": "https://github.com/prometheus/client_golang",
+			"vcs": "",
 			"revision": "18acf9993a863f4c4b40612e19cdd243e7c86831",
 			"branch": "master",
 			"path": "/prometheus"
@@ -80,6 +91,7 @@
 		{
 			"importpath": "github.com/prometheus/client_model/go",
 			"repository": "https://github.com/prometheus/client_model",
+			"vcs": "",
 			"revision": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6",
 			"branch": "master",
 			"path": "/go"
@@ -87,6 +99,7 @@
 		{
 			"importpath": "github.com/prometheus/common/expfmt",
 			"repository": "https://github.com/prometheus/common",
+			"vcs": "",
 			"revision": "23070236b1ebff452f494ae831569545c2b61d26",
 			"branch": "master",
 			"path": "/expfmt"
@@ -94,6 +107,7 @@
 		{
 			"importpath": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
 			"repository": "https://github.com/prometheus/common",
+			"vcs": "",
 			"revision": "23070236b1ebff452f494ae831569545c2b61d26",
 			"branch": "master",
 			"path": "/internal/bitbucket.org/ww/goautoneg"
@@ -101,6 +115,7 @@
 		{
 			"importpath": "github.com/prometheus/common/model",
 			"repository": "https://github.com/prometheus/common",
+			"vcs": "",
 			"revision": "23070236b1ebff452f494ae831569545c2b61d26",
 			"branch": "master",
 			"path": "/model"
@@ -108,12 +123,14 @@
 		{
 			"importpath": "github.com/prometheus/procfs",
 			"repository": "https://github.com/prometheus/procfs",
+			"vcs": "",
 			"revision": "406e5b7bfd8201a36e2bb5f7bdae0b03380c2ce8",
 			"branch": "master"
 		},
 		{
 			"importpath": "golang.org/x/crypto/pkcs12",
 			"repository": "https://go.googlesource.com/crypto",
+			"vcs": "",
 			"revision": "3760e016850398b85094c4c99e955b8c3dea5711",
 			"branch": "master",
 			"path": "/pkcs12"
