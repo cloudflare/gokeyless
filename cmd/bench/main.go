@@ -3,13 +3,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"os"
 	"runtime"
 	"time"
@@ -244,7 +244,7 @@ func makeECDSASignOp(params params.ECDSASignParams, SKI gokeyless.SKI) *gokeyles
 
 func randBytes(n int) []byte {
 	b := make([]byte, n)
-	_, err := io.ReadFull(rand.New(rand.NewSource(time.Now().UnixNano())), b)
+	_, err := io.ReadFull(rand.Reader, b)
 	if err != nil {
 		panic(err)
 	}
