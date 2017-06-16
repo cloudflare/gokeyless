@@ -2,11 +2,14 @@ package server
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -20,6 +23,9 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/internal/protocol"
+	buf_ecdsa "github.com/cloudflare/gokeyless/internal/server/internal/ecdsa"
+	"github.com/cloudflare/gokeyless/internal/server/internal/fchan"
+	"github.com/cloudflare/gokeyless/internal/server/internal/worker"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
@@ -126,9 +132,6 @@ type Server struct {
 	UnixListener net.Listener
 	// TCPListener is the listener serving tcp://[Addr]
 	TCPListener net.Listener
-
-	// atomically loaded and stored to signal to readers to quit
-	closed uint32
 }
 
 // GetCertificate is a function that returns a certificate given a request.
@@ -185,256 +188,481 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	return NewServer(cert, keylessCA, addr, unixAddr), nil
 }
 
-func (s *Server) handle(conn *tls.Conn, ch chan req) {
-	defer conn.Close()
-	log.Debug("Handling new connection...")
+type response struct {
+	id uint32
+	op protocol.Operation
+}
 
-	// This mutex is used by the workers to synchronize access to writing to
-	// the connection. Since we're only reading from the connection, we don't
-	// need it.
-	var writeMtx sync.Mutex
+func makeRespondResponse(id uint32, payload []byte) response {
+	return response{id: id, op: protocol.MakeRespondOp(payload)}
+}
 
-	// Continuosly read request Packets from conn and respond
-	// until a connection error (Read/Write failure) is encountered.
-	var connError error
-	for connError == nil {
-		conn.SetDeadline(time.Now().Add(time.Hour))
+func makePongResponse(id uint32, payload []byte) response {
+	return response{id: id, op: protocol.MakePongOp(payload)}
+}
 
-		var h protocol.Packet
-		if _, connError = h.ReadFrom(conn); connError != nil {
-			break
+func makeErrResponse(id uint32, err protocol.Error) response {
+	return response{id: id, op: protocol.MakeErrorOp(err)}
+}
+
+// otherWorker performs all non-ECDSA requests
+type otherWorker struct {
+	s    *Server
+	name string
+}
+
+func newOtherWorker(s *Server, name string) *otherWorker {
+	return &otherWorker{s: s, name: name}
+}
+
+func (w *otherWorker) Do(job interface{}) interface{} {
+	pkt := job.(*protocol.Packet)
+
+	requestBegin := time.Now()
+	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
+
+	var opts crypto.SignerOpts
+	var key crypto.Signer
+	var ok bool
+	switch pkt.Operation.Opcode {
+	case protocol.OpPing:
+		w.s.stats.logRequestDuration(requestBegin)
+		return makePongResponse(pkt.ID, pkt.Operation.Payload)
+
+	case protocol.OpGetCertificate:
+		if w.s.GetCertificate == nil {
+			log.Errorf("Worker %v: GetCertificate is nil", w.name)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrCertNotFound)
 		}
 
-		if atomic.LoadUint32(&s.closed) == 1 {
-			break
+		certChain, err := w.s.GetCertificate(&pkt.Operation)
+		if err != nil {
+			log.Errorf("Worker %v: GetCertificate: %v", w.name, err)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrInternal)
 		}
-		ch <- req{
-			conn:   conn,
-			mtx:    &writeMtx,
-			packet: &h,
+		w.s.stats.logRequestDuration(requestBegin)
+		return makeRespondResponse(pkt.ID, certChain)
+
+	case protocol.OpSeal, protocol.OpUnseal:
+		if w.s.Sealer == nil {
+			log.Errorf("Worker %v: Sealer is nil", w.name)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrInternal)
 		}
+
+		var res []byte
+		var err error
+		if pkt.Operation.Opcode == protocol.OpSeal {
+			res, err = w.s.Sealer.Seal(&pkt.Operation)
+		} else {
+			res, err = w.s.Sealer.Unseal(&pkt.Operation)
+		}
+		if err != nil {
+			log.Errorf("Worker %v: Sealer: %v", w.name, err)
+			code := protocol.ErrInternal
+			if err, ok := err.(protocol.Error); ok {
+				code = err
+			}
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, code)
+		}
+		w.s.stats.logRequestDuration(requestBegin)
+		return makeRespondResponse(pkt.ID, res)
+
+	case protocol.OpRSADecrypt:
+		if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+			log.Error(protocol.ErrKeyNotFound)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+		}
+
+		if _, ok = key.Public().(*rsa.PublicKey); !ok {
+			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		}
+
+		rsaKey, ok := key.(crypto.Decrypter)
+		if !ok {
+			log.Errorf("Worker %v: %s: Key is not Decrypter", w.name, protocol.ErrCrypto)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		}
+
+		ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
+		if err != nil {
+			log.Errorf("Worker %v: %s: Decryption error: %v", w.name, protocol.ErrCrypto, err)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		}
+
+		w.s.stats.logRequestDuration(requestBegin)
+		return makeRespondResponse(pkt.ID, ptxt)
+	case protocol.OpRSASignMD5SHA1:
+		opts = crypto.MD5SHA1
+	case protocol.OpRSASignSHA1:
+		opts = crypto.SHA1
+	case protocol.OpRSASignSHA224:
+		opts = crypto.SHA224
+	case protocol.OpRSASignSHA256, protocol.OpRSAPSSSignSHA256:
+		opts = crypto.SHA256
+	case protocol.OpRSASignSHA384, protocol.OpRSAPSSSignSHA384:
+		opts = crypto.SHA384
+	case protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA512:
+		opts = crypto.SHA512
+	case protocol.OpPong, protocol.OpResponse, protocol.OpError:
+		log.Errorf("Worker %v: %s: %s is not a valid request Opcode\n", w.name, protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrUnexpectedOpcode)
+	default:
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrBadOpcode)
 	}
 
-	if connError == io.EOF {
-		log.Debug("connection closed by client")
-	} else if err, ok := connError.(net.Error); ok && err.Timeout() {
-		log.Debugf("server closes connection due to timeout: %v\n", err)
+	switch pkt.Operation.Opcode {
+	case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
+		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
+	}
+
+	if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+		log.Error(protocol.ErrKeyNotFound)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+	}
+
+	// Ensure we don't perform an RSA sign for an ECDSA request.
+	if _, ok := key.Public().(*rsa.PublicKey); !ok {
+		log.Errorf("Worker %v: %s: request is RSA, but key isn't\n", w.name, protocol.ErrCrypto)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+	}
+
+	sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, opts)
+	if err != nil {
+		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+	}
+
+	w.s.stats.logRequestDuration(requestBegin)
+	return makeRespondResponse(pkt.ID, sig)
+}
+
+const randBufferLen = 1024 * 1024
+
+type ecdsaWorker struct {
+	buf  *buf_ecdsa.SyncRandBuffer
+	s    *Server
+	name string
+}
+
+func newECDSAWorker(s *Server, buf *buf_ecdsa.SyncRandBuffer, name string) *ecdsaWorker {
+	return &ecdsaWorker{
+		buf:  buf,
+		s:    s,
+		name: name,
+	}
+}
+
+func (w *ecdsaWorker) Do(job interface{}) interface{} {
+	pkt := job.(*protocol.Packet)
+
+	requestBegin := time.Now()
+	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
+
+	var opts crypto.SignerOpts
+	var key crypto.Signer
+	var ok bool
+	switch pkt.Operation.Opcode {
+	case protocol.OpECDSASignMD5SHA1:
+		opts = crypto.MD5SHA1
+	case protocol.OpECDSASignSHA1:
+		opts = crypto.SHA1
+	case protocol.OpECDSASignSHA224:
+		opts = crypto.SHA224
+	case protocol.OpECDSASignSHA256:
+		opts = crypto.SHA256
+	case protocol.OpECDSASignSHA384:
+		opts = crypto.SHA384
+	case protocol.OpECDSASignSHA512:
+		opts = crypto.SHA512
+	default:
+		// It's the client's responsibility to send all non-ECDSA requests to the
+		// pool of otherWorkers.
+		panic(fmt.Sprintf("internal error: got unexpected opcode %v", pkt.Operation.Opcode))
+	}
+
+	if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+		log.Error(protocol.ErrKeyNotFound)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+	}
+
+	// Ensure we don't perform an RSA sign for an ECDSA request.
+	if _, ok := key.Public().(*ecdsa.PublicKey); !ok {
+		log.Errorf("Worker %v: %s: request is ECDSA, but key isn't\n", w.name, protocol.ErrCrypto)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+	}
+
+	var sig []byte
+	var err error
+	if k, ok := key.(*ecdsa.PrivateKey); ok && k.Curve == elliptic.P256() {
+		sig, err = buf_ecdsa.Sign(rand.Reader, k, pkt.Operation.Payload, opts, w.buf)
 	} else {
-		s.stats.logConnFailure()
-		log.Errorf("connection error: %v\n", connError)
+		sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
+		log.Debugf("Worker %v: Computed ECDSA signature without buffer", w.name)
+	}
+	if err != nil {
+		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
+		w.s.stats.logInvalid(requestBegin)
+		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+	}
+
+	w.s.stats.logRequestDuration(requestBegin)
+	return makeRespondResponse(pkt.ID, sig)
+}
+
+type idler struct {
+	buf *buf_ecdsa.SyncRandBuffer
+}
+
+func newIdler(buf *buf_ecdsa.SyncRandBuffer) *idler {
+	return &idler{buf: buf}
+}
+
+func (i *idler) Idle() {
+	err := i.buf.Fill(rand.Reader)
+	if err != nil {
+		panic(err)
 	}
 }
 
-func respond(conn *tls.Conn, mtx *sync.Mutex, id uint32, payload []byte) error {
-	mtx.Lock()
-	err := protocol.Respond(conn, id, payload)
-	mtx.Unlock()
-	return err
-}
+func (s *Server) handle(conn *tls.Conn, mtx *sync.Mutex, conns map[*tls.Conn]bool,
+	otherPool, ecdsaPool *worker.Pool, timeout time.Duration) {
 
-func respondPong(conn *tls.Conn, mtx *sync.Mutex, id uint32, payload []byte) error {
-	mtx.Lock()
-	err := protocol.RespondPong(conn, id, payload)
-	mtx.Unlock()
-	return err
-}
+	log.Debug("Handling new connection:", conn)
 
-func respondError(conn *tls.Conn, mtx *sync.Mutex, id uint32, err protocol.Error) error {
-	mtx.Lock()
-	e := protocol.RespondError(conn, id, err)
-	mtx.Unlock()
-	return e
-}
+	// NOTE: We use this custom channel because it is unbounded, and thus sends
+	// will never block. This is required for correctness! If we used blocking
+	// channels (like Go's native channels), then when the connection was killed
+	// and the writer goroutine quit, there would be no way for the worker
+	// goroutines to know. If there wasn't enough buffer space left in the
+	// channel, they would fill it up with their responses and then block
+	// indefinitely.
+	//
+	// Not only is this required for correctness when a connection dies, it is
+	// also required to avoid a DoS risk. If the channel were bounded, an attacker
+	// could simply submit a large number of jobs, but not read the responses off
+	// the network. The network connection would eventually back up to the point
+	// that the writer goroutine's call to write to the network connection would
+	// block. At this point, the response channel would eventually fill up. At
+	// that point, any worker goroutines attempting to send results would block
+	// indefinitely. By continuing to send requests until every worker goroutine
+	// was blocked, the attacker could completely freeze the server.
+	//
+	// Counterintuitively, using an unbounded channel is not a memory leak risk.
+	// Values can only be sent on the channel after a job has been processed by a
+	// worker, and the channel feeding jobs to the workers is itself bounded. That
+	// bounded channel prevents jobs being submitted faster than the workers can
+	// handle them, and also provides back pressure against the network connection
+	// (since if the job submission channel is full, readaer goroutines will block
+	// sending on that channel and will be unable to read from their network
+	// connections; this backpressure will then propagate across the network to
+	// the client).
+	responses := fchan.NewUnbounded()
 
-func (s *Server) handleReqs(ch chan req) {
-	runtime.LockOSThread()
-	defer func() {
-		if err := recover(); err != nil {
-			log.Errorf("panic while handling request: %v", err)
-			go s.handleReqs(ch)
+	var quit uint32
+	commitFunc := func(resp interface{}) {
+		// As an optimization, check to see whether the reader goroutine has
+		// signaled that the connection has been closed. If it has, then the
+		// response won't be sent back to the client anyway, so don't waste time
+		// trying to write it to the channel.
+		if atomic.LoadUint32(&quit) == 0 {
+			responses.Send(resp)
+		}
+	}
+
+	// Use a sync.Once so that only the first goroutine to encounter an error gets
+	// to log it. This avoids the circumstance where a goroutine encounters an
+	// error, logs it, and then closes the network connection, which causes the
+	// other goroutine to also encounter an error (due to the closed connection)
+	// and spuriously log it.
+	//
+	// We also use this to allow the reader goroutine to block the writer from
+	// logging anything at all by calling doLogErr(nil). This is useful when the
+	// reader wants to initiate a clean shutdown, and informs the writer of this
+	// by closing the connection in order to get its wait calls to stop blocking.
+	var logErr sync.Once
+	doLogErr := func(err error) {
+		logErr.Do(func() {
+			if err == nil {
+				// The reader called doLogErr just to beat the writer to the punch,
+				// not to actually log an error.
+				return
+			} else if err == io.EOF {
+				log.Debug("connection closed by client")
+			} else if err, ok := err.(net.Error); ok && err.Timeout() {
+				log.Debugf("closing connection due to timeout: %v\n", err)
+			} else {
+				s.stats.logConnFailure()
+				log.Errorf("connection error: %v\n", err)
+			}
+		})
+	}
+
+	// Since all errors encountered will be encountered by both goroutines, we
+	// put all error handling logic in the reader goroutine, keeping the writer
+	// goroutine very simple. When an error is encountered, the reader will log
+	// it, close the connection, and send a nil value on the responses channel.
+	// If the writer is currently blocked in a call to write, that call will
+	// return when the connection is closed. If the writer is currently blocked
+	// reading from the responses channel, that call will return when the nil
+	// value is sent. In either case, the writer will know to quit.
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// reader
+	go func() {
+		defer wg.Done()
+
+		for {
+			err := conn.SetReadDeadline(time.Now().Add(timeout))
+			if err != nil {
+				doLogErr(err)
+				conn.Close()
+				// Signal to any worker goroutines that they shouldn't bother writing
+				// responses to the channel since they'll be discarded anyway.
+				atomic.StoreUint32(&quit, 1)
+				// Signal to the writer goroutine to quit.
+				responses.Send(nil)
+				return
+			}
+
+			pkt := new(protocol.Packet)
+			_, err = pkt.ReadFrom(conn)
+			if err != nil {
+				doLogErr(err)
+				conn.Close()
+				// Signal to any worker goroutines that they shouldn't bother writing
+				// responses to the channel since they'll be discarded anyway.
+				atomic.StoreUint32(&quit, 1)
+				// Signal to the writer goroutine to quit.
+				responses.Send(nil)
+				return
+			}
+
+			job := worker.NewJob(pkt, commitFunc)
+			switch pkt.Operation.Opcode {
+			case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
+				protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
+				protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
+				ecdsaPool.SubmitJob(job)
+			default:
+				otherPool.SubmitJob(job)
+			}
 		}
 	}()
 
-	var connError error
-	for connError == nil {
-		r, more := <-ch
-		if !more {
-			break
+	// writer
+	go func() {
+		defer wg.Done()
+		pkt := protocol.Packet{
+			Header: protocol.Header{
+				MajorVers: 0x01,
+				MinorVers: 0x00,
+			},
 		}
-		conn, mtx, h := r.conn, r.mtx, r.packet
 
-		requestBegin := time.Now()
-		log.Debugf("version:%d.%d id:%d body:%s", h.MajorVers, h.MinorVers, h.ID, h.Operation)
-
-		var opts crypto.SignerOpts
-		var key crypto.Signer
-		var ok bool
-		switch h.Operation.Opcode {
-		case protocol.OpPing:
-			connError = respondPong(conn, mtx, h.ID, h.Operation.Payload)
-			s.stats.logRequestDuration(requestBegin)
-			continue
-
-		case protocol.OpGetCertificate:
-			if s.GetCertificate == nil {
-				log.Error("GetCertificate is nil")
-				connError = respondError(conn, mtx, h.ID, protocol.ErrCertNotFound)
-				s.stats.logInvalid(requestBegin)
-				continue
+		for {
+			val := responses.Receive()
+			if val == nil {
+				// The reader goroutine signaled for us to quit.
+				return
 			}
+			resp := val.(response)
 
-			certChain, err := s.GetCertificate(&h.Operation)
+			pkt.Length = resp.op.Bytes()
+			pkt.ID = resp.id
+			pkt.Operation = resp.op
+			buf, err := pkt.MarshalBinary()
 			if err != nil {
-				log.Errorf("GetCertificate: %v", err)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrInternal)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-			connError = respond(conn, mtx, h.ID, certChain)
-			s.stats.logRequestDuration(requestBegin)
-			continue
-
-		case protocol.OpSeal, protocol.OpUnseal:
-			if s.Sealer == nil {
-				log.Error("Sealer is nil")
-				connError = respondError(conn, mtx, h.ID, protocol.ErrInternal)
-				s.stats.logInvalid(requestBegin)
-				continue
+				// According to MarshalBinary's documentation, it will never return a
+				// non-nil error.
+				panic(fmt.Sprintf("unexpected internal error: %v", err))
 			}
 
-			var res []byte
-			var err error
-			if h.Operation.Opcode == protocol.OpSeal {
-				res, err = s.Sealer.Seal(&h.Operation)
-			} else {
-				res, err = s.Sealer.Unseal(&h.Operation)
-			}
+			_, err = conn.Write(buf)
 			if err != nil {
-				log.Errorf("Sealer: %v", err)
-				code := protocol.ErrInternal
-				if err, ok := err.(protocol.Error); ok {
-					code = err
-				}
-				connError = respondError(conn, mtx, h.ID, code)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-			connError = respond(conn, mtx, h.ID, res)
-			s.stats.logRequestDuration(requestBegin)
-			continue
-
-		case protocol.OpRSADecrypt:
-			if key, ok = s.Keys.Get(&h.Operation); !ok {
-				log.Error(protocol.ErrKeyNotFound)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrKeyNotFound)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-
-			if _, ok = key.Public().(*rsa.PublicKey); !ok {
-				log.Errorf("%s: Key is not RSA\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-
-			rsaKey, ok := key.(crypto.Decrypter)
-			if !ok {
-				log.Errorf("%s: Key is not Decrypter\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-
-			ptxt, err := rsaKey.Decrypt(nil, h.Operation.Payload, nil)
-			if err != nil {
-				log.Errorf("%s: Decryption error: %v", protocol.ErrCrypto, err)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
-				s.stats.logInvalid(requestBegin)
-				continue
-			}
-
-			connError = respond(conn, mtx, h.ID, ptxt)
-			s.stats.logRequestDuration(requestBegin)
-			continue
-		case protocol.OpRSASignMD5SHA1, protocol.OpECDSASignMD5SHA1:
-			opts = crypto.MD5SHA1
-		case protocol.OpRSASignSHA1, protocol.OpECDSASignSHA1:
-			opts = crypto.SHA1
-		case protocol.OpRSASignSHA224, protocol.OpECDSASignSHA224:
-			opts = crypto.SHA224
-		case protocol.OpRSASignSHA256, protocol.OpECDSASignSHA256, protocol.OpRSAPSSSignSHA256:
-			opts = crypto.SHA256
-		case protocol.OpRSASignSHA384, protocol.OpECDSASignSHA384, protocol.OpRSAPSSSignSHA384:
-			opts = crypto.SHA384
-		case protocol.OpRSASignSHA512, protocol.OpECDSASignSHA512, protocol.OpRSAPSSSignSHA512:
-			opts = crypto.SHA512
-		case protocol.OpPong, protocol.OpResponse, protocol.OpError:
-			log.Errorf("%s: %s is not a valid request Opcode\n", protocol.ErrUnexpectedOpcode, h.Operation.Opcode)
-			connError = respondError(conn, mtx, h.ID, protocol.ErrUnexpectedOpcode)
-			s.stats.logInvalid(requestBegin)
-			continue
-		default:
-			connError = respondError(conn, mtx, h.ID, protocol.ErrBadOpcode)
-			s.stats.logInvalid(requestBegin)
-			continue
-		}
-
-		switch h.Operation.Opcode {
-		case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
-			opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
-		}
-
-		if key, ok = s.Keys.Get(&h.Operation); !ok {
-			log.Error(protocol.ErrKeyNotFound)
-			connError = respondError(conn, mtx, h.ID, protocol.ErrKeyNotFound)
-			s.stats.logInvalid(requestBegin)
-			continue
-		}
-
-		// Ensure we don't perform an ECDSA sign for an RSA request.
-		switch h.Operation.Opcode {
-		case protocol.OpRSASignMD5SHA1,
-			protocol.OpRSASignSHA1,
-			protocol.OpRSASignSHA224,
-			protocol.OpRSASignSHA256,
-			protocol.OpRSASignSHA384,
-			protocol.OpRSASignSHA512,
-			protocol.OpRSAPSSSignSHA256,
-			protocol.OpRSAPSSSignSHA384,
-			protocol.OpRSAPSSSignSHA512:
-			if _, ok := key.Public().(*rsa.PublicKey); !ok {
-				log.Errorf("%s: request is RSA, but key isn't\n", protocol.ErrCrypto)
-				connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
-				s.stats.logInvalid(requestBegin)
-				continue
+				doLogErr(err)
+				conn.Close()
+				return
 			}
 		}
+	}()
 
-		sig, err := key.Sign(rand.Reader, h.Operation.Payload, opts)
-		if err != nil {
-			log.Errorf("%s: Signing error: %v\n", protocol.ErrCrypto, err)
-			connError = respondError(conn, mtx, h.ID, protocol.ErrCrypto)
-			s.stats.logInvalid(requestBegin)
-			continue
-		}
-
-		connError = respond(conn, mtx, h.ID, sig)
-		s.stats.logRequestDuration(requestBegin)
-	}
+	// Delete the connection from the map to avoid leaking resources.
+	wg.Wait()
+	mtx.Lock()
+	delete(conns, conn)
+	mtx.Unlock()
 }
 
-// Serve accepts incoming connections on the Listener l, creating a new service goroutine for each.
+// Serve calls ServeConfig(l, DefaultServeConfig()).
 func (s *Server) Serve(l net.Listener) error {
+	return s.ServeConfig(l, DefaultServeConfig())
+}
+
+// ServeConfig accepts incoming connections on the Listener l, creating a new
+// pair of service goroutines for each. The first time l.Accept fails,
+// everything will be torn down.
+func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	defer l.Close()
 
-	ch := make(chan req, 8)
-	for i := 0; i < 8; i++ {
-		go s.handleReqs(ch)
+	var others []worker.Worker
+	var ecdsas []worker.Worker
+	var idlers []worker.Idler
+	rbuf := buf_ecdsa.NewSyncRandBuffer(randBufferLen, elliptic.P256())
+	for i := 0; i < cfg.otherWorkers; i++ {
+		others = append(others, newOtherWorker(s, fmt.Sprintf("other-%v", i)))
 	}
+	for i := 0; i < cfg.ecdsaWorkers; i++ {
+		ecdsas = append(ecdsas, newECDSAWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
+	}
+	for i := 0; i < cfg.idleWorkers; i++ {
+		idlers = append(idlers, newIdler(rbuf))
+	}
+
+	idlepool := worker.NewIdlePool(idlers...)
+	otherpool := worker.NewPool(others...)
+	ecdsapool := worker.NewPool(ecdsas...)
+
+	// This map keeps track of all existing connections. This allows us to close
+	// them all (and thus cause the associated goroutines to quit, freeing
+	// resources) when we're about to return. The mutex protects the map since the
+	// handle method concurrently deletes its connection from it once the
+	// connection dies.
+	var mapMtx sync.Mutex
+	conns := make(map[*tls.Conn]bool)
+	var wg sync.WaitGroup
+
 	defer func() {
-		atomic.StoreUint32(&s.closed, 1)
-		close(ch)
+		// Close all of the connections so that the associated goroutines quit.
+		mapMtx.Lock()
+		for c := range conns {
+			c.Close()
+		}
+		mapMtx.Unlock()
+		// Wait for all of the goroutines to quit.
+		wg.Wait()
+
+		// Destroy the pools
+		idlepool.Destroy()
+		otherpool.Destroy()
+		ecdsapool.Destroy()
 	}()
 
 	for {
@@ -443,13 +671,28 @@ func (s *Server) Serve(l net.Listener) error {
 			log.Error(err)
 			return err
 		}
-		go s.handle(tls.Server(c, s.Config), ch)
+
+		tconn := tls.Server(c, s.Config)
+		mapMtx.Lock()
+		conns[tconn] = true
+		mapMtx.Unlock()
+
+		wg.Add(1)
+		go func(tconn *tls.Conn, mtx *sync.Mutex, conns map[*tls.Conn]bool, otherpool, ecdsapool *worker.Pool, timeout time.Duration) {
+			s.handle(tconn, mtx, conns, otherpool, ecdsapool, timeout)
+			wg.Done()
+		}(tconn, &mapMtx, conns, otherpool, ecdsapool, cfg.timeout)
 	}
 }
 
-// ListenAndServe listens on the TCP network address s.Addr and then
-// calls Serve to handle requests on incoming keyless connections.
+// ListenAndServe calls ListenAndServeConfig(DefaultServeConfig()).
 func (s *Server) ListenAndServe() error {
+	return s.ListenAndServeConfig(DefaultServeConfig())
+}
+
+// ListenAndServeConfig listens on the TCP network address s.Addr and then calls
+// ServeConfig to handle requests on incoming keyless connections.
+func (s *Server) ListenAndServeConfig(cfg *ServeConfig) error {
 	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		return err
@@ -459,11 +702,17 @@ func (s *Server) ListenAndServe() error {
 	s.TCPListener = l
 
 	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.Serve(l)
+	return s.ServeConfig(l, cfg)
 }
 
-// UnixListenAndServe listens on the Unix socket address and handles keyless requests.
+// UnixListenAndServe calls UnixListenAndServeConfig(DefaultServeConfig()).
 func (s *Server) UnixListenAndServe() error {
+	return s.UnixListenAndServeConfig(DefaultServeConfig())
+}
+
+// UnixListenAndServeConfig listens on the Unix socket address and handles
+// keyless requests.
+func (s *Server) UnixListenAndServeConfig(cfg *ServeConfig) error {
 	if s.UnixAddr != "" {
 		l, err := net.Listen("unix", s.UnixAddr)
 		if err != nil {
@@ -472,7 +721,7 @@ func (s *Server) UnixListenAndServe() error {
 		s.UnixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
-		return s.Serve(l)
+		return s.ServeConfig(l, cfg)
 	}
 	return errors.New("can't listen on empty path")
 }
@@ -486,4 +735,59 @@ func (s *Server) Close() {
 	if s.TCPListener != nil {
 		s.TCPListener.Close()
 	}
+}
+
+// ServeConfig is used to configure a call to Server.Serve. It specifies the
+// number of ECDSA worker goroutines, other worker goroutines, and idle worker
+// goroutines to use. It also specifies the network connection timeout.
+type ServeConfig struct {
+	ecdsaWorkers, otherWorkers int
+	idleWorkers                int
+	timeout                    time.Duration
+}
+
+const defaultTimeout = time.Hour
+
+// DefaultServeConfig constructs a default ServeConfig with the following
+// values:
+//  - The number of ECDSA workers is min(2, runtime.NumCPU())
+//  - The number of other workers is 2
+//  - The number of idle workers is 1
+//  - The connection timeout is 1 hour
+func DefaultServeConfig() *ServeConfig {
+	necdsa := runtime.NumCPU()
+	if runtime.NumCPU() < 2 {
+		necdsa = 2
+	}
+	return &ServeConfig{
+		ecdsaWorkers: necdsa,
+		otherWorkers: 2,
+		idleWorkers:  1,
+		timeout:      defaultTimeout,
+	}
+}
+
+// ECDSAWorkers specifies the number of ECDSA worker goroutines to use.
+func (s *ServeConfig) ECDSAWorkers(n int) *ServeConfig {
+	s.ecdsaWorkers = n
+	return s
+}
+
+// OtherWorkers specifies the number of other worker goroutines to use.
+func (s *ServeConfig) OtherWorkers(n int) *ServeConfig {
+	s.otherWorkers = n
+	return s
+}
+
+// IdleWorkers specifies the number of idle worker goroutines to use.
+func (s *ServeConfig) IdleWorkers(n int) *ServeConfig {
+	s.idleWorkers = n
+	return s
+}
+
+// Timeout specifies the network connection timeout to use. This timeout is used
+// when reading from or writing to established network connections.
+func (s *ServeConfig) Timeout(timeout time.Duration) *ServeConfig {
+	s.timeout = timeout
+	return s
 }

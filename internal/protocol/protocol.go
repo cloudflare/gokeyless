@@ -238,7 +238,7 @@ type Header struct {
 	ID                   uint32
 }
 
-// MarshalBinary marshals h into its wire format. It will never return nil.
+// MarshalBinary marshals h into its wire format. It will never return an error.
 func (h *Header) MarshalBinary() ([]byte, error) {
 	data := make([]byte, 8)
 	data[0] = h.MajorVers

@@ -28,26 +28,20 @@ func RespondError(w io.Writer, id uint32, err Error) error {
 	return e
 }
 
-// MakeRespondPacket constructs a packet representing a response message.
-func MakeRespondPacket(id uint32, payload []byte) Packet {
-	return NewPacket(id, Operation{
-		Opcode:  OpResponse,
-		Payload: payload,
-	})
-}
+// MakeRespondPacket constructs a Packet representing a response message.
+func MakeRespondPacket(id uint32, payload []byte) Packet { return NewPacket(id, MakeRespondOp(payload)) }
 
-// MakePongPacket constructs a packet representing a pong message.
-func MakePongPacket(id uint32, payload []byte) Packet {
-	return NewPacket(id, Operation{
-		Opcode:  OpPong,
-		Payload: payload,
-	})
-}
+// MakePongPacket constructs a Packet representing a pong message.
+func MakePongPacket(id uint32, payload []byte) Packet { return NewPacket(id, MakePongOp(payload)) }
 
-// MakeErrorPacket constructs a packet representing an error message.
-func MakeErrorPacket(id uint32, err Error) Packet {
-	return NewPacket(id, Operation{
-		Opcode:  OpError,
-		Payload: []byte{byte(err)},
-	})
-}
+// MakeErrorPacket constructs a Packet representing an error message.
+func MakeErrorPacket(id uint32, err Error) Packet { return NewPacket(id, MakeErrorOp(err)) }
+
+// MakeRespondOp constructs an Operation representing a response message.
+func MakeRespondOp(payload []byte) Operation { return Operation{Opcode: OpResponse, Payload: payload} }
+
+// MakePongOp constructs an Operation representing a pong message.
+func MakePongOp(payload []byte) Operation { return Operation{Opcode: OpPong, Payload: payload} }
+
+// MakeErrorOp constructs an Operation representing a error message.
+func MakeErrorOp(err Error) Operation { return Operation{Opcode: OpError, Payload: []byte{byte(err)}} }
