@@ -17,8 +17,8 @@ import (
 
 	"github.com/cloudflare/gokeyless/client"
 	bclient "github.com/cloudflare/gokeyless/cmd/bench/internal/client"
-	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/cloudflare/gokeyless/internal/test/params"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 var (

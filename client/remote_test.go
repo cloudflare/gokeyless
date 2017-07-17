@@ -13,14 +13,13 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
-	"github.com/cloudflare/gokeyless/internal/server"
+	"github.com/cloudflare/gokeyless/server"
 )
 
 const (
 	serverCert   = "testdata/server.pem"
 	serverKey    = "testdata/server-key.pem"
 	keylessCA    = "testdata/ca.pem"
-	serverAddr   = "localhost:0"
 	socketAddr   = "/tmp/keyless.socket"
 	rsaPrivKey   = "testdata/rsa.key"
 	ecdsaPrivKey = "testdata/ecdsa.key"
@@ -33,6 +32,8 @@ const (
 )
 
 var (
+	// the address that s is listening on
+	sAddr       string
 	s           *server.Server
 	c           *Client
 	rsaSigner   crypto.Signer
@@ -55,18 +56,30 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 func TestMain(m *testing.M) {
 	var err error
 	// Setup keyless server
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, socketAddr)
+	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	keys := server.NewDefaultKeystore()
-	keys.LoadKeysFromDir("testdata", LoadKey)
-	s.Keys = keys
+	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.SetKeystore(keys)
 
-	go s.ListenAndServe()
+	tcpListener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	sAddr = tcpListener.Addr().String()
 
-	go s.UnixListenAndServe()
+	unixListener, err := net.Listen("unix", socketAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go s.Serve(tcpListener)
+	go s.Serve(unixListener)
 
 	// wait for server to start
 	time.Sleep(100 * time.Millisecond)
@@ -79,7 +92,7 @@ func TestMain(m *testing.M) {
 	c.Dialer.Timeout = 1 * time.Second
 
 	// start a remote server at serverAddr
-	host, port, _ := net.SplitHostPort(s.Addr)
+	host, port, _ := net.SplitHostPort(sAddr)
 	remote, err = c.LookupServerWithName("localhost", host, port)
 	if err != nil {
 		log.Fatal(err)
@@ -160,20 +173,21 @@ func TestBadRemote(t *testing.T) {
 
 func TestSlowServer(t *testing.T) {
 	// Setup a slow keyless server
-	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA,
-		serverAddr, serverAddr)
+	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	l, err := net.Listen("tcp", serverAddr)
+	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sl := slowListener{l}
 
 	go func() {
-		if err := s2.Serve(&sl, time.Second*30); err != nil {
+		cfg := server.DefaultServeConfig()
+		cfg.TCPTimeout(time.Second * 30)
+		if err := s2.ServeConfig(&sl, cfg); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -182,7 +196,7 @@ func TestSlowServer(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// clear cached remotes and set a remote group of normal and slow servers
-	host, p, _ := net.SplitHostPort(s.Addr)
+	host, p, _ := net.SplitHostPort(sAddr)
 	remote, err = c.LookupServerWithName("localhost", host, p)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +221,7 @@ func TestSlowServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conn.addr != s.Addr {
+	if conn.addr != sAddr {
 		t.Fatal("bad 1st remote addr:", conn.addr)
 	}
 }

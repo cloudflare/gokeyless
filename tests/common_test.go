@@ -11,8 +11,8 @@ import (
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/internal/protocol"
-	"github.com/cloudflare/gokeyless/internal/server"
+	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/server"
 )
 
 const (
@@ -101,22 +101,25 @@ func init() {
 
 	log.Level = log.LevelFatal
 
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA, serverAddr, "")
+	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	keys := server.NewDefaultKeystore()
-	keys.LoadKeysFromDir("testdata", LoadKey)
-	s.Keys = keys
+	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.SetKeystore(keys)
 
-	s.GetCertificate = dummyGetCertificate
-	s.Sealer = dummySealer{}
+	s.SetGetCert(dummyGetCertificate)
+	s.SetSealer(dummySealer{})
 
 	listening := make(chan bool)
 	go func() {
 		listening <- true
-		if err := s.ListenAndServe(); err != nil {
+		cfg := server.DefaultServeConfig().TCPAddr(serverAddr)
+		if err := s.ListenAndServeConfig(cfg); err != nil {
 			log.Fatal(err)
 		}
 	}()

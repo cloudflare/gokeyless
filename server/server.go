@@ -22,18 +22,13 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/internal/protocol"
-	buf_ecdsa "github.com/cloudflare/gokeyless/internal/server/internal/ecdsa"
-	"github.com/cloudflare/gokeyless/internal/server/internal/fchan"
-	"github.com/cloudflare/gokeyless/internal/server/internal/worker"
+	"github.com/cloudflare/gokeyless/protocol"
+	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
+	"github.com/cloudflare/gokeyless/server/internal/fchan"
+	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
-
-const (
-	UnixConnTimeout = time.Hour
-	TCPConnTimeout  = time.Second * 30
-)
 
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
@@ -41,58 +36,23 @@ type Keystore interface {
 	Get(*protocol.Operation) (crypto.Signer, bool)
 }
 
-// NewDefaultKeystore returns a new default memory-based static keystore.
-func NewDefaultKeystore() *DefaultKeystore {
-	return &DefaultKeystore{
-		skis: make(map[protocol.SKI]crypto.Signer),
-	}
-}
-
-// DefaultKeystore is a simple in-memory key store.
+// DefaultKeystore is a simple in-memory Keystore.
 type DefaultKeystore struct {
-	sync.RWMutex
+	mtx  sync.RWMutex
 	skis map[protocol.SKI]crypto.Signer
 }
 
-// Add adds a new key to the server's internal repertoire.
-// Stores in maps by SKI and (if possible) Digest, SNI, Server IP, and Client IP.
-func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {
-	ski, err := protocol.GetSKI(priv.Public())
-	if err != nil {
-		return err
-	}
-
-	keys.Lock()
-	defer keys.Unlock()
-
-	keys.skis[ski] = priv
-
-	log.Debugf("add key with SKI: %02x", ski)
-	return nil
+// NewDefaultKeystore returns a new DefaultKeystore.
+func NewDefaultKeystore() *DefaultKeystore {
+	return &DefaultKeystore{skis: make(map[protocol.SKI]crypto.Signer)}
 }
 
-// Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
-	keys.RLock()
-	defer keys.RUnlock()
-
-	ski := op.SKI
-	if ski.Valid() {
-		priv, found := keys.skis[ski]
-		if found {
-			log.Infof("fetch key with SKI: %s", ski)
-			return priv, found
-		}
-	}
-
-	log.Errorf("couldn't fetch key for %s.", op)
-	return nil, false
-}
-
-// LoadKeysFromDir walks a directory, reads all ".key" files and calls LoadKey
-// to parse the file into crypto.Signer for loading into the server Keystore.
-func (keys *DefaultKeystore) LoadKeysFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+// NewKeystoreFromDir creates a keystore populated from all of the ".key" files
+// in dir. For each ".key" file, LoadKey is called to parse the file's contents
+// into a crypto.Signer, which is stored in the Keystore.
+func NewKeystoreFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) (Keystore, error) {
+	keys := NewDefaultKeystore()
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -114,53 +74,73 @@ func (keys *DefaultKeystore) LoadKeysFromDir(dir string, LoadKey func([]byte) (c
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// Add adds a new key to the server's internal store. Stores in maps by SKI and
+// (if possible) Digest, SNI, Server IP, and Client IP.
+func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {
+	ski, err := protocol.GetSKI(priv.Public())
+	if err != nil {
+		return err
+	}
+
+	keys.mtx.Lock()
+	defer keys.mtx.Unlock()
+
+	keys.skis[ski] = priv
+
+	log.Debugf("add key with SKI: %02x", ski)
+	return nil
+}
+
+// Get returns a key from keys, mapped from SKI.
+func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
+	keys.mtx.RLock()
+	defer keys.mtx.RUnlock()
+
+	ski := op.SKI
+	if ski.Valid() {
+		priv, found := keys.skis[ski]
+		if found {
+			log.Infof("fetch key with SKI: %s", ski)
+			return priv, found
+		}
+	}
+
+	log.Errorf("couldn't fetch key for %s.", op)
+	return nil, false
 }
 
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
-	// TCP address to listen on
-	Addr string
-	// Unix socket to listen on
-	UnixAddr string
-	// Config is initialized with the auth configuration used for communicating with keyless clients.
-	Config *tls.Config
-	// Keys contains the private keys and certificates for the server.
-	Keys Keystore
+	// config is initialized with the auth configuration used for communicating with keyless clients.
+	config *tls.Config
+	// keys contains the private keys and certificates for the server.
+	keys Keystore
 	// stats stores statistics about keyless requests.
 	stats *statistics
-	// GetCertificate is used for loading certificates.
-	GetCertificate GetCertificate
-	// Sealer is called for Seal and Unseal operations.
-	Sealer Sealer
+	// getCert is used for loading certificates.
+	getCert GetCert
+	// sealer is called for Seal and Unseal operations.
+	sealer Sealer
 
-	// UnixListener is the listener serving unix://[UnixAddr]
-	UnixListener net.Listener
-	// TCPListener is the listener serving tcp://[Addr]
-	TCPListener net.Listener
-}
+	// TODO(joshlf): Re-architect so that we don't need to store listeners in the
+	// struct (which is totally not thread safe)
 
-// GetCertificate is a function that returns a certificate given a request.
-type GetCertificate func(op *protocol.Operation) (certChain []byte, err error)
-
-// Sealer is an interface for an handler for OpSeal and OpUnseal. Seal and
-// Unseal can return a protocol.Error to send a custom error code.
-type Sealer interface {
-	Seal(*protocol.Operation) ([]byte, error)
-	Unseal(*protocol.Operation) ([]byte, error)
-}
-
-type req struct {
-	conn   *tls.Conn
-	mtx    *sync.Mutex
-	packet *protocol.Packet
+	// unixListener is the listener serving unix://[UnixAddr]
+	unixListener net.Listener
+	// tcpListener is the listener serving tcp://[Addr]
+	tcpListener net.Listener
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
-func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr string) *Server {
+func NewServer(cert tls.Certificate, keylessCA *x509.CertPool) *Server {
 	return &Server{
-		Addr:     addr,
-		UnixAddr: unixAddr,
-		Config: &tls.Config{
+		config: &tls.Config{
 			ClientCAs:    keylessCA,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 			Certificates: []tls.Certificate{cert},
@@ -169,13 +149,13 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool, addr, unixAddr st
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		Keys:  NewDefaultKeystore(),
+		keys:  NewDefaultKeystore(),
 		stats: newStatistics(),
 	}
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
-func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Server, error) {
+func NewServerFromFile(certFile, keyFile, caFile string) (*Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -190,7 +170,45 @@ func NewServerFromFile(certFile, keyFile, caFile, addr, unixAddr string) (*Serve
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
 		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
-	return NewServer(cert, keylessCA, addr, unixAddr), nil
+	return NewServer(cert, keylessCA), nil
+}
+
+// TLSConfig returns the Server's TLS configuration.
+func (s *Server) TLSConfig() *tls.Config {
+	return s.config
+}
+
+// SetGetCert sets the function that the Server uses to get certificates.
+func (s *Server) SetGetCert(f GetCert) {
+	s.getCert = f
+}
+
+// SetKeystore sets the Keystore used by s. It is NOT safe to call concurrently
+// with any other methods.
+func (s *Server) SetKeystore(keys Keystore) {
+	s.keys = keys
+}
+
+// SetSealer sets the Sealer used by s. It is NOT safe to call concurrently with
+// any other methods.
+func (s *Server) SetSealer(sealer Sealer) {
+	s.sealer = sealer
+}
+
+// GetCert is a function that returns a certificate given a request.
+type GetCert func(op *protocol.Operation) (certChain []byte, err error)
+
+// Sealer is an interface for an handler for OpSeal and OpUnseal. Seal and
+// Unseal can return a protocol.Error to send a custom error code.
+type Sealer interface {
+	Seal(*protocol.Operation) ([]byte, error)
+	Unseal(*protocol.Operation) ([]byte, error)
+}
+
+type req struct {
+	conn   *tls.Conn
+	mtx    *sync.Mutex
+	packet *protocol.Packet
 }
 
 type response struct {
@@ -235,13 +253,13 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return makePongResponse(pkt.ID, pkt.Operation.Payload)
 
 	case protocol.OpGetCertificate:
-		if w.s.GetCertificate == nil {
+		if w.s.getCert == nil {
 			log.Errorf("Worker %v: GetCertificate is nil", w.name)
 			w.s.stats.logInvalid(requestBegin)
 			return makeErrResponse(pkt.ID, protocol.ErrCertNotFound)
 		}
 
-		certChain, err := w.s.GetCertificate(&pkt.Operation)
+		certChain, err := w.s.getCert(&pkt.Operation)
 		if err != nil {
 			log.Errorf("Worker %v: GetCertificate: %v", w.name, err)
 			w.s.stats.logInvalid(requestBegin)
@@ -251,7 +269,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return makeRespondResponse(pkt.ID, certChain)
 
 	case protocol.OpSeal, protocol.OpUnseal:
-		if w.s.Sealer == nil {
+		if w.s.sealer == nil {
 			log.Errorf("Worker %v: Sealer is nil", w.name)
 			w.s.stats.logInvalid(requestBegin)
 			return makeErrResponse(pkt.ID, protocol.ErrInternal)
@@ -260,9 +278,9 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		var res []byte
 		var err error
 		if pkt.Operation.Opcode == protocol.OpSeal {
-			res, err = w.s.Sealer.Seal(&pkt.Operation)
+			res, err = w.s.sealer.Seal(&pkt.Operation)
 		} else {
-			res, err = w.s.Sealer.Unseal(&pkt.Operation)
+			res, err = w.s.sealer.Unseal(&pkt.Operation)
 		}
 		if err != nil {
 			log.Errorf("Worker %v: Sealer: %v", w.name, err)
@@ -277,7 +295,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return makeRespondResponse(pkt.ID, res)
 
 	case protocol.OpRSADecrypt:
-		if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+		if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 			log.Error(protocol.ErrKeyNotFound)
 			w.s.stats.logInvalid(requestBegin)
 			return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
@@ -331,7 +349,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 	}
 
-	if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(requestBegin)
 		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
@@ -399,7 +417,7 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 		panic(fmt.Sprintf("internal error: got unexpected opcode %v", pkt.Operation.Opcode))
 	}
 
-	if key, ok = w.s.Keys.Get(&pkt.Operation); !ok {
+	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(requestBegin)
 		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
@@ -624,6 +642,10 @@ func (s *Server) Serve(l net.Listener) error {
 // ServeConfig accepts incoming connections on the Listener l, creating a new
 // pair of service goroutines for each. The first time l.Accept fails,
 // everything will be torn down.
+//
+// If l is neither a TCP listener nor a Unix listener, then the timeout will be
+// taken to be the lower of the TCP timeout and the Unix timeout specified in
+// cfg.
 func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	defer l.Close()
 
@@ -644,6 +666,17 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	idlepool := worker.NewIdlePool(idlers...)
 	otherpool := worker.NewPool(others...)
 	ecdsapool := worker.NewPool(ecdsas...)
+
+	timeout := cfg.tcpTimeout
+	switch l.(type) {
+	case *net.TCPListener:
+	case *net.UnixListener:
+		timeout = cfg.unixTimeout
+	default:
+		if cfg.unixTimeout < timeout {
+			timeout = cfg.unixTimeout
+		}
+	}
 
 	// This map keeps track of all existing connections. This allows us to close
 	// them all (and thus cause the associated goroutines to quit, freeing
@@ -677,7 +710,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 			return err
 		}
 
-		tconn := tls.Server(c, s.Config)
+		tconn := tls.Server(c, s.config)
 		mapMtx.Lock()
 		conns[tconn] = true
 		mapMtx.Unlock()
@@ -686,7 +719,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		go func(tconn *tls.Conn, mtx *sync.Mutex, conns map[*tls.Conn]bool, otherpool, ecdsapool *worker.Pool, timeout time.Duration) {
 			s.handle(tconn, mtx, conns, otherpool, ecdsapool, timeout)
 			wg.Done()
-		}(tconn, &mapMtx, conns, otherpool, ecdsapool, cfg.timeout)
+		}(tconn, &mapMtx, conns, otherpool, ecdsapool, timeout)
 	}
 }
 
@@ -698,16 +731,17 @@ func (s *Server) ListenAndServe() error {
 // ListenAndServeConfig listens on the TCP network address s.Addr and then calls
 // ServeConfig to handle requests on incoming keyless connections.
 func (s *Server) ListenAndServeConfig(cfg *ServeConfig) error {
-	l, err := net.Listen("tcp", s.Addr)
-	if err != nil {
-		return err
+	if cfg.tcpAddr != "" {
+		l, err := net.Listen("tcp", cfg.tcpAddr)
+		if err != nil {
+			return err
+		}
+		s.tcpListener = l
+
+		log.Infof("Listening at tcp://%s\n", l.Addr())
+		return s.ServeConfig(l, cfg)
 	}
-
-	s.Addr = l.Addr().String()
-	s.TCPListener = l
-
-	log.Infof("Listening at tcp://%s\n", l.Addr())
-	return s.ServeConfig(l, cfg)
+	return errors.New("can't listen on empty path")
 }
 
 // UnixListenAndServe calls UnixListenAndServeConfig(DefaultServeConfig()).
@@ -718,12 +752,12 @@ func (s *Server) UnixListenAndServe() error {
 // UnixListenAndServeConfig listens on the Unix socket address and handles
 // keyless requests.
 func (s *Server) UnixListenAndServeConfig(cfg *ServeConfig) error {
-	if s.UnixAddr != "" {
-		l, err := net.Listen("unix", s.UnixAddr)
+	if cfg.unixAddr != "" {
+		l, err := net.Listen("unix", cfg.unixAddr)
 		if err != nil {
 			return err
 		}
-		s.UnixListener = l
+		s.unixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
 		return s.ServeConfig(l, cfg)
@@ -733,12 +767,12 @@ func (s *Server) UnixListenAndServeConfig(cfg *ServeConfig) error {
 
 // Close shuts down the listeners.
 func (s *Server) Close() {
-	if s.UnixListener != nil {
-		s.UnixListener.Close()
+	if s.unixListener != nil {
+		s.unixListener.Close()
 	}
 
-	if s.TCPListener != nil {
-		s.TCPListener.Close()
+	if s.tcpListener != nil {
+		s.tcpListener.Close()
 	}
 }
 
@@ -746,19 +780,28 @@ func (s *Server) Close() {
 // number of ECDSA worker goroutines, other worker goroutines, and idle worker
 // goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
+	tcpAddr, unixAddr          string
 	ecdsaWorkers, otherWorkers int
 	idleWorkers                int
-	timeout                    time.Duration
+	tcpTimeout, unixTimeout    time.Duration
 }
 
-const defaultTimeout = time.Hour
+const (
+	defaultTCPTimeout  = time.Second * 30
+	defaultUnixTimeout = time.Hour
+)
 
 // DefaultServeConfig constructs a default ServeConfig with the following
 // values:
 //  - The number of ECDSA workers is min(2, runtime.NumCPU())
 //  - The number of other workers is 2
 //  - The number of idle workers is 1
-//  - The connection timeout is 1 hour
+//  - The TCP connection timeout is 30 seconds
+//  - The Unix connection timeout is 1 hour
+//
+// Note that the default ServeConfig does not specify an address for listening
+// for TCP or Unix connections - at least one must be specified before using the
+// ServeConfig.
 func DefaultServeConfig() *ServeConfig {
 	necdsa := runtime.NumCPU()
 	if runtime.NumCPU() < 2 {
@@ -768,8 +811,21 @@ func DefaultServeConfig() *ServeConfig {
 		ecdsaWorkers: necdsa,
 		otherWorkers: 2,
 		idleWorkers:  1,
-		timeout:      defaultTimeout,
+		tcpTimeout:   defaultTCPTimeout,
+		unixTimeout:  defaultUnixTimeout,
 	}
+}
+
+// TCPAddr sets the TCP address to listen on.
+func (s *ServeConfig) TCPAddr(addr string) *ServeConfig {
+	s.tcpAddr = addr
+	return s
+}
+
+// UnixAddr sets the Unix address to listen on.
+func (s *ServeConfig) UnixAddr(addr string) *ServeConfig {
+	s.unixAddr = addr
+	return s
 }
 
 // ECDSAWorkers specifies the number of ECDSA worker goroutines to use.
@@ -790,9 +846,18 @@ func (s *ServeConfig) IdleWorkers(n int) *ServeConfig {
 	return s
 }
 
-// Timeout specifies the network connection timeout to use. This timeout is used
-// when reading from or writing to established network connections.
-func (s *ServeConfig) Timeout(timeout time.Duration) *ServeConfig {
-	s.timeout = timeout
+// TCPTimeout specifies the network connection timeout to use for TCP
+// connections. This timeout is used when reading from or writing to established
+// network connections.
+func (s *ServeConfig) TCPTimeout(timeout time.Duration) *ServeConfig {
+	s.tcpTimeout = timeout
+	return s
+}
+
+// UnixTimeout specifies the network connection timeout to use for Unix
+// connections. This timeout is used when reading from or writing to established
+// network connections.
+func (s *ServeConfig) UnixTimeout(timeout time.Duration) *ServeConfig {
+	s.unixTimeout = timeout
 	return s
 }

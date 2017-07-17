@@ -16,7 +16,7 @@ import (
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 // Results is a registry of metrics representing the success stats of an entire test suite.

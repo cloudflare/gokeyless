@@ -7,7 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rsa"
 
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 // RSASignParams represents a set of parameters to an RSA signing operation.
