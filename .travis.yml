@@ -3,8 +3,8 @@ sudo: false
 
 matrix:
   include:
-    - go: 1.6
     - go: 1.7
+    - go: 1.8
     - go: tip
   allow_failures:
     - go: tip
@@ -23,4 +23,5 @@ notifications:
   email:
     recipients:
       - kyle@cloudflare.com
+      - zi@cloudflare.com
       - msilverlock@cloudflare.com
