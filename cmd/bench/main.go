@@ -15,9 +15,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/cloudflare/gokeyless"
 	"github.com/cloudflare/gokeyless/client"
 	bclient "github.com/cloudflare/gokeyless/cmd/bench/internal/client"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
@@ -39,7 +39,7 @@ var (
 	minFlag, maxFlag, stepFlag time.Duration
 	pauseFlag                  time.Duration
 
-	ops = map[string]func(gokeyless.Operation) gokeyless.Operation{
+	ops = map[string]func(protocol.Operation) protocol.Operation{
 		"ECDSA-SHA224": makeECDSASignOpMaker(params.ECDSASHA224Params),
 		"ECDSA-SHA256": makeECDSASignOpMaker(params.ECDSASHA256Params),
 		"ECDSA-SHA384": makeECDSASignOpMaker(params.ECDSASHA384Params),
@@ -53,12 +53,12 @@ var (
 	}
 )
 
-func makeECDSASignOpMaker(params params.ECDSASignParams) func(op gokeyless.Operation) gokeyless.Operation {
-	return func(op gokeyless.Operation) gokeyless.Operation { return makeECDSASignOp(params, op) }
+func makeECDSASignOpMaker(params params.ECDSASignParams) func(op protocol.Operation) protocol.Operation {
+	return func(op protocol.Operation) protocol.Operation { return makeECDSASignOp(params, op) }
 }
 
-func makeRSASignOpMaker(params params.RSASignParams) func(op gokeyless.Operation) gokeyless.Operation {
-	return func(op gokeyless.Operation) gokeyless.Operation { return makeRSASignOp(params, op) }
+func makeRSASignOpMaker(params params.RSASignParams) func(op protocol.Operation) protocol.Operation {
+	return func(op protocol.Operation) protocol.Operation { return makeRSASignOp(params, op) }
 }
 
 func init() {
@@ -90,7 +90,7 @@ func main() {
 		os.Exit(2) // same code flag package uses for usage errors
 	}
 
-	var op gokeyless.Operation
+	var op protocol.Operation
 
 	skiBytes, err := hex.DecodeString(skiFlag)
 	if err != nil || len(skiBytes) != 20 {
@@ -136,7 +136,7 @@ func main() {
 		// Run a bandwidth test
 		var clients []bclient.BandwidthClient
 		for i := 0; i < workersFlag; i++ {
-			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), &op)
+			c, err := makeBandwidthClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
 			if err != nil {
 				panic(err)
 			}
@@ -150,7 +150,7 @@ func main() {
 		// Run a latency test
 		var clients []bclient.LatencyClient
 		for i := 0; i < workersFlag; i++ {
-			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), &op)
+			c, err := makeLatencyClientFromOp(cli, serverFlag, fmt.Sprint(portFlag), op)
 			if err != nil {
 				panic(err)
 			}
@@ -185,7 +185,7 @@ func readPacket(conn *tls.Conn) {
 		panic(err)
 	}
 
-	var pkt gokeyless.Packet
+	var pkt protocol.Packet
 	err = pkt.UnmarshalBinary(buf[:])
 	if err != nil {
 		panic(err)
@@ -198,27 +198,29 @@ func readPacket(conn *tls.Conn) {
 	}
 }
 
-func makeBandwidthClientFromOp(cli *client.Client, server, port string, op *gokeyless.Operation) (bclient.BandwidthClient, error) {
+func makeBandwidthClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.BandwidthClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := gokeyless.NewPacket(op).MarshalBinary()
+	pkt := protocol.NewPacket(0, op)
+	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	return &bwClient{
-		pkt:  pkt,
+		pkt:  buf,
 		conn: conn,
 	}, nil
 }
 
-func makeLatencyClientFromOp(cli *client.Client, server, port string, op *gokeyless.Operation) (bclient.LatencyClient, error) {
+func makeLatencyClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.LatencyClient, error) {
 	conn := dial(cli, server, port)
-	pkt, err := gokeyless.NewPacket(op).MarshalBinary()
+	pkt := protocol.NewPacket(0, op)
+	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
 	return bclient.FuncLatencyClient(func() time.Duration {
 		t0 := time.Now()
-		_, err := conn.Write(pkt)
+		_, err := conn.Write(buf)
 		if err != nil {
 			panic(err)
 		}
@@ -247,13 +249,13 @@ func dial(cli *client.Client, server, port string) *tls.Conn {
 	return conn
 }
 
-func makeRSASignOp(params params.RSASignParams, op gokeyless.Operation) gokeyless.Operation {
+func makeRSASignOp(params params.RSASignParams, op protocol.Operation) protocol.Operation {
 	op.Opcode = params.Opcode
 	op.Payload = randBytes(params.PayloadSize)
 	return op
 }
 
-func makeECDSASignOp(params params.ECDSASignParams, op gokeyless.Operation) gokeyless.Operation {
+func makeECDSASignOp(params params.ECDSASignParams, op protocol.Operation) protocol.Operation {
 	op.Opcode = params.Opcode
 	op.Payload = randBytes(params.PayloadSize)
 	return op

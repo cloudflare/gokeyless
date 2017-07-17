@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless"
+	"github.com/cloudflare/gokeyless/internal/protocol"
 	"github.com/lziest/ttlcache"
 )
 
@@ -56,7 +56,7 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 			},
 		},
 		Dialer:      &net.Dialer{},
-		Blacklist:   make(AddrSet),
+		Blacklist:   NewAddrSet(),
 		remoteCache: ttlcache.NewLRU(remoteCacheSize, remoteCacheTTL, nil),
 	}
 }
@@ -82,18 +82,22 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 }
 
 // An AddrSet is a set of addresses.
-type AddrSet map[string]bool
+type AddrSet struct {
+	m map[string]bool
+}
+
+// NewAddrSet constructs a new, empty AddrSet.
+func NewAddrSet() AddrSet { return AddrSet{m: make(map[string]bool)} }
 
 // Add adds an addr to the set of addresses.
 func (as AddrSet) Add(addr net.Addr) {
 	log.Infof("add to blacklist addr set: %s", addr)
-	as[addr.String()] = true
+	as.m[addr.String()] = true
 }
 
 // Contains determines if an addr belongs to the set of addresses.
 func (as AddrSet) Contains(addr net.Addr) bool {
-	contains, ok := as[addr.String()]
-	return ok && contains
+	return as.m[addr.String()]
 }
 
 // PopulateBlacklistFromHostname populates the client blacklist using an hostname.
@@ -129,7 +133,7 @@ func (c *Client) PopulateBlacklistFromCert(cert *x509.Certificate, port int) {
 
 // ClearBlacklist empties the client blacklist
 func (c *Client) ClearBlacklist() {
-	c.Blacklist = make(AddrSet)
+	c.Blacklist = NewAddrSet()
 }
 
 // registerSKI associates the SKI of a public key with a particular keyserver.
@@ -162,7 +166,7 @@ func (c *Client) getRemote(server string) (Remote, error) {
 // NewRemoteSigner returns a remote keyserver based crypto.Signer,
 // ski, sni, and serverIP are used to identified the key by the remote
 // keyserver.
-func NewRemoteSigner(c *Client, keyserver string, ski gokeyless.SKI,
+func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	priv := PrivateKey{
 		public:    pub,
@@ -188,7 +192,7 @@ func NewRemoteSigner(c *Client, keyserver string, ski gokeyless.SKI,
 // the remote Signer uses those key identification info to contact the
 // remote keyserver for keyless operations.
 func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
-	ski, err := gokeyless.GetSKI(pub)
+	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
