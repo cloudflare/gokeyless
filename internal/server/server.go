@@ -30,6 +30,11 @@ import (
 
 var keyExt = regexp.MustCompile(`.+\.key`)
 
+const (
+	UnixConnTimeout = time.Hour
+	TCPConnTimeout  = time.Second * 30
+)
+
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {

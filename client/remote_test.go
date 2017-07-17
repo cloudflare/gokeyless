@@ -13,7 +13,7 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
-	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/internal/server"
 )
 
 const (
@@ -173,7 +173,7 @@ func TestSlowServer(t *testing.T) {
 	sl := slowListener{l}
 
 	go func() {
-		if err := s2.Serve(&sl); err != nil {
+		if err := s2.Serve(&sl, time.Second*30); err != nil {
 			t.Fatal(err)
 		}
 	}()
