@@ -88,10 +88,6 @@ func main() {
 
 	s.SetKeystore(keys)
 
-	cfg := server.DefaultServeConfig().TCPAddr(net.JoinHostPort("", port))
-	go func() { log.Fatal(s.ListenAndServeConfig(cfg)) }()
-	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
-
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {
 			log.Errorf("error creating pid file: %v", err)
@@ -100,6 +96,10 @@ func main() {
 			f.Close()
 		}
 	}
+
+	cfg := server.DefaultServeConfig().TCPAddr(net.JoinHostPort("", port))
+	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
+	log.Fatal(s.ListenAndServeConfig(cfg))
 }
 
 // LoadKey attempts to load a private key from PEM or DER.
