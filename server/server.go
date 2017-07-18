@@ -18,13 +18,11 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
-	"github.com/cloudflare/gokeyless/server/internal/fchan"
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
@@ -463,175 +461,130 @@ func (i *idler) Idle() {
 	}
 }
 
-func (s *Server) handle(conn *tls.Conn, mtx *sync.Mutex, conns map[*tls.Conn]bool,
-	otherPool, ecdsaPool *worker.Pool, timeout time.Duration) {
+// client implements the worker.Client interface. One is created to handle each
+// connection from clients over the network. See the documentation in the worker
+// package for details.
+type client struct {
+	conn net.Conn
+	// name used to identify this client in logs
+	name                 string
+	timeout              time.Duration
+	ecdsaPool, otherPool *worker.Pool
+	// used by the Log method
+	err sync.Once
+	s   *Server
+}
 
-	log.Debug("Handling new connection:", conn)
+func newClient(s *Server, name string, conn net.Conn, timeout time.Duration, ecdsa, other *worker.Pool) *client {
+	return &client{conn: conn, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s}
+}
 
-	// NOTE: We use this custom channel because it is unbounded, and thus sends
-	// will never block. This is required for correctness! If we used blocking
-	// channels (like Go's native channels), then when the connection was killed
-	// and the writer goroutine quit, there would be no way for the worker
-	// goroutines to know. If there wasn't enough buffer space left in the
-	// channel, they would fill it up with their responses and then block
-	// indefinitely.
-	//
-	// Not only is this required for correctness when a connection dies, it is
-	// also required to avoid a DoS risk. If the channel were bounded, an attacker
-	// could simply submit a large number of jobs, but not read the responses off
-	// the network. The network connection would eventually back up to the point
-	// that the writer goroutine's call to write to the network connection would
-	// block. At this point, the response channel would eventually fill up. At
-	// that point, any worker goroutines attempting to send results would block
-	// indefinitely. By continuing to send requests until every worker goroutine
-	// was blocked, the attacker could completely freeze the server.
-	//
-	// Counterintuitively, using an unbounded channel is not a memory leak risk.
-	// Values can only be sent on the channel after a job has been processed by a
-	// worker, and the channel feeding jobs to the workers is itself bounded. That
-	// bounded channel prevents jobs being submitted faster than the workers can
-	// handle them, and also provides back pressure against the network connection
-	// (since if the job submission channel is full, readaer goroutines will block
-	// sending on that channel and will be unable to read from their network
-	// connections; this backpressure will then propagate across the network to
-	// the client).
-	responses := fchan.NewUnbounded()
-
-	var quit uint32
-	commitFunc := func(resp interface{}) {
-		// As an optimization, check to see whether the reader goroutine has
-		// signaled that the connection has been closed. If it has, then the
-		// response won't be sent back to the client anyway, so don't waste time
-		// trying to write it to the channel.
-		if atomic.LoadUint32(&quit) == 0 {
-			responses.Send(resp)
-		}
+func (c *client) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
+	err := c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+	if err != nil {
+		// TODO: Is it possible for the client closing this half of the connection
+		// to cause SetReadDeadline to return io.EOF? If so, we may want to do the
+		// same logic as the other error handling block in this function.
+		c.Log(err)
+		c.conn.Close()
+		return nil, nil, false
 	}
 
+	pkt := new(protocol.Packet)
+	_, err = pkt.ReadFrom(c.conn)
+	if err != nil {
+		if err == io.EOF {
+			// We can't rule out the possibility that the client just closed the
+			// writing half of their connection (the reading half of ours), but still
+			// wants to receive responses. Thus, we don't kill the connection.
+			//
+			// We also don't call c.Log because the writer goroutine could, in the
+			// future, encounter an error that we legitimately want logged. Even if no
+			// "real" error is encountered, when the other half of the connection is
+			// closed, the writer goroutine will encounter EOF, and will log it, so
+			// even if the connection is closed correctly, it will still get logged.
+			log.Debugf("connection %v: reading half closed by client", c.name)
+		} else {
+			c.Log(err)
+			c.conn.Close()
+		}
+		return nil, nil, false
+	}
+
+	switch pkt.Operation.Opcode {
+	case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
+		protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
+		protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
+		return pkt, c.ecdsaPool, true
+	default:
+		return pkt, c.otherPool, true
+	}
+}
+
+func (c *client) SubmitResult(result interface{}) (ok bool) {
+	resp := result.(response)
+	pkt := protocol.Packet{
+		Header: protocol.Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			Length:    resp.op.Bytes(),
+			ID:        resp.id,
+		},
+		Operation: resp.op,
+	}
+
+	buf, err := pkt.MarshalBinary()
+	if err != nil {
+		// According to MarshalBinary's documentation, it will never return a
+		// non-nil error.
+		panic(fmt.Sprintf("unexpected internal error: %v", err))
+	}
+
+	_, err = c.conn.Write(buf)
+	if err != nil {
+		c.Log(err)
+		c.conn.Close()
+		return false
+	}
+	return true
+}
+
+func (c *client) IsAlive() bool {
+	var buf [0]byte
+	_, err := c.conn.Read(buf[:])
+	return err == nil
+}
+
+func (c *client) Destroy() {
+	c.Log(nil)
+	c.conn.Close()
+}
+
+func (c *client) Log(err error) {
 	// Use a sync.Once so that only the first goroutine to encounter an error gets
 	// to log it. This avoids the circumstance where a goroutine encounters an
 	// error, logs it, and then closes the network connection, which causes the
 	// other goroutine to also encounter an error (due to the closed connection)
 	// and spuriously log it.
 	//
-	// We also use this to allow the reader goroutine to block the writer from
-	// logging anything at all by calling doLogErr(nil). This is useful when the
-	// reader wants to initiate a clean shutdown, and informs the writer of this
-	// by closing the connection in order to get its wait calls to stop blocking.
-	var logErr sync.Once
-	doLogErr := func(err error) {
-		logErr.Do(func() {
-			if err == nil {
-				// The reader called doLogErr just to beat the writer to the punch,
-				// not to actually log an error.
-				return
-			} else if err == io.EOF {
-				log.Debug("connection closed by client")
-			} else if err, ok := err.(net.Error); ok && err.Timeout() {
-				log.Debugf("closing connection due to timeout: %v\n", err)
-			} else {
-				s.stats.logConnFailure()
-				log.Errorf("connection error: %v\n", err)
-			}
-		})
-	}
-
-	// Since all errors encountered will be encountered by both goroutines, we
-	// put all error handling logic in the reader goroutine, keeping the writer
-	// goroutine very simple. When an error is encountered, the reader will log
-	// it, close the connection, and send a nil value on the responses channel.
-	// If the writer is currently blocked in a call to write, that call will
-	// return when the connection is closed. If the writer is currently blocked
-	// reading from the responses channel, that call will return when the nil
-	// value is sent. In either case, the writer will know to quit.
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// reader
-	go func() {
-		defer wg.Done()
-
-		for {
-			err := conn.SetReadDeadline(time.Now().Add(timeout))
-			if err != nil {
-				doLogErr(err)
-				conn.Close()
-				// Signal to any worker goroutines that they shouldn't bother writing
-				// responses to the channel since they'll be discarded anyway.
-				atomic.StoreUint32(&quit, 1)
-				// Signal to the writer goroutine to quit.
-				responses.Send(nil)
-				return
-			}
-
-			pkt := new(protocol.Packet)
-			_, err = pkt.ReadFrom(conn)
-			if err != nil {
-				doLogErr(err)
-				conn.Close()
-				// Signal to any worker goroutines that they shouldn't bother writing
-				// responses to the channel since they'll be discarded anyway.
-				atomic.StoreUint32(&quit, 1)
-				// Signal to the writer goroutine to quit.
-				responses.Send(nil)
-				return
-			}
-
-			job := worker.NewJob(pkt, commitFunc)
-			switch pkt.Operation.Opcode {
-			case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
-				protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
-				protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
-				ecdsaPool.SubmitJob(job)
-			default:
-				otherPool.SubmitJob(job)
-			}
+	// We also use this to allow Destroy to block the reader or writer from
+	// logging anything at all by calling Log(nil).
+	c.err.Do(func() {
+		if err == nil {
+			// Destroy was called, and it called Log to ensure that the errors
+			// encountered by the reader and writer due to interacting with a closed
+			// connection are not logged.
+			log.Debugf("connection %v: server closing connection", c.name)
+			return
+		} else if err == io.EOF {
+			log.Debugf("connection %v: closed by client", c.name)
+		} else if err, ok := err.(net.Error); ok && err.Timeout() {
+			log.Debugf("connection %v: closing due to timeout", c.name)
+		} else {
+			c.s.stats.logConnFailure()
+			log.Errorf("connection %v: encountered error: %v", c.name, err)
 		}
-	}()
-
-	// writer
-	go func() {
-		defer wg.Done()
-		pkt := protocol.Packet{
-			Header: protocol.Header{
-				MajorVers: 0x01,
-				MinorVers: 0x00,
-			},
-		}
-
-		for {
-			val := responses.Receive()
-			if val == nil {
-				// The reader goroutine signaled for us to quit.
-				return
-			}
-			resp := val.(response)
-
-			pkt.Length = resp.op.Bytes()
-			pkt.ID = resp.id
-			pkt.Operation = resp.op
-			buf, err := pkt.MarshalBinary()
-			if err != nil {
-				// According to MarshalBinary's documentation, it will never return a
-				// non-nil error.
-				panic(fmt.Sprintf("unexpected internal error: %v", err))
-			}
-
-			_, err = conn.Write(buf)
-			if err != nil {
-				doLogErr(err)
-				conn.Close()
-				return
-			}
-		}
-	}()
-
-	// Delete the connection from the map to avoid leaking resources.
-	wg.Wait()
-	mtx.Lock()
-	delete(conns, conn)
-	mtx.Unlock()
+	})
 }
 
 // Serve calls ServeConfig(l, DefaultServeConfig()).
@@ -684,14 +637,14 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	// handle method concurrently deletes its connection from it once the
 	// connection dies.
 	var mapMtx sync.Mutex
-	conns := make(map[*tls.Conn]bool)
+	conns := make(map[*worker.ClientHandle]bool)
 	var wg sync.WaitGroup
 
 	defer func() {
 		// Close all of the connections so that the associated goroutines quit.
 		mapMtx.Lock()
 		for c := range conns {
-			c.Close()
+			c.Destroy()
 		}
 		mapMtx.Unlock()
 		// Wait for all of the goroutines to quit.
@@ -711,15 +664,23 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		}
 
 		tconn := tls.Server(c, s.config)
+		client := newClient(s, c.RemoteAddr().String(), tconn, timeout, ecdsapool, otherpool)
+		log.Debugf("spawning new connection: %v", c.RemoteAddr())
+		handle := worker.SpawnClient(client)
+
 		mapMtx.Lock()
-		conns[tconn] = true
+		conns[handle] = true
 		mapMtx.Unlock()
 
 		wg.Add(1)
-		go func(tconn *tls.Conn, mtx *sync.Mutex, conns map[*tls.Conn]bool, otherpool, ecdsapool *worker.Pool, timeout time.Duration) {
-			s.handle(tconn, mtx, conns, otherpool, ecdsapool, timeout)
+		go func() {
+			handle.Wait()
+			log.Debugf("connection %v removed", c.RemoteAddr())
+			mapMtx.Lock()
+			delete(conns, handle)
+			mapMtx.Unlock()
 			wg.Done()
-		}(tconn, &mapMtx, conns, otherpool, ecdsapool, timeout)
+		}()
 	}
 }
 
