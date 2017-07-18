@@ -52,11 +52,11 @@ func NewPool(workers ...Worker) *Pool {
 	}
 
 	p.wg.Add(len(workers))
-	for i := 0; i < len(workers); i++ {
+	for _, w := range workers {
 		go func(w Worker) {
 			p.worker(w)
 			p.wg.Done()
-		}(workers[i])
+		}(w)
 	}
 	return p
 }
@@ -106,11 +106,11 @@ func NewIdlePool(idlers ...Idler) *IdlePool {
 	p := &IdlePool{}
 
 	p.wg.Add(len(idlers))
-	for i := 0; i < len(idlers); i++ {
+	for _, i := range idlers {
 		go func(i Idler) {
 			p.worker(i)
 			p.wg.Done()
-		}(idlers[i])
+		}(i)
 	}
 	return p
 }
