@@ -308,43 +308,71 @@ type done struct{}
 // A blocker is an object that keeps track of a number of outstanding requests,
 // and blocks if that number would exceed some maximum.
 type blocker struct {
-	// requestsLeft holds one token (uint8(1)) for every request that can be
-	// submitted before the requests need to block. The channel is closed when
-	// this blocker is closed, causing all future reads to immediately return 0.
-	requestsLeft chan uint8
+	// initialized to the maximum number of outstanding requests; if it is -1,
+	// implies that somebody is blocked in a call to Do
+	requestsLeft int
+	// used by Do to block if requestsLeft reaches -1
+	wg     sync.WaitGroup
+	closed bool
+	mtx    sync.Mutex
 }
 
 func newBlocker(max int) *blocker {
-	b := &blocker{requestsLeft: make(chan uint8, max)}
-	for i := 0; i < max; i++ {
-		b.requestsLeft <- 1
-	}
-	return b
+	return &blocker{requestsLeft: max}
 }
 
 // Do increments the number of outstanding requests by one. If the new number of
 // outstanding requests would exceed the maximum, Do blocks until it is safe to
 // increment the number of outstanding requests without exceeding the maximum.
+//
+// It is not safe to call Do concurrently with other calls to Do. It is safe to
+// call Do concurrently with calls to Done or Close.
 func (b *blocker) Do() (closed bool) {
-	val := <-b.requestsLeft
-	// We only ever send 1 on the channel, so 0 implies that the channel was
-	// closed (reads from a closed channel return the 0 value).
-	return val == 0
+	b.mtx.Lock()
+	if b.closed {
+		b.mtx.Unlock()
+		return true
+	}
+	b.requestsLeft--
+	if b.requestsLeft >= 0 {
+		b.mtx.Unlock()
+		return false
+	}
+
+	b.wg.Add(1)
+	b.mtx.Unlock()
+	b.wg.Wait()
+	b.mtx.Lock()
+	closed = b.closed
+	b.mtx.Unlock()
+	return closed
 }
 
 // Done decrements the number of outstanding requests by one.
 func (b *blocker) Done() {
-	// if b.requestsLeft is closed, the send will panic, so we recover from it
-	// (NOTE: for some reason 'defer recover()' alone doesn't work, but this does)
-	defer func() { recover() }()
-	b.requestsLeft <- 1
+	b.mtx.Lock()
+	if b.closed {
+		b.mtx.Unlock()
+		return
+	}
+	b.requestsLeft++
+	if b.requestsLeft == 0 {
+		b.wg.Done()
+	}
+	b.mtx.Unlock()
 }
 
 // Close closes b. Any current or future calls to Do will immediately return
 // true. It is safe to call Close multiple times.
 func (b *blocker) Close() {
-	// Close can be called multiple times, and after the first time, the call to
-	// close will panic because we're closing a closed channel.
-	defer func() { recover() }()
-	close(b.requestsLeft)
+	b.mtx.Lock()
+	if b.closed {
+		b.mtx.Unlock()
+		return
+	}
+	b.closed = true
+	if b.requestsLeft < 0 {
+		b.wg.Done()
+	}
+	b.mtx.Unlock()
 }
