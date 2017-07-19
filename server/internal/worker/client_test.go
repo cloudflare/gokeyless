@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,57 +23,71 @@ func TestBlocker(t *testing.T) {
 }
 
 type dummyClient struct {
-	requests  chan uint8
-	responses chan struct{}
-	closed    uint32
-	pool      *Pool
+	pool              *Pool
+	getter, submitter chan int
+	closed            bool
+	mtx               sync.RWMutex
 }
 
 func newDummyClient(pool *Pool) *dummyClient {
 	return &dummyClient{
-		requests:  make(chan uint8),
-		responses: make(chan struct{}),
 		pool:      pool,
+		getter:    make(chan int),
+		submitter: make(chan int),
 	}
 }
 
-func (d *dummyClient) sendJob() {
-	// Instead of having a complicated mechanism for not sending when the client
-	// has been destroyed, just do this hack to catch the panic resulting from
-	// sending on a closed channel.
-	defer func() { recover() }()
-	d.requests <- 1
+// Simulate a network client sending a request.
+func (d *dummyClient) sendRequest() {
+	d.mtx.RLock()
+	if d.closed {
+		d.mtx.RUnlock()
+		panic("sendRequest on closed dummyClient")
+	}
+
+	d.getter <- 1
+	d.mtx.RUnlock()
 }
 
-func (d *dummyClient) receiveResponse() { <-d.responses }
+// Simulate a network client receiving a job response.
+func (d *dummyClient) receiveResponse() {
+	d.mtx.RLock()
+	if d.closed {
+		d.mtx.RUnlock()
+		panic("receiveResponse on a closed dummyClient")
+	}
+
+	d.submitter <- 1
+	d.mtx.RUnlock()
+}
 
 func (d *dummyClient) GetJob() (job interface{}, pool *Pool, ok bool) {
-	val := <-d.requests
-	if val == 0 {
-		return nil, nil, false
-	}
-	return 0, d.pool, true
+	val := <-d.getter
+	return 0, d.pool, val == 1
 }
 
 func (d *dummyClient) SubmitResult(result interface{}) (ok bool) {
-	defer func() {
-		if recover() != nil {
-			ok = false
-		}
-	}()
-	d.responses <- struct{}{}
-	return true
+	val := <-d.submitter
+	return val == 1
 }
 
-func (d *dummyClient) IsAlive() bool { return atomic.LoadUint32(&d.closed) == 0 }
+func (d *dummyClient) IsAlive() bool {
+	d.mtx.RLock()
+	closed := d.closed
+	d.mtx.RUnlock()
+	return !closed
+}
 
 func (d *dummyClient) Destroy() {
-	// Destroy can be called multiple times, and after the first time, the calls
-	// to close will panic because we're closing a closed channel.
-	defer func() { recover() }()
-	atomic.StoreUint32(&d.closed, 1)
-	close(d.requests)
-	close(d.responses)
+	d.mtx.Lock()
+	if d.closed {
+		d.mtx.Unlock()
+		return
+	}
+	d.closed = true
+	close(d.getter)
+	close(d.submitter)
+	d.mtx.Unlock()
 }
 
 type dummyWorker struct{}
@@ -87,7 +102,7 @@ func newClientSetup() (cli *dummyClient, handle *ClientHandle) {
 
 func TestClientBasic(t *testing.T) {
 	cli, handle := newClientSetup()
-	cli.sendJob()
+	cli.sendRequest()
 	handle.Destroy()
 }
 
@@ -98,12 +113,12 @@ func TestClientBlocks(t *testing.T) {
 	cli, handle := newClientSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendJob()
+		cli.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum; this should block.
 	var done uint32
-	go func() { cli.sendJob(); atomic.StoreUint32(&done, 1) }()
+	go func() { cli.sendRequest(); atomic.StoreUint32(&done, 1) }()
 
 	// Give the job plenty of time to be submitted if it's not blocked
 	time.Sleep(10 * time.Millisecond)
@@ -130,7 +145,7 @@ func TestClientDestroyDuringBackpressure(t *testing.T) {
 	cli, handle := newClientSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendJob()
+		cli.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum, so the submitter
@@ -154,7 +169,7 @@ func TestClientDestroyDuringSubmit(t *testing.T) {
 	cli, handle := newClientSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendJob()
+		cli.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum, so the submitter

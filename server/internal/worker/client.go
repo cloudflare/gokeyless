@@ -153,10 +153,10 @@ type Client interface {
 
 	// IsAlive returns whether or not the client is still alive (if no more
 	// jobs can be gotten via GetJob, but submitting is still enabled, the client
-	// is considered alive). So long as the client is alive, it is acceptable for
-	// IsAlive to block. Once the client has died, it must not block. Thus, it is
-	// legal to implement IsAlive by blocking until the client is dead and then
-	// returning false.
+	// is considered alive). Once it returns false, it may never return true
+	// again.
+	//
+	// It must be safe to call IsAlive so long as the Client object exists.
 	IsAlive() bool
 
 	// Destroy destructs the client's connection. After a call to Destroy, all
@@ -200,11 +200,16 @@ func SpawnClient(client Client) *ClientHandle {
 		c.submitter()
 		c.wg.Done()
 	}()
+
+	// NOTE: The background liveness checking goroutine doesn't participate in the
+	// WaitGroup because we don't care about it - it doesn't affect anything if
+	// it's still alive.
 	go func() {
 		for {
 			time.Sleep(time.Second)
-			// NOTE: This call may simply block until c.client is dead, but that's
-			// fine.
+			if atomic.LoadUint32(&c.destroyed) == 1 {
+				return
+			}
 			if !c.client.IsAlive() {
 				c.destroy()
 				return
