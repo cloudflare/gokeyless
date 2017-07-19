@@ -446,16 +446,16 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	return makeRespondResponse(pkt.ID, sig)
 }
 
-type idler struct {
+type backgroundWorker struct {
 	buf *buf_ecdsa.SyncRandBuffer
 }
 
-func newIdler(buf *buf_ecdsa.SyncRandBuffer) *idler {
-	return &idler{buf: buf}
+func newBackgroundWorker(buf *buf_ecdsa.SyncRandBuffer) *backgroundWorker {
+	return &backgroundWorker{buf: buf}
 }
 
-func (i *idler) Idle() {
-	err := i.buf.Fill(rand.Reader)
+func (w *backgroundWorker) Do() {
+	err := w.buf.Fill(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -604,7 +604,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 
 	var others []worker.Worker
 	var ecdsas []worker.Worker
-	var idlers []worker.Idler
+	var background []worker.BackgroundWorker
 	rbuf := buf_ecdsa.NewSyncRandBuffer(randBufferLen, elliptic.P256())
 	for i := 0; i < cfg.otherWorkers; i++ {
 		others = append(others, newOtherWorker(s, fmt.Sprintf("other-%v", i)))
@@ -612,11 +612,11 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	for i := 0; i < cfg.ecdsaWorkers; i++ {
 		ecdsas = append(ecdsas, newECDSAWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
 	}
-	for i := 0; i < cfg.idleWorkers; i++ {
-		idlers = append(idlers, newIdler(rbuf))
+	for i := 0; i < cfg.bgWorkers; i++ {
+		background = append(background, newBackgroundWorker(rbuf))
 	}
 
-	idlepool := worker.NewIdlePool(idlers...)
+	bgpool := worker.NewBackgroundPool(background...)
 	otherpool := worker.NewPool(others...)
 	ecdsapool := worker.NewPool(ecdsas...)
 
@@ -651,7 +651,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		wg.Wait()
 
 		// Destroy the pools
-		idlepool.Destroy()
+		bgpool.Destroy()
 		otherpool.Destroy()
 		ecdsapool.Destroy()
 	}()
@@ -738,12 +738,12 @@ func (s *Server) Close() {
 }
 
 // ServeConfig is used to configure a call to Server.Serve. It specifies the
-// number of ECDSA worker goroutines, other worker goroutines, and idle worker
-// goroutines to use. It also specifies the network connection timeout.
+// number of ECDSA worker goroutines, other worker goroutines, and background
+// worker goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
 	tcpAddr, unixAddr          string
 	ecdsaWorkers, otherWorkers int
-	idleWorkers                int
+	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
 }
 
@@ -756,7 +756,7 @@ const (
 // values:
 //  - The number of ECDSA workers is min(2, runtime.NumCPU())
 //  - The number of other workers is 2
-//  - The number of idle workers is 1
+//  - The number of background workers is 1
 //  - The TCP connection timeout is 30 seconds
 //  - The Unix connection timeout is 1 hour
 //
@@ -771,7 +771,7 @@ func DefaultServeConfig() *ServeConfig {
 	return &ServeConfig{
 		ecdsaWorkers: necdsa,
 		otherWorkers: 2,
-		idleWorkers:  1,
+		bgWorkers:    1,
 		tcpTimeout:   defaultTCPTimeout,
 		unixTimeout:  defaultUnixTimeout,
 	}
@@ -801,9 +801,10 @@ func (s *ServeConfig) OtherWorkers(n int) *ServeConfig {
 	return s
 }
 
-// IdleWorkers specifies the number of idle worker goroutines to use.
-func (s *ServeConfig) IdleWorkers(n int) *ServeConfig {
-	s.idleWorkers = n
+// BackgroundWorkers specifies the number of background worker goroutines to
+// use.
+func (s *ServeConfig) BackgroundWorkers(n int) *ServeConfig {
+	s.bgWorkers = n
 	return s
 }
 
