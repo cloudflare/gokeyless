@@ -22,6 +22,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
@@ -446,46 +447,46 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	return makeRespondResponse(pkt.ID, sig)
 }
 
-type backgroundWorker struct {
+type randGenWorker struct {
 	buf *buf_ecdsa.SyncRandBuffer
 }
 
-func newBackgroundWorker(buf *buf_ecdsa.SyncRandBuffer) *backgroundWorker {
-	return &backgroundWorker{buf: buf}
+func newRandGenWorker(buf *buf_ecdsa.SyncRandBuffer) *randGenWorker {
+	return &randGenWorker{buf: buf}
 }
 
-func (w *backgroundWorker) Do() {
+func (w *randGenWorker) Do() {
 	err := w.buf.Fill(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
 }
 
-// client implements the worker.Client interface. One is created to handle each
-// connection from clients over the network. See the documentation in the worker
+// conn implements the client.Conn interface. One is created to handle each
+// connection from clients over the network. See the documentation in the client
 // package for details.
-type client struct {
+type conn struct {
 	conn net.Conn
 	// name used to identify this client in logs
 	name                 string
 	timeout              time.Duration
 	ecdsaPool, otherPool *worker.Pool
-	// used by the Log method
-	err sync.Once
-	s   *Server
+	// used by the LogConnErr method
+	logErr sync.Once
+	s      *Server
 }
 
-func newClient(s *Server, name string, conn net.Conn, timeout time.Duration, ecdsa, other *worker.Pool) *client {
-	return &client{conn: conn, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s}
+func newConn(s *Server, name string, c net.Conn, timeout time.Duration, ecdsa, other *worker.Pool) *conn {
+	return &conn{conn: c, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s}
 }
 
-func (c *client) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
+func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 	err := c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	if err != nil {
 		// TODO: Is it possible for the client closing this half of the connection
 		// to cause SetReadDeadline to return io.EOF? If so, we may want to do the
 		// same logic as the other error handling block in this function.
-		c.Log(err)
+		c.LogConnErr(err)
 		c.conn.Close()
 		return nil, nil, false
 	}
@@ -505,7 +506,7 @@ func (c *client) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 			// even if the connection is closed correctly, it will still get logged.
 			log.Debugf("connection %v: reading half closed by client", c.name)
 		} else {
-			c.Log(err)
+			c.LogConnErr(err)
 			c.conn.Close()
 		}
 		return nil, nil, false
@@ -521,7 +522,7 @@ func (c *client) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 	}
 }
 
-func (c *client) SubmitResult(result interface{}) (ok bool) {
+func (c *conn) SubmitResult(result interface{}) (ok bool) {
 	resp := result.(response)
 	pkt := protocol.Packet{
 		Header: protocol.Header{
@@ -542,25 +543,28 @@ func (c *client) SubmitResult(result interface{}) (ok bool) {
 
 	_, err = c.conn.Write(buf)
 	if err != nil {
-		c.Log(err)
+		c.LogConnErr(err)
 		c.conn.Close()
 		return false
 	}
 	return true
 }
 
-func (c *client) IsAlive() bool {
+func (c *conn) IsAlive() bool {
 	var buf [0]byte
 	_, err := c.conn.Read(buf[:])
 	return err == nil
 }
 
-func (c *client) Destroy() {
-	c.Log(nil)
+func (c *conn) Destroy() {
+	c.LogConnErr(nil)
 	c.conn.Close()
 }
 
-func (c *client) Log(err error) {
+// Log an error with the connection (reading, writing, setting a deadline, etc).
+// Any error logged here is a fatal one that will cause us to terminate the
+// connection and clean up the client.
+func (c *conn) LogConnErr(err error) {
 	// Use a sync.Once so that only the first goroutine to encounter an error gets
 	// to log it. This avoids the circumstance where a goroutine encounters an
 	// error, logs it, and then closes the network connection, which causes the
@@ -569,7 +573,7 @@ func (c *client) Log(err error) {
 	//
 	// We also use this to allow Destroy to block the reader or writer from
 	// logging anything at all by calling Log(nil).
-	c.err.Do(func() {
+	c.logErr.Do(func() {
 		if err == nil {
 			// Destroy was called, and it called Log to ensure that the errors
 			// encountered by the reader and writer due to interacting with a closed
@@ -613,7 +617,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		ecdsas = append(ecdsas, newECDSAWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
 	}
 	for i := 0; i < cfg.bgWorkers; i++ {
-		background = append(background, newBackgroundWorker(rbuf))
+		background = append(background, newRandGenWorker(rbuf))
 	}
 
 	bgpool := worker.NewBackgroundPool(background...)
@@ -637,7 +641,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	// handle method concurrently deletes its connection from it once the
 	// connection dies.
 	var mapMtx sync.Mutex
-	conns := make(map[*worker.ClientHandle]bool)
+	conns := make(map[*client.ConnHandle]bool)
 	var wg sync.WaitGroup
 
 	defer func() {
@@ -664,9 +668,9 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		}
 
 		tconn := tls.Server(c, s.config)
-		client := newClient(s, c.RemoteAddr().String(), tconn, timeout, ecdsapool, otherpool)
+		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, ecdsapool, otherpool)
 		log.Debugf("spawning new connection: %v", c.RemoteAddr())
-		handle := worker.SpawnClient(client)
+		handle := client.SpawnConn(conn)
 
 		mapMtx.Lock()
 		conns[handle] = true

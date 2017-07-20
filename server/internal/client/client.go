@@ -1,9 +1,11 @@
-package worker
+package client
 
 import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
 // Design
@@ -131,20 +133,20 @@ const (
 // call Destroy and know that outstanding calls to GetJob or SubmitResult will
 // immediately return.
 
-// A Client is a server-side handle on a connection to a client. It is capable
+// A Conn is a server-side handle on a connection to a client. It is capable
 // of reading job requests from the client, writing responses to the client, and
 // shutting down the connection.
 //
-// Since Clients can be backed by TCP connections, it is acceptable for GetJob
-// to return false (indicating that there are no jobs to be done - in the case
-// of a TCP connection, caused by a half-close of the connection) while
-// SubmitResult continues to return true (because writing to the connection is
-// still allowed).
-type Client interface {
+// Since Conns can be backed by TCP connections, it is acceptable for GetJob to
+// return false (indicating that there are no jobs to be done - in the case of a
+// TCP connection, caused by a half-close of the connection) while SubmitResult
+// continues to return true (because writing to the connection is still
+// allowed).
+type Conn interface {
 	// GetJob returns the next job to perform, or ok = false if there are no more
 	// jobs to do. If it returns a job, it also returns the pool to which that job
 	// should be submitted.
-	GetJob() (job interface{}, pool *Pool, ok bool)
+	GetJob() (job interface{}, pool *worker.Pool, ok bool)
 
 	// SubmitResult submits the result of a previously-requested job. If the
 	// result cannot be submitted, it returns false. This implies that the client
@@ -168,23 +170,22 @@ type Client interface {
 	Destroy()
 }
 
-// A ClientHandle is a handle on a pair of reader/writer goroutines that are
+// A ConnHandle is a handle on a pair of reader/writer goroutines that are
 // processing requests from a client.
-type ClientHandle struct {
-	client    Client
+type ConnHandle struct {
+	conn      Conn
 	wg        sync.WaitGroup
 	responses chan interface{}
 	blocker   *blocker
 	destroyed uint32 // atomically set to 1 when destroyed
 }
 
-// SpawnClient spawns a pair of goroutines to handle requests from the client.
-// One goroutine reads jobs from the client and submits them a worker pool,
-// while the other waits of the results of these jobs and writes them to the
-// client.
-func SpawnClient(client Client) *ClientHandle {
-	c := &ClientHandle{
-		client: client,
+// SpawnConn spawns a pair of goroutines to handle requests from the client. One
+// goroutine reads jobs from the client and submits them a worker pool, while
+// the other waits of the results of these jobs and writes them to the client.
+func SpawnConn(conn Conn) *ConnHandle {
+	c := &ConnHandle{
+		conn: conn,
 		// responses needs to have an extra slot for the sentinal value sent by
 		// Destroy
 		responses: make(chan interface{}, maxOutstandingRequests+2),
@@ -210,7 +211,7 @@ func SpawnClient(client Client) *ClientHandle {
 			if atomic.LoadUint32(&c.destroyed) == 1 {
 				return
 			}
-			if !c.client.IsAlive() {
+			if !c.conn.IsAlive() {
 				c.destroy()
 				return
 			}
@@ -220,13 +221,13 @@ func SpawnClient(client Client) *ClientHandle {
 	return c
 }
 
-// Destroy destructs the client. It calls Destroy on the Client that this handle
-// was originally constructed with, and shuts down both background goroutines.
-// It only returns once both goroutines have quit.
+// Destroy destructs the conn. It calls Destroy on the Conn that this handle was
+// originally constructed with, and shuts down both background goroutines. It
+// only returns once both goroutines have quit.
 //
-// If Destroy is called on a ClientHandle which has already been destroyed, the
+// If Destroy is called on a ConnHandle which has already been destroyed, the
 // behavior is undefined.
-func (c *ClientHandle) Destroy() {
+func (c *ConnHandle) Destroy() {
 	wasDestroyed := !atomic.CompareAndSwapUint32(&c.destroyed, 0, 1)
 	if wasDestroyed {
 		// This isn't technically necessary - we document that behavior in this case
@@ -238,11 +239,11 @@ func (c *ClientHandle) Destroy() {
 	c.wg.Wait()
 }
 
-func (c *ClientHandle) destroy() {
+func (c *ConnHandle) destroy() {
 	// Make any call (including currently outstanding calls) to GetJob or
 	// SubmitResult immediately return false. This will signal to getter or setter
 	// to return.
-	c.client.Destroy()
+	c.conn.Destroy()
 	// Make any call (including currently outstanding calls) to Do immediately
 	// return with a value indicating that the blocker has been closed. This will
 	// signal to getter to return if it's blocking on c.blocker.Do().
@@ -265,12 +266,12 @@ func (c *ClientHandle) destroy() {
 // Wait blocks until both background goroutines have quit. This can happen
 // either because of a call to c.Destroy or because the underlying client was
 // closed or encountered an error.
-func (c *ClientHandle) Wait() { c.wg.Wait() }
+func (c *ConnHandle) Wait() { c.wg.Wait() }
 
-func (c *ClientHandle) getter() {
+func (c *ConnHandle) getter() {
 	commit := func(resp interface{}) { c.responses <- resp }
 	for {
-		job, pool, ok := c.client.GetJob()
+		job, pool, ok := c.conn.GetJob()
 		if !ok {
 			return
 		}
@@ -284,11 +285,11 @@ func (c *ClientHandle) getter() {
 		if closed {
 			return
 		}
-		pool.SubmitJob(NewJob(job, commit))
+		pool.SubmitJob(worker.NewJob(job, commit))
 	}
 }
 
-func (c *ClientHandle) submitter() {
+func (c *ConnHandle) submitter() {
 	for {
 		resp := <-c.responses
 		if (resp == done{}) {
@@ -299,7 +300,7 @@ func (c *ClientHandle) submitter() {
 		// room for one more outstanding request to be submitted without risk of
 		// causing a worker goroutine to block.
 		c.blocker.Done()
-		ok := c.client.SubmitResult(resp)
+		ok := c.conn.SubmitResult(resp)
 		if !ok {
 			return
 		}

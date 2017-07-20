@@ -1,10 +1,12 @@
-package worker
+package client
 
 import (
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
 func TestBlocker(t *testing.T) {
@@ -22,15 +24,15 @@ func TestBlocker(t *testing.T) {
 	}
 }
 
-type dummyClient struct {
-	pool              *Pool
+type dummyConn struct {
+	pool              *worker.Pool
 	getter, submitter chan int
 	closed            bool
 	mtx               sync.RWMutex
 }
 
-func newDummyClient(pool *Pool) *dummyClient {
-	return &dummyClient{
+func newDummyConn(pool *worker.Pool) *dummyConn {
+	return &dummyConn{
 		pool:      pool,
 		getter:    make(chan int),
 		submitter: make(chan int),
@@ -38,7 +40,7 @@ func newDummyClient(pool *Pool) *dummyClient {
 }
 
 // Simulate a network client sending a request.
-func (d *dummyClient) sendRequest() {
+func (d *dummyConn) sendRequest() {
 	d.mtx.RLock()
 	if d.closed {
 		d.mtx.RUnlock()
@@ -50,7 +52,7 @@ func (d *dummyClient) sendRequest() {
 }
 
 // Simulate a network client receiving a job response.
-func (d *dummyClient) receiveResponse() {
+func (d *dummyConn) receiveResponse() {
 	d.mtx.RLock()
 	if d.closed {
 		d.mtx.RUnlock()
@@ -61,24 +63,24 @@ func (d *dummyClient) receiveResponse() {
 	d.mtx.RUnlock()
 }
 
-func (d *dummyClient) GetJob() (job interface{}, pool *Pool, ok bool) {
+func (d *dummyConn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 	val := <-d.getter
 	return 0, d.pool, val == 1
 }
 
-func (d *dummyClient) SubmitResult(result interface{}) (ok bool) {
+func (d *dummyConn) SubmitResult(result interface{}) (ok bool) {
 	val := <-d.submitter
 	return val == 1
 }
 
-func (d *dummyClient) IsAlive() bool {
+func (d *dummyConn) IsAlive() bool {
 	d.mtx.RLock()
 	closed := d.closed
 	d.mtx.RUnlock()
 	return !closed
 }
 
-func (d *dummyClient) Destroy() {
+func (d *dummyConn) Destroy() {
 	d.mtx.Lock()
 	if d.closed {
 		d.mtx.Unlock()
@@ -94,15 +96,15 @@ type dummyWorker struct{}
 
 func (d *dummyWorker) Do(job interface{}) (result interface{}) { return job }
 
-func newClientSetup() (cli *dummyClient, handle *ClientHandle) {
-	pool := NewPool(&dummyWorker{})
-	cli = newDummyClient(pool)
-	return cli, SpawnClient(cli)
+func newConnSetup() (conn *dummyConn, handle *ConnHandle) {
+	pool := worker.NewPool(&dummyWorker{})
+	conn = newDummyConn(pool)
+	return conn, SpawnConn(conn)
 }
 
 func TestClientBasic(t *testing.T) {
-	cli, handle := newClientSetup()
-	cli.sendRequest()
+	conn, handle := newConnSetup()
+	conn.sendRequest()
 	handle.Destroy()
 }
 
@@ -110,15 +112,15 @@ func TestClientBasic(t *testing.T) {
 // outstanding requests is capped, and that relieving backpressure allows the
 // system to make progress.
 func TestClientBlocks(t *testing.T) {
-	cli, handle := newClientSetup()
+	conn, handle := newConnSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendRequest()
+		conn.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum; this should block.
 	var done uint32
-	go func() { cli.sendRequest(); atomic.StoreUint32(&done, 1) }()
+	go func() { conn.sendRequest(); atomic.StoreUint32(&done, 1) }()
 
 	// Give the job plenty of time to be submitted if it's not blocked
 	time.Sleep(10 * time.Millisecond)
@@ -127,7 +129,7 @@ func TestClientBlocks(t *testing.T) {
 	}
 
 	// Allow one value to be submitted, unblocking the send above
-	cli.receiveResponse()
+	conn.receiveResponse()
 
 	// Give the job time to be submitted
 	time.Sleep(time.Millisecond)
@@ -135,41 +137,41 @@ func TestClientBlocks(t *testing.T) {
 		t.Errorf("job not submitted")
 	}
 
-	cli.receiveResponse()
+	conn.receiveResponse()
 	handle.Destroy()
 }
 
 // This test tests that even when the submitter is blocking due to backpressure,
 // the ClientHandle can still be destroyed.
 func TestClientDestroyDuringBackpressure(t *testing.T) {
-	cli, handle := newClientSetup()
+	conn, handle := newConnSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendRequest()
+		conn.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum, so the submitter
 	// should be blocking. Give them a bit of time just in case.
 	time.Sleep(time.Millisecond)
 
-	cli.receiveResponse()
+	conn.receiveResponse()
 	handle.Destroy()
 }
 
 // This test tests that even when the getter is blocking on GetJob, destroying
 // the ClientHandle still works.
 func TestClientDestroyDuringGet(t *testing.T) {
-	_, handle := newClientSetup()
+	_, handle := newConnSetup()
 	handle.Destroy()
 }
 
 // This test tests that even when the submitter is blocking on SubmitJob,
 // destroying the ClientHandle still works.
 func TestClientDestroyDuringSubmit(t *testing.T) {
-	cli, handle := newClientSetup()
+	conn, handle := newConnSetup()
 
 	for i := 0; i < maxOutstandingRequests+2; i++ {
-		cli.sendRequest()
+		conn.sendRequest()
 	}
 
 	// The number of outstanding requests is now the maximum, so the submitter
@@ -183,8 +185,8 @@ func TestClientDestroyDuringSubmit(t *testing.T) {
 // has already gone away. It also tests that Wait will return properly if the
 // underlying client goes away.
 func TestClientDestroyAfterQuit(t *testing.T) {
-	cli, handle := newClientSetup()
-	cli.Destroy()
+	conn, handle := newConnSetup()
+	conn.Destroy()
 	handle.Wait()
 	handle.Destroy()
 }
