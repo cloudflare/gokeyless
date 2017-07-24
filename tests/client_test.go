@@ -20,7 +20,7 @@ import (
 	"go4.org/testing/functest"
 
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 func TestConnect(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBlacklist(t *testing.T) {
 	}
 	blc.ClearBlacklist()
 	// add server certificate to blacklist
-	for _, cert := range s.Config.Certificates {
+	for _, cert := range s.TLSConfig().Certificates {
 		if cert.Leaf == nil {
 			if len(cert.Certificate) == 0 {
 				t.Fatal("invalid server certificate")

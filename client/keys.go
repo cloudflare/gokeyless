@@ -11,7 +11,7 @@ import (
 	"net"
 
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 var (

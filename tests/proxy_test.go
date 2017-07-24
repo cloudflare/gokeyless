@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudflare/gokeyless/internal/server"
+	"github.com/cloudflare/gokeyless/server"
 )
 
 const (
@@ -82,7 +82,7 @@ func TestTLSProxy(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	keys := server.NewDefaultKeystore()
-	s.Keys = keys
+	s.SetKeystore(keys)
 	pemKey, err := ioutil.ReadFile(tlsKey)
 	if err != nil {
 		t.Fatal(err)

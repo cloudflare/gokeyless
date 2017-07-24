@@ -10,14 +10,12 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/internal/server"
+	"github.com/cloudflare/gokeyless/server"
 )
 
 var (
@@ -78,19 +76,17 @@ func main() {
 		initializeServerCertAndKey()
 	}
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile, net.JoinHostPort("", port), "")
+	s, err := server.NewServerFromFile(certFile, keyFile, caFile)
 	if err != nil {
 		log.Fatal("cannot start server:", err)
 	}
 
-	go func() { log.Fatal(s.ListenAndServe()) }()
-	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
-
-	keys := server.NewDefaultKeystore()
-	if err := keys.LoadKeysFromDir(keyDir, LoadKey); err != nil {
+	keys, err := server.NewKeystoreFromDir(keyDir, LoadKey)
+	if err != nil {
 		log.Fatal(err)
 	}
-	s.Keys = keys
+
+	s.SetKeystore(keys)
 
 	if pidFile != "" {
 		if f, err := os.Create(pidFile); err != nil {
@@ -101,32 +97,9 @@ func main() {
 		}
 	}
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGHUP)
-	for {
-		select {
-		case <-c:
-			log.Info("Received SIGHUP, reloading keys...")
-			keys := server.NewDefaultKeystore()
-			if err := keys.LoadKeysFromDir(keyDir, LoadKey); err != nil {
-				log.Fatal(err)
-			}
-			s.Keys = keys
-
-			log.Info("Check server certificate...")
-			if needNewCertAndKey() {
-				initializeServerCertAndKey()
-				log.Info("server certificate is renewed")
-			}
-			log.Info("loading server certificate")
-			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-			if err != nil {
-				log.Fatalf("cannot load server cert/key: %v", err)
-			}
-			s.Config.Certificates = []tls.Certificate{cert}
-			log.Info("server certificate is valid, restart completes")
-		}
-	}
+	cfg := server.DefaultServeConfig().TCPAddr(net.JoinHostPort("", port))
+	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
+	log.Fatal(s.ListenAndServeConfig(cfg))
 }
 
 // LoadKey attempts to load a private key from PEM or DER.

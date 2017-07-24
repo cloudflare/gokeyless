@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudflare/gokeyless/internal/protocol"
+	"github.com/cloudflare/gokeyless/protocol"
 )
 
 // The Conn type implemented here contains a single network connection to a
