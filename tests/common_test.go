@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"io/ioutil"
 	"time"
 
@@ -67,6 +68,17 @@ func (dummySealer) Unseal(op *protocol.Operation) (res []byte, err error) {
 	return
 }
 
+type DummyRPC struct{}
+
+func (DummyRPC) Append(in string, out *string) error {
+	*out = in + " World"
+	return nil
+}
+
+func (DummyRPC) Error(_ string, _ *string) error {
+	return errors.New("remote rpc error")
+}
+
 // LoadKey attempts to load a private key from PEM or DER.
 func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	priv, err = helpers.ParsePrivateKeyPEM(in)
@@ -114,6 +126,9 @@ func init() {
 
 	s.SetGetCert(dummyGetCertificate)
 	s.SetSealer(dummySealer{})
+	if err = s.RegisterRPC(DummyRPC{}); err != nil {
+		log.Fatal(err)
+	}
 
 	listening := make(chan bool)
 	go func() {
