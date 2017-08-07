@@ -201,6 +201,12 @@ func (s *Server) SetSealer(sealer Sealer) {
 }
 
 // RegisterRPC publishes in the server the methods on rcvr.
+//
+// When a client sends a message with the opcode OpRPC, the payload of the
+// message is extracted and decoded as an RPC method and a set of RPC arguments.
+// This information is passed to the server's dispatcher (a *net/rpc.Server),
+// which then calls the appropriate dynamically-registered reciever. See net/rpc
+// for information on what kinds of recievers can be registered.
 func (s *Server) RegisterRPC(rcvr interface{}) error {
 	return s.dispatcher.Register(rcvr)
 }
