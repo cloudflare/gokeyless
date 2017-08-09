@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,11 +9,13 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
+	"net/rpc"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -126,6 +129,8 @@ type Server struct {
 	getCert GetCert
 	// sealer is called for Seal and Unseal operations.
 	sealer Sealer
+	// dispatcher is an RPC server that exposes arbitrary APIs to the client.
+	dispatcher *rpc.Server
 
 	// TODO(joshlf): Re-architect so that we don't need to store listeners in the
 	// struct (which is totally not thread safe)
@@ -148,8 +153,9 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool) *Server {
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		keys:  NewDefaultKeystore(),
-		stats: newStatistics(),
+		keys:       NewDefaultKeystore(),
+		stats:      newStatistics(),
+		dispatcher: rpc.NewServer(),
 	}
 }
 
@@ -192,6 +198,17 @@ func (s *Server) SetKeystore(keys Keystore) {
 // any other methods.
 func (s *Server) SetSealer(sealer Sealer) {
 	s.sealer = sealer
+}
+
+// RegisterRPC publishes in the server the methods on rcvr.
+//
+// When a client sends a message with the opcode OpRPC, the payload of the
+// message is extracted and decoded as an RPC method and a set of RPC arguments.
+// This information is passed to the server's dispatcher (a *net/rpc.Server),
+// which then calls the appropriate dynamically-registered reciever. See net/rpc
+// for information on what kinds of recievers can be registered.
+func (s *Server) RegisterRPC(rcvr interface{}) error {
+	return s.dispatcher.Register(rcvr)
 }
 
 // GetCert is a function that returns a certificate given a request.
@@ -292,6 +309,19 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		}
 		w.s.stats.logRequestDuration(requestBegin)
 		return makeRespondResponse(pkt.ID, res)
+
+	case protocol.OpRPC:
+		codec := newServerCodec(pkt.Payload)
+
+		err := w.s.dispatcher.ServeRequest(codec)
+		if err != nil {
+			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
+			w.s.stats.logInvalid(requestBegin)
+			return makeErrResponse(pkt.ID, protocol.ErrInternal)
+		}
+
+		w.s.stats.logRequestDuration(requestBegin)
+		return makeRespondResponse(pkt.ID, codec.response)
 
 	case protocol.OpRSADecrypt:
 		if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
@@ -706,7 +736,7 @@ func (s *Server) ListenAndServeConfig(cfg *ServeConfig) error {
 		log.Infof("Listening at tcp://%s\n", l.Addr())
 		return s.ServeConfig(l, cfg)
 	}
-	return errors.New("can't listen on empty path")
+	return errors.New("can't listen on empty address")
 }
 
 // UnixListenAndServe calls UnixListenAndServeConfig(DefaultServeConfig()).
@@ -826,4 +856,42 @@ func (s *ServeConfig) TCPTimeout(timeout time.Duration) *ServeConfig {
 func (s *ServeConfig) UnixTimeout(timeout time.Duration) *ServeConfig {
 	s.unixTimeout = timeout
 	return s
+}
+
+// serverCodec implements net/rpc.ServerCodec over the payload of a gokeyless
+// operation. It can only be used one time.
+type serverCodec struct {
+	request  *gob.Decoder
+	response []byte
+}
+
+func newServerCodec(payload []byte) *serverCodec {
+	dec := gob.NewDecoder(bytes.NewBuffer(payload))
+	return &serverCodec{request: dec}
+}
+
+func (sc *serverCodec) ReadRequestHeader(req *rpc.Request) error {
+	return sc.request.Decode(req)
+}
+
+func (sc *serverCodec) ReadRequestBody(body interface{}) error {
+	return sc.request.Decode(body)
+}
+
+func (sc *serverCodec) WriteResponse(res *rpc.Response, body interface{}) error {
+	buff := &bytes.Buffer{}
+	enc := gob.NewEncoder(buff)
+
+	if err := enc.Encode(res); err != nil {
+		return err
+	} else if err := enc.Encode(body); err != nil {
+		return err
+	}
+
+	sc.response = buff.Bytes()
+	return nil
+}
+
+func (sc *serverCodec) Close() error {
+	return errors.New("an rpc server codec cannot be closed")
 }

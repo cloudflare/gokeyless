@@ -5,8 +5,11 @@ package conn
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
+	"io"
 	"net"
+	"net/rpc"
 	"runtime"
 	"sync"
 	"time"
@@ -305,4 +308,66 @@ func (c *Conn) Ping(data []byte) error {
 	default:
 		return fmt.Errorf("ping: got unexpected response opcode: %v", result.Opcode)
 	}
+}
+
+// RPC returns an RPC client which uses the connection. Closing the returned
+// *rpc.Client will cleanup any spawned goroutines, but will not close the
+// underlying connection.
+func (c *Conn) RPC() *rpc.Client {
+	pr, pw := io.Pipe()
+	codec := &clientCodec{c, pr, pw, nil}
+
+	return rpc.NewClientWithCodec(codec)
+}
+
+// clientCodec implements net/rpc.ClientCodec over a connection to a gokeyless
+// server.
+type clientCodec struct {
+	conn *Conn
+
+	pr  *io.PipeReader
+	pw  *io.PipeWriter
+	dec *gob.Decoder
+}
+
+func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
+	buff := &bytes.Buffer{}
+	enc := gob.NewEncoder(buff)
+
+	if err := enc.Encode(req); err != nil {
+		return err
+	} else if err := enc.Encode(body); err != nil {
+		return err
+	}
+
+	result, err := cc.conn.DoOperation(protocol.Operation{
+		Opcode:  protocol.OpRPC,
+		Payload: buff.Bytes(),
+	})
+	if err != nil {
+		return err
+	} else if result.Opcode == protocol.OpError {
+		return result.GetError()
+	} else if result.Opcode != protocol.OpResponse {
+		return fmt.Errorf("wrong response opcode: %v", result.Opcode)
+	} else if _, err = cc.pw.Write(result.Payload); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cc *clientCodec) ReadResponseHeader(res *rpc.Response) error {
+	// gob decoders are stateful but we encode statelessly, so we need to reset
+	// the decoder after every full read.
+	cc.dec = gob.NewDecoder(cc.pr)
+	return cc.dec.Decode(res)
+}
+
+func (cc *clientCodec) ReadResponseBody(body interface{}) error {
+	return cc.dec.Decode(body)
+}
+
+func (cc *clientCodec) Close() error {
+	return cc.pr.Close()
 }

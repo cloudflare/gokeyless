@@ -82,14 +82,14 @@ func TestMain(m *testing.M) {
 	go s.Serve(unixListener)
 
 	// wait for server to start
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(time.Second)
 	// Setup keyless client
 	c, err = NewClientFromFile(clientCert, clientKey, keyserverCA)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// set aggressive timeout since all tests use local connections
-	c.Dialer.Timeout = 1 * time.Second
+	c.Dialer.Timeout = 3 * time.Second
 
 	// start a remote server at serverAddr
 	host, port, _ := net.SplitHostPort(sAddr)

@@ -289,3 +289,27 @@ func TestConcurrency(t *testing.T) {
 		t.Fatalf("err1=%v, err2=%v", err1, err2)
 	}
 }
+
+func TestRPC(t *testing.T) {
+	conn, err := remote.Dial(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := conn.RPC()
+	defer func() {
+		client.Close()
+		conn.Close()
+	}()
+
+	out := ""
+	if err = client.Call("DummyRPC.Append", "Hello", &out); err != nil {
+		t.Fatal(err)
+	} else if out != "Hello World" {
+		t.Fatal("recieved wrong output")
+	}
+
+	err = client.Call("DummyRPC.Error", "Hello", &out)
+	if err == nil || err.Error() != "remote rpc error" {
+		t.Fatal("recieved wrong error")
+	}
+}

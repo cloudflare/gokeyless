@@ -89,6 +89,8 @@ const (
 	OpSeal Op = 0x21
 	// OpUnseal asks to decrypt a blob encrypted by OpSeal
 	OpUnseal Op = 0x22
+	// OpRPC executes an arbitrary exported function on the server.
+	OpRPC Op = 0x23
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
