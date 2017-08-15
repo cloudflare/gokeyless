@@ -95,7 +95,7 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 
 	keys.skis[ski] = priv
 
-	log.Debugf("add key with SKI: %02x", ski)
+	log.Debugf("add key with SKI: %v", ski)
 	return nil
 }
 
