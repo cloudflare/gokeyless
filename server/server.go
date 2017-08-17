@@ -95,7 +95,7 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 
 	keys.skis[ski] = priv
 
-	log.Debugf("add key with SKI: %02x", ski)
+	log.Debugf("add key with SKI: %v", ski)
 	return nil
 }
 
@@ -402,7 +402,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	return makeRespondResponse(pkt.ID, sig)
 }
 
-const randBufferLen = 1024 * 1024
+const randBufferLen = 1024
 
 type ecdsaWorker struct {
 	buf  *buf_ecdsa.SyncRandBuffer
