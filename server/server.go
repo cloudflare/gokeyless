@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
@@ -504,10 +505,12 @@ type conn struct {
 	// used by the LogConnErr method
 	logErr sync.Once
 	s      *Server
+
+	closed uint32 // set to 1 when the conn is closed.
 }
 
 func newConn(s *Server, name string, c net.Conn, timeout time.Duration, ecdsa, other *worker.Pool) *conn {
-	return &conn{conn: c, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s}
+	return &conn{conn: c, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s, closed: 0}
 }
 
 func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
@@ -518,6 +521,7 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 		// same logic as the other error handling block in this function.
 		c.LogConnErr(err)
 		c.conn.Close()
+		atomic.StoreUint32(&c.closed, 1)
 		return nil, nil, false
 	}
 
@@ -539,6 +543,7 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 			c.LogConnErr(err)
 			c.conn.Close()
 		}
+		atomic.StoreUint32(&c.closed, 1)
 		return nil, nil, false
 	}
 
@@ -575,20 +580,20 @@ func (c *conn) SubmitResult(result interface{}) (ok bool) {
 	if err != nil {
 		c.LogConnErr(err)
 		c.conn.Close()
+		atomic.StoreUint32(&c.closed, 1)
 		return false
 	}
 	return true
 }
 
 func (c *conn) IsAlive() bool {
-	var buf [0]byte
-	_, err := c.conn.Read(buf[:])
-	return err == nil
+	return atomic.LoadUint32(&c.closed) == 0
 }
 
 func (c *conn) Destroy() {
 	c.LogConnErr(nil)
 	c.conn.Close()
+	atomic.StoreUint32(&c.closed, 1)
 }
 
 // Log an error with the connection (reading, writing, setting a deadline, etc).
