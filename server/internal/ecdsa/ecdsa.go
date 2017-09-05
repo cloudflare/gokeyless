@@ -1,6 +1,7 @@
 package ecdsa
 
 import (
+	"context"
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
@@ -105,13 +106,16 @@ func NewSyncRandBuffer(cap int, curve elliptic.Curve) *SyncRandBuffer {
 
 // Fill generates and adds a single set of random values to the buffer. If s is
 // currently full, Fill will block until there is room for the generated value
-// to be stored.
-func (s *SyncRandBuffer) Fill(rnd io.Reader) error {
+// to be stored or if ctx is canceled.
+func (s *SyncRandBuffer) Fill(ctx context.Context, rnd io.Reader) error {
 	kInv, r, err := genRandForSign(rnd, s.crv)
 	if err != nil {
 		return err
 	}
-	s.buf <- rand{kInv: kInv, r: r}
+	select {
+	case s.buf <- rand{kInv: kInv, r: r}:
+	case <-ctx.Done():
+	}
 	return nil
 }
 
