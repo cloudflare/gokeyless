@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -486,8 +487,8 @@ func newRandGenWorker(buf *buf_ecdsa.SyncRandBuffer) *randGenWorker {
 	return &randGenWorker{buf: buf}
 }
 
-func (w *randGenWorker) Do() {
-	err := w.buf.Fill(rand.Reader)
+func (w *randGenWorker) Do(ctx context.Context) {
+	err := w.buf.Fill(ctx, rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -632,8 +633,8 @@ func (s *Server) Serve(l net.Listener) error {
 }
 
 // ServeConfig accepts incoming connections on the Listener l, creating a new
-// pair of service goroutines for each. The first time l.Accept fails,
-// everything will be torn down.
+// pair of service goroutines for each. The first time l.Accept returns a
+// non-temporary error, everything will be torn down.
 //
 // If l is neither a TCP listener nor a Unix listener, then the timeout will be
 // taken to be the lower of the TCP timeout and the Unix timeout specified in
@@ -696,9 +697,9 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	}()
 
 	for {
-		c, err := l.Accept()
+		c, err := accept(l)
 		if err != nil {
-			log.Error(err)
+			log.Errorf("Accept error: %v; shutting down server", err)
 			return err
 		}
 
@@ -720,6 +721,31 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 			mapMtx.Unlock()
 			wg.Done()
 		}()
+	}
+}
+
+// accept wraps l.Accept with capped exponential-backoff in the case of
+// temporary errors such as a lack of FDs.
+func accept(l net.Listener) (net.Conn, error) {
+	backoff := 5 * time.Millisecond
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				log.Errorf("Accept error: %v; retrying in %v", err, backoff)
+				time.Sleep(backoff)
+
+				backoff = 2 * backoff
+				if max := 10 * time.Second; backoff > max {
+					backoff = max
+				}
+
+				continue
+			}
+			return nil, err
+		}
+
+		return c, nil
 	}
 }
 

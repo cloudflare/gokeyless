@@ -1,8 +1,8 @@
 package worker
 
 import (
+	"context"
 	"sync"
-	"sync/atomic"
 )
 
 // A Job represents a unit of work to be done by a worker in the pool.
@@ -88,22 +88,25 @@ func (p *Pool) worker(w Worker) {
 // A BackgroundWorker performs a unit of background work when Do is called.
 type BackgroundWorker interface {
 	// Do performs a unit of background work.
-	Do()
+	Do(ctx context.Context)
 }
 
 // A BackgroundPool is a handle on a pool of worker goroutines that execute
 // background jobs. Unlike a Pool, a BackgroundPool does not accept job requests
 // from elsewhere in the system, but instead does pre-set work on its own.
 type BackgroundPool struct {
-	quit uint32 // used to signal to the workers to quit
-	wg   sync.WaitGroup
+	ctx context.Context
+	cf  context.CancelFunc
+
+	wg sync.WaitGroup
 }
 
 // NewBackgroundPool constructs a new BackgroundPool from the given workers.
 // Each worker is run in its own goroutine. The workers simply spin, calling Do
 // until the pool is destroyed.
 func NewBackgroundPool(workers ...BackgroundWorker) *BackgroundPool {
-	p := &BackgroundPool{}
+	ctx, cf := context.WithCancel(context.Background())
+	p := &BackgroundPool{ctx: ctx, cf: cf}
 
 	p.wg.Add(len(workers))
 	for _, i := range workers {
@@ -115,22 +118,22 @@ func NewBackgroundPool(workers ...BackgroundWorker) *BackgroundPool {
 	return p
 }
 
-// Destroy destroys the pool. Any currently-executing calls to Do complete, and
-// then the worker goroutines quit. Destroy only returns after all worker
-// goroutines have quit. If p has already been destroyed, the behavior of
-// Destroy is undefined.
+// Destroy destroys the pool. Any currently-executing calls to Do complete or
+// safely terminate early, and then the worker goroutines quit. Destroy only
+// returns after all worker goroutines have quit. If p has already been
+// destroyed, the behavior of Destroy is undefined.
 func (p *BackgroundPool) Destroy() {
-	// Instruct the background goroutines to quit. They will observe this change
-	// on the next loop iteration.
-	atomic.StoreUint32(&p.quit, 1)
+	p.cf()
 	p.wg.Wait()
 }
 
 func (p *BackgroundPool) worker(w BackgroundWorker) {
 	for {
-		if atomic.LoadUint32(&p.quit) == 1 {
+		select {
+		case <-p.ctx.Done():
 			return
+		default:
+			w.Do(p.ctx)
 		}
-		w.Do()
 	}
 }
