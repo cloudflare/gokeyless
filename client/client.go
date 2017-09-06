@@ -91,7 +91,7 @@ func NewAddrSet() AddrSet { return AddrSet{m: make(map[string]bool)} }
 
 // Add adds an addr to the set of addresses.
 func (as AddrSet) Add(addr net.Addr) {
-	log.Infof("add to blacklist addr set: %s", addr)
+	log.Debugf("add to blacklist addr set: %s", addr)
 	as.m[addr.String()] = true
 }
 
