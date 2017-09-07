@@ -618,7 +618,7 @@ func (c *conn) LogConnErr(err error) {
 			return
 		} else if err == io.EOF {
 			log.Debugf("connection %v: closed by client", c.name)
-		} else if err, ok := err.(net.Error); ok && err.Timeout() {
+		} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
 			log.Debugf("connection %v: closing due to timeout", c.name)
 		} else {
 			c.s.stats.logConnFailure()
