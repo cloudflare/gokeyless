@@ -661,9 +661,11 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	ecdsapool := worker.NewPool(ecdsas...)
 
 	utilCh := make(chan struct{}, 0)
+	var utilWg sync.WaitGroup
 	if util := cfg.utilization; util != nil {
 		go func() {
 			ticker := time.NewTicker(1 * time.Second)
+			utilWg.Add(1)
 			for {
 				select {
 				case <-ticker.C:
@@ -674,6 +676,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 
 				case <-utilCh:
 					ticker.Stop()
+					utilWg.Done()
 					return
 				}
 			}
@@ -716,6 +719,7 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		ecdsapool.Destroy()
 		// Stop publishing utilization info.
 		close(utilCh)
+		utilWg.Wait()
 	}()
 
 	for {
