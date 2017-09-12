@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // A Job represents a unit of work to be done by a worker in the pool.
@@ -30,6 +31,7 @@ type Worker interface {
 
 // A Pool is a handle on a pool of worker goroutines that can execute jobs.
 type Pool struct {
+	busy    int64
 	jobs    chan Job
 	workers int
 	wg      sync.WaitGroup
@@ -80,9 +82,17 @@ func (p *Pool) worker(w Worker) {
 		if job.job == nil {
 			return
 		}
+
+		atomic.AddInt64(&p.busy, 1)
 		result := w.Do(job.job)
 		job.commit(result)
+		atomic.AddInt64(&p.busy, -1)
 	}
+}
+
+// Busy returns the number of workers that are currently busy.
+func (p *Pool) Busy() int {
+	return int(atomic.LoadInt64(&p.busy))
 }
 
 // A BackgroundWorker performs a unit of background work when Do is called.

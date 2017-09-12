@@ -660,6 +660,29 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 	otherpool := worker.NewPool(others...)
 	ecdsapool := worker.NewPool(ecdsas...)
 
+	utilCh := make(chan struct{}, 0)
+	var utilWg sync.WaitGroup
+	if util := cfg.utilization; util != nil {
+		go func() {
+			ticker := time.NewTicker(1 * time.Second)
+			utilWg.Add(1)
+			for {
+				select {
+				case <-ticker.C:
+					util(
+						float64(otherpool.Busy())/float64(cfg.otherWorkers),
+						float64(ecdsapool.Busy())/float64(cfg.ecdsaWorkers),
+					)
+
+				case <-utilCh:
+					ticker.Stop()
+					utilWg.Done()
+					return
+				}
+			}
+		}()
+	}
+
 	timeout := cfg.tcpTimeout
 	switch l.(type) {
 	case *net.TCPListener:
@@ -694,6 +717,9 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		bgpool.Destroy()
 		otherpool.Destroy()
 		ecdsapool.Destroy()
+		// Stop publishing utilization info.
+		close(utilCh)
+		utilWg.Wait()
 	}()
 
 	for {
@@ -810,6 +836,7 @@ type ServeConfig struct {
 	ecdsaWorkers, otherWorkers int
 	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
+	utilization                func(other, ecdsa float64)
 }
 
 const (
@@ -886,6 +913,15 @@ func (s *ServeConfig) TCPTimeout(timeout time.Duration) *ServeConfig {
 // network connections.
 func (s *ServeConfig) UnixTimeout(timeout time.Duration) *ServeConfig {
 	s.unixTimeout = timeout
+	return s
+}
+
+// Utilization specifies the function to call with periodic utilization
+// information. On a fixed interval, the server will call f with the
+// [0,1]-percentage of the server's other / ecdsa workers that are currently
+// busy.
+func (s *ServeConfig) Utilization(f func(other, ecdsa float64)) *ServeConfig {
+	s.utilization = f
 	return s
 }
 
