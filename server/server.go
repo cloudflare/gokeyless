@@ -257,6 +257,8 @@ func newOtherWorker(s *Server, name string) *otherWorker {
 }
 
 func (w *otherWorker) Do(job interface{}) interface{} {
+	w.s.stats.logDeqeueOtherRequest()
+
 	pkt := job.(*protocol.Packet)
 
 	requestBegin := time.Now()
@@ -421,6 +423,8 @@ func newECDSAWorker(s *Server, buf *buf_ecdsa.SyncRandBuffer, name string) *ecds
 }
 
 func (w *ecdsaWorker) Do(job interface{}) interface{} {
+	w.s.stats.logDeqeueECDSARequest()
+
 	pkt := job.(*protocol.Packet)
 
 	requestBegin := time.Now()
@@ -552,8 +556,10 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 	case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
 		protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
 		protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
+		c.s.stats.logEnqueueECDSARequest()
 		return pkt, c.ecdsaPool, true
 	default:
+		c.s.stats.logEnqueueOtherRequest()
 		return pkt, c.otherPool, true
 	}
 }
