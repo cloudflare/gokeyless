@@ -9,16 +9,18 @@ import (
 )
 
 type statistics struct {
-	requestDuration prometheus.Summary
-	requestsInvalid prometheus.Counter
-	connFailures    prometheus.Counter
+	requestDuration     prometheus.Summary
+	requestsInvalid     prometheus.Counter
+	connFailures        prometheus.Counter
+	queuedECDSARequests prometheus.Gauge
+	queuedOtherRequests prometheus.Gauge
 }
 
 func newStatistics() *statistics {
 	stats := &statistics{
 		requestDuration: prometheus.NewSummary(prometheus.SummaryOpts{
 			Name: "keyless_request_duration",
-			Help: "Requests duration summary in seconds",
+			Help: "Requests duration summary in seconds.",
 		}),
 		requestsInvalid: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_requests_invalid",
@@ -26,7 +28,15 @@ func newStatistics() *statistics {
 		}),
 		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_failed_connection",
-			Help: "Number of connection/transport failure, in tls handshake and etc..",
+			Help: "Number of connection/transport failure, in tls handshake and etc.",
+		}),
+		queuedECDSARequests: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "keyless_queued_ecdsa_requests",
+			Help: "Number of queued ECDSA signing requests waiting to be executed.",
+		}),
+		queuedOtherRequests: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "keyless_queued_other_requests",
+			Help: "Number of queued non-ECDSA requests waiting to be executed.",
 		}),
 	}
 	return stats
@@ -48,6 +58,11 @@ func (stats *statistics) logRequestDuration(requestBegin time.Time) {
 	stats.requestDuration.Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Second))
 }
 
+func (stats *statistics) logEnqueueECDSARequest() { stats.queuedECDSARequests.Inc() }
+func (stats *statistics) logDeqeueECDSARequest()  { stats.queuedECDSARequests.Dec() }
+func (stats *statistics) logEnqueueOtherRequest() { stats.queuedOtherRequests.Inc() }
+func (stats *statistics) logDeqeueOtherRequest()  { stats.queuedOtherRequests.Dec() }
+
 // MetricsListenAndServe serves Prometheus metrics at metricsAddr
 func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 	if metricsAddr != "" {
@@ -62,7 +77,11 @@ func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 
 // RegisterMetrics registers server metrics with global prometheus handler
 func (s *Server) RegisterMetrics() {
-	prometheus.MustRegister(s.stats.requestDuration)
-	prometheus.MustRegister(s.stats.requestsInvalid)
-	prometheus.MustRegister(s.stats.connFailures)
+	prometheus.MustRegister(
+		s.stats.requestDuration,
+		s.stats.requestsInvalid,
+		s.stats.connFailures,
+		s.stats.queuedECDSARequests,
+		s.stats.queuedOtherRequests,
+	)
 }
