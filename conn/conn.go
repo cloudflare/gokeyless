@@ -114,8 +114,8 @@ type Conn struct {
 
 	opTimeout time.Duration
 
-	// If you're going to acquire all three, always acquire in the following order
-	// to avoid deadlock: readMtx, writeMtx, mapMtx.
+	// To lock up the connection, always acquire in the following order to avoid
+	// deadlock: writeMtx, mapMtx (don't acquire readMtx).
 	readMtx, writeMtx sync.Mutex
 	mapMtx            sync.RWMutex
 
@@ -140,13 +140,11 @@ func NewConn(inner net.Conn) *Conn {
 
 // Close closes the connection and causes all outstanding operations to fail.
 func (c *Conn) Close() error {
-	c.readMtx.Lock()
 	c.writeMtx.Lock()
 	c.mapMtx.Lock()
 	if c.closed {
 		c.mapMtx.Unlock()
 		c.writeMtx.Unlock()
-		c.readMtx.Unlock()
 		return ErrClosed
 	}
 
@@ -160,7 +158,6 @@ func (c *Conn) Close() error {
 
 	c.mapMtx.Unlock()
 	c.writeMtx.Unlock()
-	c.readMtx.Unlock()
 	return err
 }
 
@@ -171,10 +168,6 @@ func (c *Conn) Close() error {
 func (c *Conn) DoRead() error {
 	// Acquire the read mutex until we're done reading.
 	c.readMtx.Lock()
-	if c.closed {
-		c.readMtx.Unlock()
-		return ErrClosed
-	}
 	pkt := new(protocol.Packet)
 	_, err := pkt.ReadFrom(c.conn)
 	c.readMtx.Unlock()
