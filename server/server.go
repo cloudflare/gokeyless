@@ -223,27 +223,29 @@ type Sealer interface {
 	Unseal(*protocol.Operation) ([]byte, error)
 }
 
-type req struct {
-	conn   *tls.Conn
-	mtx    *sync.Mutex
-	packet *protocol.Packet
+type request struct {
+	pkt *protocol.Packet
+	// time just after the request was deserialized from the connection
+	reqBegin time.Time
 }
 
 type response struct {
 	id uint32
 	op protocol.Operation
+	// time just after the request was deserialized from the connection
+	reqBegin time.Time
 }
 
-func makeRespondResponse(id uint32, payload []byte) response {
-	return response{id: id, op: protocol.MakeRespondOp(payload)}
+func makeRespondResponse(req request, payload []byte) response {
+	return response{id: req.pkt.ID, op: protocol.MakeRespondOp(payload), reqBegin: req.reqBegin}
 }
 
-func makePongResponse(id uint32, payload []byte) response {
-	return response{id: id, op: protocol.MakePongOp(payload)}
+func makePongResponse(req request, payload []byte) response {
+	return response{id: req.pkt.ID, op: protocol.MakePongOp(payload), reqBegin: req.reqBegin}
 }
 
-func makeErrResponse(id uint32, err protocol.Error) response {
-	return response{id: id, op: protocol.MakeErrorOp(err)}
+func makeErrResponse(req request, err protocol.Error) response {
+	return response{id: req.pkt.ID, op: protocol.MakeErrorOp(err), reqBegin: req.reqBegin}
 }
 
 // otherWorker performs all non-ECDSA requests
@@ -259,7 +261,8 @@ func newOtherWorker(s *Server, name string) *otherWorker {
 func (w *otherWorker) Do(job interface{}) interface{} {
 	w.s.stats.logDeqeueOtherRequest()
 
-	pkt := job.(*protocol.Packet)
+	req := job.(request)
+	pkt := req.pkt
 
 	requestBegin := time.Now()
 	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
@@ -269,30 +272,30 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	var ok bool
 	switch pkt.Operation.Opcode {
 	case protocol.OpPing:
-		w.s.stats.logRequestDuration(requestBegin)
-		return makePongResponse(pkt.ID, pkt.Operation.Payload)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		return makePongResponse(req, pkt.Operation.Payload)
 
 	case protocol.OpGetCertificate:
 		if w.s.getCert == nil {
 			log.Errorf("Worker %v: GetCertificate is nil", w.name)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrCertNotFound)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrCertNotFound)
 		}
 
 		certChain, err := w.s.getCert(&pkt.Operation)
 		if err != nil {
 			log.Errorf("Worker %v: GetCertificate: %v", w.name, err)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrInternal)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrInternal)
 		}
-		w.s.stats.logRequestDuration(requestBegin)
-		return makeRespondResponse(pkt.ID, certChain)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		return makeRespondResponse(req, certChain)
 
 	case protocol.OpSeal, protocol.OpUnseal:
 		if w.s.sealer == nil {
 			log.Errorf("Worker %v: Sealer is nil", w.name)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrInternal)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrInternal)
 		}
 
 		var res []byte
@@ -308,11 +311,11 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			if err, ok := err.(protocol.Error); ok {
 				code = err
 			}
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, code)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, code)
 		}
-		w.s.stats.logRequestDuration(requestBegin)
-		return makeRespondResponse(pkt.ID, res)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		return makeRespondResponse(req, res)
 
 	case protocol.OpRPC:
 		codec := newServerCodec(pkt.Payload)
@@ -320,42 +323,42 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		err := w.s.dispatcher.ServeRequest(codec)
 		if err != nil {
 			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrInternal)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrInternal)
 		}
 
-		w.s.stats.logRequestDuration(requestBegin)
-		return makeRespondResponse(pkt.ID, codec.response)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		return makeRespondResponse(req, codec.response)
 
 	case protocol.OpRSADecrypt:
 		if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 			log.Error(protocol.ErrKeyNotFound)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrKeyNotFound)
 		}
 
 		if _, ok = key.Public().(*rsa.PublicKey); !ok {
 			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrCrypto)
 		}
 
 		rsaKey, ok := key.(crypto.Decrypter)
 		if !ok {
 			log.Errorf("Worker %v: %s: Key is not Decrypter", w.name, protocol.ErrCrypto)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrCrypto)
 		}
 
 		ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
 		if err != nil {
 			log.Errorf("Worker %v: %s: Decryption error: %v", w.name, protocol.ErrCrypto, err)
-			w.s.stats.logInvalid(requestBegin)
-			return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+			return makeErrResponse(req, protocol.ErrCrypto)
 		}
 
-		w.s.stats.logRequestDuration(requestBegin)
-		return makeRespondResponse(pkt.ID, ptxt)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		return makeRespondResponse(req, ptxt)
 	case protocol.OpRSASignMD5SHA1:
 		opts = crypto.MD5SHA1
 	case protocol.OpRSASignSHA1:
@@ -370,11 +373,11 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		opts = crypto.SHA512
 	case protocol.OpPong, protocol.OpResponse, protocol.OpError:
 		log.Errorf("Worker %v: %s: %s is not a valid request Opcode\n", w.name, protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrUnexpectedOpcode)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrUnexpectedOpcode)
 	default:
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrBadOpcode)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrBadOpcode)
 	}
 
 	switch pkt.Operation.Opcode {
@@ -384,26 +387,26 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 
 	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
 
 	// Ensure we don't perform an RSA sign for an ECDSA request.
 	if _, ok := key.Public().(*rsa.PublicKey); !ok {
 		log.Errorf("Worker %v: %s: request is RSA, but key isn't\n", w.name, protocol.ErrCrypto)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
 	sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 	if err != nil {
 		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
-	w.s.stats.logRequestDuration(requestBegin)
-	return makeRespondResponse(pkt.ID, sig)
+	w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+	return makeRespondResponse(req, sig)
 }
 
 const randBufferLen = 1024
@@ -425,7 +428,8 @@ func newECDSAWorker(s *Server, buf *buf_ecdsa.SyncRandBuffer, name string) *ecds
 func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	w.s.stats.logDeqeueECDSARequest()
 
-	pkt := job.(*protocol.Packet)
+	req := job.(request)
+	pkt := req.pkt
 
 	requestBegin := time.Now()
 	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
@@ -454,15 +458,15 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 
 	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrKeyNotFound)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
 
 	// Ensure we don't perform an RSA sign for an ECDSA request.
 	if _, ok := key.Public().(*ecdsa.PublicKey); !ok {
 		log.Errorf("Worker %v: %s: request is ECDSA, but key isn't\n", w.name, protocol.ErrCrypto)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
 	var sig []byte
@@ -475,12 +479,12 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	}
 	if err != nil {
 		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
-		w.s.stats.logInvalid(requestBegin)
-		return makeErrResponse(pkt.ID, protocol.ErrCrypto)
+		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
-	w.s.stats.logRequestDuration(requestBegin)
-	return makeRespondResponse(pkt.ID, sig)
+	w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+	return makeRespondResponse(req, sig)
 }
 
 type randGenWorker struct {
@@ -552,15 +556,21 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 		return nil, nil, false
 	}
 
+	c.s.stats.logRequestOpcode(pkt.Opcode)
+	req := request{
+		pkt:      pkt,
+		reqBegin: time.Now(),
+	}
+
 	switch pkt.Operation.Opcode {
 	case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
 		protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
 		protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
 		c.s.stats.logEnqueueECDSARequest()
-		return pkt, c.ecdsaPool, true
+		return req, c.ecdsaPool, true
 	default:
 		c.s.stats.logEnqueueOtherRequest()
-		return pkt, c.otherPool, true
+		return req, c.otherPool, true
 	}
 }
 
@@ -583,6 +593,7 @@ func (c *conn) SubmitResult(result interface{}) (ok bool) {
 		panic(fmt.Sprintf("unexpected internal error: %v", err))
 	}
 
+	c.s.stats.logRequestTotalDuration(resp.op.Opcode, resp.reqBegin)
 	_, err = c.conn.Write(buf)
 	if err != nil {
 		c.LogConnErr(err)
