@@ -185,11 +185,6 @@ func (s *Server) TLSConfig() *tls.Config {
 	return s.config
 }
 
-// SetGetCert sets the function that the Server uses to get certificates.
-func (s *Server) SetGetCert(f GetCert) {
-	s.getCert = f
-}
-
 // SetKeystore sets the Keystore used by s. It is NOT safe to call concurrently
 // with any other methods.
 func (s *Server) SetKeystore(keys Keystore) {
@@ -274,22 +269,6 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	case protocol.OpPing:
 		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
 		return makePongResponse(req, pkt.Operation.Payload)
-
-	case protocol.OpGetCertificate:
-		if w.s.getCert == nil {
-			log.Errorf("Worker %v: GetCertificate is nil", w.name)
-			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
-			return makeErrResponse(req, protocol.ErrCertNotFound)
-		}
-
-		certChain, err := w.s.getCert(&pkt.Operation)
-		if err != nil {
-			log.Errorf("Worker %v: GetCertificate: %v", w.name, err)
-			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
-			return makeErrResponse(req, protocol.ErrInternal)
-		}
-		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
-		return makeRespondResponse(req, certChain)
 
 	case protocol.OpSeal, protocol.OpUnseal:
 		if w.s.sealer == nil {

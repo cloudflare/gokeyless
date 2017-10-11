@@ -39,20 +39,13 @@ var (
 	remote   client.Remote
 )
 
-// dummyGetCertificate is a GetCertificate function which reads a static cert
-// from disk and simulates latency.
-func dummyGetCertificate(op *protocol.Operation) ([]byte, error) {
-	if string(op.Payload) == "slow" {
-		time.Sleep(time.Second)
-	}
-	return ioutil.ReadFile(serverCert)
-}
-
 type dummySealer struct{}
 
 func (dummySealer) Seal(op *protocol.Operation) (res []byte, err error) {
 	if op.Opcode != protocol.OpSeal {
 		panic("wrong op")
+	} else if string(op.Payload) == "slow" {
+		time.Sleep(time.Second)
 	}
 	res = []byte("OpSeal ")
 	res = append(res, op.Payload...)
@@ -124,7 +117,6 @@ func init() {
 	}
 	s.SetKeystore(keys)
 
-	s.SetGetCert(dummyGetCertificate)
 	s.SetSealer(dummySealer{})
 	if err = s.RegisterRPC(DummyRPC{}); err != nil {
 		log.Fatal(err)

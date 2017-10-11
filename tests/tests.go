@@ -9,14 +9,12 @@ import (
 	"encoding/asn1"
 	"errors"
 	"math/big"
-	"net"
 	"sync"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/protocol"
 )
 
 // Results is a registry of metrics representing the success stats of an entire test suite.
@@ -157,35 +155,6 @@ func NewPingTest(c *client.Client, server string) TestFunc {
 			return err
 		}
 		return conn.Ping(nil)
-	}
-}
-
-// NewGetCertificateTest generates a TestFunc to connect and perform a certificate load.
-func NewGetCertificateTest(c *client.Client, keyserver, sni string, serverIP net.IP, payload, expected []byte) TestFunc {
-	return func() error {
-		r, err := c.LookupServer(keyserver)
-		if err != nil {
-			return err
-		}
-
-		conn, err := r.Dial(c)
-		if err != nil {
-			return err
-		}
-
-		got, err := conn.DoOperation(protocol.Operation{
-			Opcode:   protocol.OpGetCertificate,
-			SNI:      sni,
-			ServerIP: serverIP,
-			Payload:  payload,
-		})
-		if err != nil {
-			return err
-		} else if !bytes.Equal(got.Payload, expected) {
-			return errors.New("certificate loading failed: returned certificate is not the same as expected")
-		}
-
-		return nil
 	}
 }
 

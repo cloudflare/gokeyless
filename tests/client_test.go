@@ -10,7 +10,6 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/big"
 	"sync"
@@ -211,30 +210,6 @@ func TestSeal(t *testing.T) {
 	}
 }
 
-func TestGetCertificate(t *testing.T) {
-	certChainBytes, _ := ioutil.ReadFile(serverCert)
-
-	if testing.Short() {
-		t.SkipNow()
-	}
-
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	resp, err := conn.DoOperation(protocol.Operation{
-		Opcode: protocol.OpGetCertificate,
-	})
-	if err != nil {
-		t.Fatal(err)
-	} else if bytes.Compare(certChainBytes, resp.Payload) != 0 {
-		t.Logf("m: %dB\tcertChain: %dB", len(certChainBytes), len(resp.Payload))
-		t.Fatal("certificate chain mismatch")
-	}
-}
-
 func TestConcurrency(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -253,7 +228,7 @@ func TestConcurrency(t *testing.T) {
 		// Make a slow request first.
 		start := time.Now()
 		_, err := conn.DoOperation(protocol.Operation{
-			Opcode:  protocol.OpGetCertificate,
+			Opcode:  protocol.OpSeal,
 			Payload: []byte("slow"),
 		})
 		if err != nil {
@@ -271,7 +246,7 @@ func TestConcurrency(t *testing.T) {
 
 		start := time.Now()
 		_, err := conn.DoOperation(protocol.Operation{
-			Opcode:  protocol.OpGetCertificate,
+			Opcode:  protocol.OpSeal,
 			Payload: []byte("fast"),
 		})
 		if err != nil {
