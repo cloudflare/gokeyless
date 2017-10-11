@@ -83,8 +83,6 @@ const (
 	// OpECDSASignSHA512 requests an ECDSA signature on an SHA512 hash payload.
 	OpECDSASignSHA512 Op = 0x17
 
-	// OpGetCertificate requests a certificate
-	OpGetCertificate Op = 0x20
 	// OpSeal asks to encrypt a blob (like a Session Ticket)
 	OpSeal Op = 0x21
 	// OpUnseal asks to decrypt a blob encrypted by OpSeal
