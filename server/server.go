@@ -535,7 +535,7 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 		return nil, nil, false
 	}
 
-	c.s.stats.logRequestOpcode(pkt.Opcode)
+	c.s.stats.logRequest(pkt.Opcode)
 	req := request{
 		pkt:      pkt,
 		reqBegin: time.Now(),

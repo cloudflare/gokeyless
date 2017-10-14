@@ -14,11 +14,12 @@ type statistics struct {
 	requestTotalDuration         prometheus.Summary
 	requestExecDurationByOpcode  *prometheus.SummaryVec
 	requestTotalDurationByOpcode *prometheus.SummaryVec
+	requests                     prometheus.Counter
 	requestsInvalid              prometheus.Counter
+	requestOpcodes               *prometheus.CounterVec
 	connFailures                 prometheus.Counter
 	queuedECDSARequests          prometheus.Gauge
 	queuedOtherRequests          prometheus.Gauge
-	requestOpcodes               *prometheus.CounterVec
 }
 
 func newStatistics() *statistics {
@@ -39,10 +40,18 @@ func newStatistics() *statistics {
 			Name: "keyless_request_total_duration_per_opcode",
 			Help: "Total time to satisfy a request including time in queues, broken down by opcode.",
 		}, []string{"opcode"}),
+		requests: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "keyless_requests",
+			Help: "Total number of requests.",
+		}),
 		requestsInvalid: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_requests_invalid",
 			Help: "Number of invalid requests.",
 		}),
+		requestOpcodes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "keyless_request_opcodes",
+			Help: "Number of requests received with various opcodes.",
+		}, []string{"opcode"}),
 		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_failed_connection",
 			Help: "Number of connection/transport failure, in tls handshake and etc.",
@@ -55,10 +64,6 @@ func newStatistics() *statistics {
 			Name: "keyless_queued_other_requests",
 			Help: "Number of queued non-ECDSA requests waiting to be executed.",
 		}),
-		requestOpcodes: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "keyless_request_opcodes",
-			Help: "Number of requests received with various opcodes.",
-		}, []string{"opcode"}),
 	}
 }
 
@@ -90,7 +95,8 @@ func (stats *statistics) logDeqeueECDSARequest()  { stats.queuedECDSARequests.De
 func (stats *statistics) logEnqueueOtherRequest() { stats.queuedOtherRequests.Inc() }
 func (stats *statistics) logDeqeueOtherRequest()  { stats.queuedOtherRequests.Dec() }
 
-func (stats *statistics) logRequestOpcode(opcode protocol.Op) {
+func (stats *statistics) logRequest(opcode protocol.Op) {
+	stats.requests.Inc()
 	stats.requestOpcodes.WithLabelValues(opcode.String()).Inc()
 }
 
@@ -113,10 +119,11 @@ func (s *Server) RegisterMetrics() {
 		s.stats.requestTotalDuration,
 		s.stats.requestExecDurationByOpcode,
 		s.stats.requestTotalDurationByOpcode,
+		s.stats.requests,
 		s.stats.requestsInvalid,
+		s.stats.requestOpcodes,
 		s.stats.connFailures,
 		s.stats.queuedECDSARequests,
 		s.stats.queuedOtherRequests,
-		s.stats.requestOpcodes,
 	)
 }
