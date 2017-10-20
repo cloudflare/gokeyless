@@ -17,6 +17,7 @@ type statistics struct {
 	requests                     prometheus.Counter
 	requestsInvalid              prometheus.Counter
 	requestOpcodes               *prometheus.CounterVec
+	keyLoadDuration              prometheus.Summary
 	connFailures                 prometheus.Counter
 	queuedECDSARequests          prometheus.Gauge
 	queuedOtherRequests          prometheus.Gauge
@@ -52,6 +53,10 @@ func newStatistics() *statistics {
 			Name: "keyless_request_opcodes",
 			Help: "Number of requests received with various opcodes.",
 		}, []string{"opcode"}),
+		keyLoadDuration: prometheus.NewSummary(prometheus.SummaryOpts{
+			Name: "keyless_key_load_duration",
+			Help: "Time to load a requested key.",
+		}),
 		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_failed_connection",
 			Help: "Number of connection/transport failure, in tls handshake and etc.",
@@ -76,6 +81,10 @@ func (stats *statistics) logInvalid(opcode protocol.Op, requestBegin time.Time) 
 // logConnFailure increments the error count of connFailures.
 func (stats *statistics) logConnFailure() {
 	stats.connFailures.Inc()
+}
+
+func (stats *statistics) logKeyLoadDuration(loadBegin time.Time) {
+	stats.keyLoadDuration.Observe(float64(time.Now().Sub(loadBegin)) / float64(time.Second))
 }
 
 func (stats *statistics) logRequestExecDuration(opcode protocol.Op, requestBegin time.Time) {
@@ -122,6 +131,7 @@ func (s *Server) RegisterMetrics() {
 		s.stats.requests,
 		s.stats.requestsInvalid,
 		s.stats.requestOpcodes,
+		s.stats.keyLoadDuration,
 		s.stats.connFailures,
 		s.stats.queuedECDSARequests,
 		s.stats.queuedOtherRequests,

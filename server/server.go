@@ -310,11 +310,13 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return makeRespondResponse(req, codec.response)
 
 	case protocol.OpRSADecrypt:
+		keyLoadBegin := time.Now()
 		if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 			log.Error(protocol.ErrKeyNotFound)
 			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 			return makeErrResponse(req, protocol.ErrKeyNotFound)
 		}
+		w.s.stats.logKeyLoadDuration(keyLoadBegin)
 
 		if _, ok = key.Public().(*rsa.PublicKey); !ok {
 			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
@@ -364,11 +366,13 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 	}
 
+	keyLoadBegin := time.Now()
 	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
+	w.s.stats.logKeyLoadDuration(keyLoadBegin)
 
 	// Ensure we don't perform an RSA sign for an ECDSA request.
 	if _, ok := key.Public().(*rsa.PublicKey); !ok {
@@ -435,11 +439,13 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 		panic(fmt.Sprintf("internal error: got unexpected opcode %v", pkt.Operation.Opcode))
 	}
 
+	keyLoadBegin := time.Now()
 	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
 		log.Error(protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
+	w.s.stats.logKeyLoadDuration(keyLoadBegin)
 
 	// Ensure we don't perform an RSA sign for an ECDSA request.
 	if _, ok := key.Public().(*ecdsa.PublicKey); !ok {
