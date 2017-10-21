@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/gokeyless/client"
@@ -92,7 +93,8 @@ func main() {
 
 	var op protocol.Operation
 
-	skiBytes, err := hex.DecodeString(skiFlag)
+	// strip any colons so that AA:BB:CC:DD format works
+	skiBytes, err := hex.DecodeString(strings.Replace(skiFlag, ":", "", -1))
 	if err != nil || len(skiBytes) != 20 {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not parse SKI as hex: %v\n", err)
