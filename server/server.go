@@ -37,6 +37,10 @@ var keyExt = regexp.MustCompile(`.+\.key`)
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
+	// Get retreives a key for signing. The Sign method will be called directly on
+	// this key, so it's advisable to perform any precomputation on this key that
+	// may speed up signing over the course of multiple signatures (e.g.,
+	// crypto/rsa.PrivateKey's Precompute method).
 	Get(*protocol.Operation) (crypto.Signer, bool)
 }
 

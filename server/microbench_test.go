@@ -113,7 +113,7 @@ func benchRandParallelFor(b *testing.B, op func(rnd io.Reader)) {
 
 // benchRandForSignRSA is an RSA signature-specific wrapper around benchRandFor.
 func benchRandForSignRSA(b *testing.B, params params.RSASignParams) {
-	key, payload := prepareRSASigner(b, 2048, params.PayloadSize)
+	key, payload := prepareRSASigner(b, 2, 2048, params.PayloadSize, true)
 	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
 	benchRandFor(b, op)
 }
@@ -121,26 +121,29 @@ func benchRandForSignRSA(b *testing.B, params params.RSASignParams) {
 // benchRandParallelForSignRSA is an RSA signature-specific wrapper around
 // benchRandFor.
 func benchRandParallelForSignRSA(b *testing.B, params params.RSASignParams) {
-	key, payload := prepareRSASigner(b, 2048, params.PayloadSize)
+	key, payload := prepareRSASigner(b, 2, 2048, params.PayloadSize, true)
 	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
 	benchRandParallelFor(b, op)
 }
 
-func benchSignRSA(b *testing.B, params params.RSASignParams) {
-	key, payload := prepareRSASigner(b, 2048, params.PayloadSize)
+func benchSignRSA(b *testing.B, params params.RSASignParams, primes int, precompute bool) {
+	key, payload := prepareRSASigner(b, primes, 2048, params.PayloadSize, precompute)
 	benchSign(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchSignParallelRSA(b *testing.B, params params.RSASignParams) {
-	key, payload := prepareRSASigner(b, 2048, params.PayloadSize)
+	key, payload := prepareRSASigner(b, 2, 2048, params.PayloadSize, true)
 	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 // prepareRSASigner performs the boilerplate of generating values needed to
 // benchmark RSA signatures.
-func prepareRSASigner(b *testing.B, bits int, payloadsize int) (key crypto.Signer, payload []byte) {
-	k, err := rsa.GenerateKey(rand.Reader, bits)
+func prepareRSASigner(b *testing.B, primes, bits int, payloadsize int, precompute bool) (key crypto.Signer, payload []byte) {
+	k, err := rsa.GenerateMultiPrimeKey(rand.Reader, primes, bits)
 	testutil.MustPrefix(b, "could not generate RSA key", err)
+	if !precompute {
+		k.Precomputed = rsa.PrecomputedValues{}
+	}
 	payload = make([]byte, payloadsize)
 	mustReadFull(b, rand.Reader, payload[:])
 	return k, payload
@@ -188,19 +191,54 @@ func BenchmarkCryptoRand(b *testing.B) {
 	io.ReadFull(rand.Reader, buf)
 }
 
-func BenchmarkSignRSAMD5SHA1(b *testing.B)   { benchSignRSA(b, params.RSAMD5SHA1Params) }
-func BenchmarkSignRSASHA1(b *testing.B)      { benchSignRSA(b, params.RSASHA1Params) }
-func BenchmarkSignRSASHA224(b *testing.B)    { benchSignRSA(b, params.RSASHA224Params) }
-func BenchmarkSignRSASHA256(b *testing.B)    { benchSignRSA(b, params.RSASHA256Params) }
-func BenchmarkSignRSASHA384(b *testing.B)    { benchSignRSA(b, params.RSASHA384Params) }
-func BenchmarkSignRSASHA512(b *testing.B)    { benchSignRSA(b, params.RSASHA512Params) }
-func BenchmarkSignRSAPSSSHA256(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA256Params) }
-func BenchmarkSignRSAPSSSHA384(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA384Params) }
-func BenchmarkSignRSAPSSSHA512(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA512Params) }
-func BenchmarkSignECDSASHA224(b *testing.B)  { benchSignECDSA(b, params.ECDSASHA224Params) }
-func BenchmarkSignECDSASHA256(b *testing.B)  { benchSignECDSA(b, params.ECDSASHA256Params) }
-func BenchmarkSignECDSASHA384(b *testing.B)  { benchSignECDSA(b, params.ECDSASHA384Params) }
-func BenchmarkSignECDSASHA512(b *testing.B)  { benchSignECDSA(b, params.ECDSASHA512Params) }
+func BenchmarkSignRSAMD5SHA1(b *testing.B)      { benchSignRSA(b, params.RSAMD5SHA1Params, 2, true) }
+func BenchmarkSignRSAMD5SHA1Multi(b *testing.B) { benchSignRSA(b, params.RSAMD5SHA1Params, 3, true) }
+func BenchmarkSignRSAMD5SHA1NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSAMD5SHA1Params, 2, false)
+}
+func BenchmarkSignRSASHA1(b *testing.B)               { benchSignRSA(b, params.RSASHA1Params, 2, true) }
+func BenchmarkSignRSASHA1Multi(b *testing.B)          { benchSignRSA(b, params.RSASHA1Params, 3, true) }
+func BenchmarkSignRSASHA1NotPrecomputed(b *testing.B) { benchSignRSA(b, params.RSASHA1Params, 2, false) }
+func BenchmarkSignRSASHA224(b *testing.B)             { benchSignRSA(b, params.RSASHA224Params, 2, true) }
+func BenchmarkSignRSASHA224Multi(b *testing.B)        { benchSignRSA(b, params.RSASHA224Params, 3, true) }
+func BenchmarkSignRSASHA224NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSASHA224Params, 2, false)
+}
+func BenchmarkSignRSASHA256(b *testing.B)      { benchSignRSA(b, params.RSASHA256Params, 2, true) }
+func BenchmarkSignRSASHA256Multi(b *testing.B) { benchSignRSA(b, params.RSASHA256Params, 3, true) }
+func BenchmarkSignRSASHA256NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSASHA256Params, 2, false)
+}
+func BenchmarkSignRSASHA384(b *testing.B)      { benchSignRSA(b, params.RSASHA384Params, 2, true) }
+func BenchmarkSignRSASHA384Multi(b *testing.B) { benchSignRSA(b, params.RSASHA384Params, 3, true) }
+func BenchmarkSignRSASHA384NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSASHA384Params, 2, false)
+}
+func BenchmarkSignRSASHA512(b *testing.B)      { benchSignRSA(b, params.RSASHA512Params, 2, true) }
+func BenchmarkSignRSASHA512Multi(b *testing.B) { benchSignRSA(b, params.RSASHA512Params, 3, true) }
+func BenchmarkSignRSASHA512NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSASHA512Params, 2, false)
+}
+func BenchmarkSignRSAPSSSHA256(b *testing.B)      { benchSignRSA(b, params.RSAPSSSHA256Params, 2, true) }
+func BenchmarkSignRSAPSSSHA256Multi(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA256Params, 3, true) }
+func BenchmarkSignRSAPSSSHA256NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSAPSSSHA256Params, 2, false)
+}
+func BenchmarkSignRSAPSSSHA384(b *testing.B)      { benchSignRSA(b, params.RSAPSSSHA384Params, 2, true) }
+func BenchmarkSignRSAPSSSHA384Multi(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA384Params, 3, true) }
+func BenchmarkSignRSAPSSSHA384NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSAPSSSHA384Params, 2, false)
+}
+func BenchmarkSignRSAPSSSHA512(b *testing.B)      { benchSignRSA(b, params.RSAPSSSHA512Params, 2, true) }
+func BenchmarkSignRSAPSSSHA512Multi(b *testing.B) { benchSignRSA(b, params.RSAPSSSHA512Params, 3, true) }
+func BenchmarkSignRSAPSSSHA512NotPrecomputed(b *testing.B) {
+	benchSignRSA(b, params.RSAPSSSHA512Params, 2, false)
+}
+
+func BenchmarkSignECDSASHA224(b *testing.B) { benchSignECDSA(b, params.ECDSASHA224Params) }
+func BenchmarkSignECDSASHA256(b *testing.B) { benchSignECDSA(b, params.ECDSASHA256Params) }
+func BenchmarkSignECDSASHA384(b *testing.B) { benchSignECDSA(b, params.ECDSASHA384Params) }
+func BenchmarkSignECDSASHA512(b *testing.B) { benchSignECDSA(b, params.ECDSASHA512Params) }
 
 func BenchmarkSignParallelRSAMD5SHA1(b *testing.B) { benchSignParallelRSA(b, params.RSAMD5SHA1Params) }
 func BenchmarkSignParallelRSASHA1(b *testing.B)    { benchSignParallelRSA(b, params.RSASHA1Params) }
