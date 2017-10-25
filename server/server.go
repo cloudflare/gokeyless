@@ -229,22 +229,23 @@ type request struct {
 }
 
 type response struct {
-	id uint32
-	op protocol.Operation
+	id        uint32
+	op        protocol.Operation
+	reqOpcode protocol.Op
 	// time just after the request was deserialized from the connection
 	reqBegin time.Time
 }
 
 func makeRespondResponse(req request, payload []byte) response {
-	return response{id: req.pkt.ID, op: protocol.MakeRespondOp(payload), reqBegin: req.reqBegin}
+	return response{id: req.pkt.ID, op: protocol.MakeRespondOp(payload), reqOpcode: req.pkt.Opcode, reqBegin: req.reqBegin}
 }
 
 func makePongResponse(req request, payload []byte) response {
-	return response{id: req.pkt.ID, op: protocol.MakePongOp(payload), reqBegin: req.reqBegin}
+	return response{id: req.pkt.ID, op: protocol.MakePongOp(payload), reqOpcode: req.pkt.Opcode, reqBegin: req.reqBegin}
 }
 
 func makeErrResponse(req request, err protocol.Error) response {
-	return response{id: req.pkt.ID, op: protocol.MakeErrorOp(err), reqBegin: req.reqBegin}
+	return response{id: req.pkt.ID, op: protocol.MakeErrorOp(err), reqOpcode: req.pkt.Opcode, reqBegin: req.reqBegin}
 }
 
 // otherWorker performs all non-ECDSA requests
@@ -582,7 +583,7 @@ func (c *conn) SubmitResult(result interface{}) (ok bool) {
 		panic(fmt.Sprintf("unexpected internal error: %v", err))
 	}
 
-	c.s.stats.logRequestTotalDuration(resp.op.Opcode, resp.reqBegin)
+	c.s.stats.logRequestTotalDuration(resp.reqOpcode, resp.reqBegin)
 	_, err = c.conn.Write(buf)
 	if err != nil {
 		c.LogConnErr(err)
