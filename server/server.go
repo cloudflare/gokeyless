@@ -29,6 +29,7 @@ import (
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
+	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
@@ -327,6 +328,18 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
 			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 			return makeErrResponse(req, protocol.ErrCrypto)
+		}
+
+		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+			// Decrypt without removing padding; that's the client's responsibility.
+			ptxt, err := textbook_rsa.Decrypt(rsaKey, pkt.Operation.Payload)
+			if err != nil {
+				log.Errorf("Worker %v: %v", w.name, err)
+				w.s.stats.logInvalid(pkt.Opcode, requestBegin)
+				return makeErrResponse(req, protocol.ErrCrypto)
+			}
+			w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+			return makeRespondResponse(req, ptxt)
 		}
 
 		rsaKey, ok := key.(crypto.Decrypter)
