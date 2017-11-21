@@ -8,5 +8,5 @@ fi
 # create logstash user
 if ! getent passwd keyless >/dev/null; then
   useradd -M -r -g keyless \
-    -s /sbin/nologin -c "CloudFlare Keyless Service User" keyless
+    -s /sbin/nologin -c "Cloudflare Keyless Service User" keyless
 fi

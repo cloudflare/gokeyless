@@ -35,6 +35,7 @@ var (
 	keyDir       string
 	pidFile      string
 	manualMode   bool
+	configMode   bool
 )
 
 func init() {
@@ -49,15 +50,20 @@ func init() {
 	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
 	flag.StringVar(&metricsAddr, "metrics-addr", "localhost:2406", "address where the metrics API is served")
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
-	flag.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR,  and exits. Use the CSR to get server certificate issued manually.")
+	flag.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR, and exits. Use the CSR to get server certificate issued manually.")
+	flag.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
 }
 
 func main() {
 	flag.Parse()
 
-	// Allow manual activation (requires the CSR to be manually signed).
-	// manual activation won't proceed to start the server
-	if manualMode {
+	switch {
+	case manualMode && configMode:
+		log.Error("can't specify both -manual-activation and -config-only!")
+		os.Exit(1)
+	case manualMode:
+		// Allow manual activation (requires the CSR to be manually signed).
+		// manual activation won't proceed to start the server
 		log.Info("now check server csr and key")
 		if !verifyCSRAndKey() {
 			log.Info("csr and key are not usable. generating server csr and key")
@@ -68,6 +74,13 @@ func main() {
 		} else {
 			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact CloudFlare for manual signing",
 				csrFile, keyFile)
+		}
+		os.Exit(0)
+	case configMode:
+		if needNewCertAndKey() {
+			initializeServerCertAndKey()
+		} else {
+			log.Info("already configured; exiting")
 		}
 		os.Exit(0)
 	}
