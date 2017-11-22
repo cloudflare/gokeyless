@@ -265,7 +265,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	pkt := req.pkt
 
 	requestBegin := time.Now()
-	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
+	log.Debugf("Worker %v: version:%d.%d id:%d body:%v", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
 
 	var opts crypto.SignerOpts
 	var key crypto.Signer
@@ -420,7 +420,7 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	pkt := req.pkt
 
 	requestBegin := time.Now()
-	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
+	log.Debugf("Worker %v: version:%d.%d id:%d body:%v", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, pkt.Operation)
 
 	var opts crypto.SignerOpts
 	var key crypto.Signer
