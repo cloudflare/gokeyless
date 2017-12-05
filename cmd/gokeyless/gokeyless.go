@@ -36,6 +36,9 @@ var (
 	pidFile      string
 	manualMode   bool
 	configMode   bool
+	versionMode  bool
+
+	version string
 )
 
 func init() {
@@ -52,12 +55,16 @@ func init() {
 	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
 	flag.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR, and exits. Use the CSR to get server certificate issued manually.")
 	flag.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
+	flag.BoolVar(&versionMode, "version", false, "Print version and exit")
 }
 
 func main() {
 	flag.Parse()
 
 	switch {
+	case versionMode:
+		fmt.Println("gokeyless version", version)
+		os.Exit(0)
 	case manualMode && configMode:
 		log.Error("can't specify both -manual-activation and -config-only!")
 		os.Exit(1)

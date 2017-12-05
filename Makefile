@@ -6,6 +6,7 @@ LICENSE := "See License File"
 URL := "https://github.com/cloudflare/gokeyless"
 DESCRIPTION="A Go implementation of the keyless server protocol"
 VERSION := $(shell git describe --tags --always --dirty=-dev)
+LDFLAGS := "-X main.version=$(VERSION)"
 
 DESTDIR                      := build
 PREFIX                       := usr/local
@@ -37,7 +38,7 @@ install-config:
 	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
 
 $(INSTALL_BIN)/$(NAME): | install-config
-	@GOOS=linux GOARCH=$(ARCH) go build -o $@ ./cmd/$(NAME)/...
+	@GOOS=linux GOARCH=$(ARCH) go build -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
 
 .PHONY: clean
 clean:
