@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -36,7 +37,8 @@ func newStatistics() *statistics {
 		requestExecDurationByOpcode: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "keyless_request_exec_duration_per_opcode",
 			Help: "Time to execute a request not including time in queues, broken down by opcode.",
-		}, []string{"opcode"}),
+			// rsa_primes is only used for RSA signatures
+		}, []string{"opcode", "rsa_primes"}),
 		requestTotalDurationByOpcode: prometheus.NewSummaryVec(prometheus.SummaryOpts{
 			Name: "keyless_request_total_duration_per_opcode",
 			Help: "Total time to satisfy a request including time in queues, broken down by opcode.",
@@ -75,7 +77,7 @@ func newStatistics() *statistics {
 // logInvalid increments the error count and updates the error percentage.
 func (stats *statistics) logInvalid(opcode protocol.Op, requestBegin time.Time) {
 	stats.requestsInvalid.Inc()
-	stats.logRequestExecDuration(opcode, requestBegin)
+	stats.logRequestExecDuration(opcode, 0, requestBegin)
 }
 
 // logConnFailure increments the error count of connFailures.
@@ -87,9 +89,20 @@ func (stats *statistics) logKeyLoadDuration(loadBegin time.Time) {
 	stats.keyLoadDuration.Observe(float64(time.Now().Sub(loadBegin)) / float64(time.Second))
 }
 
-func (stats *statistics) logRequestExecDuration(opcode protocol.Op, requestBegin time.Time) {
+// logRequestExecDuration logs the time taken to execute an operation (not
+// including queueing). If the operation is an RSA operation, primes is the
+// number of primes in the RSA private key; otherwise, it is ignored.
+func (stats *statistics) logRequestExecDuration(opcode protocol.Op, primes int, requestBegin time.Time) {
 	stats.requestExecDuration.Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Second))
-	stats.requestExecDurationByOpcode.WithLabelValues(opcode.String()).
+	primesStr := ""
+	switch opcode {
+	case protocol.OpRSADecrypt, protocol.OpRSASignMD5SHA1, protocol.OpRSASignSHA1,
+		protocol.OpRSASignSHA224, protocol.OpRSASignSHA256, protocol.OpRSASignSHA384,
+		protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA256,
+		protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
+		primesStr = fmt.Sprint(primes)
+	}
+	stats.requestExecDurationByOpcode.WithLabelValues(opcode.String(), primesStr).
 		Observe(float64(time.Now().Sub(requestBegin)) / float64(time.Second))
 }
 
