@@ -1,4 +1,4 @@
-/sbin/chkconfig --add keyless
+/sbin/chkconfig --add gokeyless
 
 chown -R keyless:keyless /etc/keyless
 
