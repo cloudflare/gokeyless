@@ -19,6 +19,7 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"sync"
@@ -272,7 +273,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	var ok bool
 	switch pkt.Operation.Opcode {
 	case protocol.OpPing:
-		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
 		return makePongResponse(req, pkt.Operation.Payload)
 
 	case protocol.OpSeal, protocol.OpUnseal:
@@ -298,7 +299,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 			return makeErrResponse(req, code)
 		}
-		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
 		return makeRespondResponse(req, res)
 
 	case protocol.OpRPC:
@@ -311,7 +312,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			return makeErrResponse(req, protocol.ErrInternal)
 		}
 
-		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
 		return makeRespondResponse(req, codec.response)
 
 	case protocol.OpRSADecrypt:
@@ -343,7 +344,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			return makeErrResponse(req, protocol.ErrCrypto)
 		}
 
-		w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+		w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
 		return makeRespondResponse(req, ptxt)
 	case protocol.OpRSASignMD5SHA1:
 		opts = crypto.MD5SHA1
@@ -393,7 +394,14 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
-	w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+	primes := 0
+	if k, ok := key.(*rsa.PrivateKey); ok {
+		primes = len(k.Primes)
+	} else {
+		log.Warningf("Unexpected RSA private key type: got %v, expected *crypto/rsa.PrivateKey", reflect.TypeOf(key))
+	}
+
+	w.s.stats.logRequestExecDuration(pkt.Opcode, primes, requestBegin)
 	return makeRespondResponse(req, sig)
 }
 
@@ -473,7 +481,7 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 		return makeErrResponse(req, protocol.ErrCrypto)
 	}
 
-	w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+	w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
 	return makeRespondResponse(req, sig)
 }
 
