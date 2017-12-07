@@ -103,7 +103,7 @@ func tokenFromPrompt() string {
 		fmt.Print("Cloudflare Zone ID for this Keyless server: ")
 		fmt.Scanln(&zoneID)
 	}
-	fmt.Print("Certificates API Key: ")
+	fmt.Print("Origin CA Key: ")
 	fmt.Scanln(&token)
 	return token
 }
