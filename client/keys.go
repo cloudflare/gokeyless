@@ -173,20 +173,60 @@ func (key *Decrypter) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterO
 	}
 
 	if ok {
-		// If opts.SessionKeyLen is set, we must perform a variation of
-		// rsa.DecryptPKCS1v15SessionKey to ensure the entire operation
-		// is performed in constant time regardless of padding errors.
 		if l := opts1v15.SessionKeyLen; l > 0 {
-			plaintext := make([]byte, l)
-			if _, err := io.ReadFull(rand, plaintext); err != nil {
+			key := make([]byte, opts1v15.SessionKeyLen)
+			if _, err := io.ReadFull(rand, key); err != nil {
+				return nil, err
+			} else if err = stripPKCS1v15SessionKey(ptxt, key); err != nil {
 				return nil, err
 			}
-			valid := subtle.ConstantTimeEq(int32(len(ptxt)), int32(l))
-			v2 := subtle.ConstantTimeLessOrEq(l, len(ptxt))
-			l2 := subtle.ConstantTimeSelect(v2, l, len(ptxt))
-			subtle.ConstantTimeCopy(valid, plaintext[:l2], ptxt[:l2])
-			return plaintext, nil
+			return key, nil
 		}
+		return stripPKCS1v15(ptxt)
 	}
 	return ptxt, nil
+}
+
+func stripPKCS1v15(em []byte) ([]byte, error) {
+	valid, index := parsePKCS1v15(em)
+	if valid == 0 {
+		return nil, rsa.ErrDecryption
+	}
+	return em[index:], nil
+}
+
+func stripPKCS1v15SessionKey(em, key []byte) error {
+	if len(em)-(len(key)+3+8) < 0 {
+		return rsa.ErrDecryption
+	}
+
+	valid, index := parsePKCS1v15(em)
+	valid &= subtle.ConstantTimeEq(int32(len(em)-index), int32(len(key)))
+	subtle.ConstantTimeCopy(valid, key, em[len(em)-len(key):])
+	return nil
+}
+
+func parsePKCS1v15(em []byte) (valid, index int) {
+	firstByteIsZero := subtle.ConstantTimeByteEq(em[0], 0)
+	secondByteIsTwo := subtle.ConstantTimeByteEq(em[1], 2)
+
+	// The remainder of the plaintext must be a string of non-zero random
+	// octets, followed by a 0, followed by the message.
+	//   lookingForIndex: 1 iff we are still looking for the zero.
+	//   index: the offset of the first zero byte.
+	lookingForIndex := 1
+
+	for i := 2; i < len(em); i++ {
+		equals0 := subtle.ConstantTimeByteEq(em[i], 0)
+		index = subtle.ConstantTimeSelect(lookingForIndex&equals0, i, index)
+		lookingForIndex = subtle.ConstantTimeSelect(equals0, 0, lookingForIndex)
+	}
+
+	// The PS padding must be at least 8 bytes long, and it starts two
+	// bytes into em.
+	validPS := subtle.ConstantTimeLessOrEq(2+8, index)
+
+	valid = firstByteIsZero & secondByteIsTwo & (^lookingForIndex & 1) & validPS
+	index = subtle.ConstantTimeSelect(valid, index+1, 0)
+	return
 }
