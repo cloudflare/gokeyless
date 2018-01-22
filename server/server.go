@@ -339,7 +339,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 				w.s.stats.logInvalid(pkt.Opcode, requestBegin)
 				return makeErrResponse(req, protocol.ErrCrypto)
 			}
-			w.s.stats.logRequestExecDuration(pkt.Opcode, requestBegin)
+			w.s.stats.logRequestExecDuration(pkt.Opcode, len(rsaKey.Primes), requestBegin)
 			return makeRespondResponse(req, ptxt)
 		}
 
