@@ -88,9 +88,8 @@ func newStatistics() *statistics {
 }
 
 // logInvalid increments the error count and updates the error percentage.
-func (stats *statistics) logInvalid(opcode protocol.Op, requestBegin time.Time) {
+func (stats *statistics) logInvalid(opcode protocol.Op) {
 	stats.requestsInvalid.Inc()
-	stats.logRequestExecDuration(opcode, 0, requestBegin)
 }
 
 // logConnFailure increments the error count of connFailures.
