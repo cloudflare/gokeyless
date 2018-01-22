@@ -11,37 +11,49 @@ import (
 )
 
 type statistics struct {
-	requestExecDuration          prometheus.Summary
-	requestTotalDuration         prometheus.Summary
-	requestExecDurationByOpcode  *prometheus.SummaryVec
-	requestTotalDurationByOpcode *prometheus.SummaryVec
+	requestExecDuration          prometheus.Histogram
+	requestTotalDuration         prometheus.Histogram
+	requestExecDurationByOpcode  *prometheus.HistogramVec
+	requestTotalDurationByOpcode *prometheus.HistogramVec
 	requests                     prometheus.Counter
 	requestsInvalid              prometheus.Counter
 	requestOpcodes               *prometheus.CounterVec
-	keyLoadDuration              prometheus.Summary
+	keyLoadDuration              prometheus.Histogram
 	connFailures                 prometheus.Counter
 	queuedECDSARequests          prometheus.Gauge
 	queuedOtherRequests          prometheus.Gauge
 }
 
+var (
+	// 1 microsecond as a fraction of 1 second
+	us = 1e-6
+	// buckets starting at 1 microsecond and doubling until reaching a maximum of
+	// ~8 seconds
+	durationBuckets = prometheus.ExponentialBuckets(us, 2.0, 24)
+)
+
 func newStatistics() *statistics {
 	return &statistics{
-		requestExecDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "keyless_request_execution_duration",
-			Help: "Time to execute a request not including time in queues.",
+		requestExecDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "keyless_request_execution_duration",
+			Help:    "Time to execute a request not including time in queues.",
+			Buckets: durationBuckets,
 		}),
-		requestTotalDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "keyless_request_total_duration",
-			Help: "Total time to satisfy a request including time in queues.",
+		requestTotalDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "keyless_request_total_duration",
+			Help:    "Total time to satisfy a request including time in queues.",
+			Buckets: durationBuckets,
 		}),
-		requestExecDurationByOpcode: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Name: "keyless_request_exec_duration_per_opcode",
-			Help: "Time to execute a request not including time in queues, broken down by opcode.",
+		requestExecDurationByOpcode: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "keyless_request_exec_duration_per_opcode",
+			Help:    "Time to execute a request not including time in queues, broken down by opcode.",
+			Buckets: durationBuckets,
 			// rsa_primes is only used for RSA signatures
 		}, []string{"opcode", "rsa_primes"}),
-		requestTotalDurationByOpcode: prometheus.NewSummaryVec(prometheus.SummaryOpts{
-			Name: "keyless_request_total_duration_per_opcode",
-			Help: "Total time to satisfy a request including time in queues, broken down by opcode.",
+		requestTotalDurationByOpcode: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "keyless_request_total_duration_per_opcode",
+			Help:    "Total time to satisfy a request including time in queues, broken down by opcode.",
+			Buckets: durationBuckets,
 		}, []string{"opcode"}),
 		requests: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_requests",
@@ -55,9 +67,10 @@ func newStatistics() *statistics {
 			Name: "keyless_request_opcodes",
 			Help: "Number of requests received with various opcodes.",
 		}, []string{"opcode"}),
-		keyLoadDuration: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name: "keyless_key_load_duration",
-			Help: "Time to load a requested key.",
+		keyLoadDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "keyless_key_load_duration",
+			Help:    "Time to load a requested key.",
+			Buckets: durationBuckets,
 		}),
 		connFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "keyless_failed_connection",
