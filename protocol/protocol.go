@@ -519,11 +519,19 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 }
 
 // UnmarshalBinary unmarshals a binary-encoded TLV list of items into o.
+// It guarantees that ClientIP and ServerIP, if present, are each 4 or 16 bytes.
 func (o *Operation) UnmarshalBinary(body []byte) error {
 	// seen has enough entires to be indexed by any valid Tag value. If more tags
 	// are added later, change this code!
 	var seen [33]bool
 	var length int
+
+	validateIP := func(ip net.IP) (net.IP, error) {
+		if len(ip) != 4 && len(ip) != 16 {
+			return nil, fmt.Errorf("invalid byte length for IP address: %v", len(ip))
+		}
+		return ip, nil
+	}
 
 	for i := 0; i+2 < len(body); i += 3 + length {
 		tag := Tag(body[i])
@@ -552,9 +560,17 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 				copy(o.Digest[:], data)
 			}
 		case TagClientIP:
-			o.ClientIP = data
+			ip, err := validateIP(data)
+			if err != nil {
+				return fmt.Errorf("malformed client IP: %v", err)
+			}
+			o.ClientIP = ip
 		case TagServerIP:
-			o.ServerIP = data
+			ip, err := validateIP(data)
+			if err != nil {
+				return fmt.Errorf("malformed server IP: %v", err)
+			}
+			o.ServerIP = ip
 		case TagServerName:
 			o.SNI = string(data)
 		case TagPadding:
