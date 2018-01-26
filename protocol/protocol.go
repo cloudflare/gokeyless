@@ -366,7 +366,7 @@ type Operation struct {
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %02x, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
+	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
