@@ -19,7 +19,6 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"runtime"
 	"sync"
@@ -416,8 +415,6 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	primes := 0
 	if k, ok := key.(*rsa.PrivateKey); ok {
 		primes = len(k.Primes)
-	} else {
-		log.Warningf("Unexpected RSA private key type: got %v, expected *crypto/rsa.PrivateKey", reflect.TypeOf(key))
 	}
 
 	w.s.stats.logRequestExecDuration(pkt.Opcode, primes, requestBegin)

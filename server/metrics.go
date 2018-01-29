@@ -112,6 +112,12 @@ func (stats *statistics) logRequestExecDuration(opcode protocol.Op, primes int, 
 		protocol.OpRSASignSHA224, protocol.OpRSASignSHA256, protocol.OpRSASignSHA384,
 		protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA256,
 		protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
+		if primes > 10 {
+			// if a key has more than 10 primes, it is:
+			// a) degenerate, and so we don't care about measuring its performance
+			// b) probably a DoS attack to try to get us to generate tons of labels
+			primes = 0
+		}
 		primesStr = fmt.Sprint(primes)
 	}
 	stats.requestExecDurationByOpcode.WithLabelValues(opcode.String(), primesStr).
