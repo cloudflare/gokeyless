@@ -76,3 +76,8 @@ $(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	--rpm-use-file-permissions \
 	--rpm-user root --rpm-group root \
 	.
+
+.PHONY: dev
+dev: gokeyless
+gokeyless: $(shell find . -type f -name '*.go')
+	go build -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
