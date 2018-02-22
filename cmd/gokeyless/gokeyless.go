@@ -95,8 +95,13 @@ func main() {
 		os.Exit(0)
 	}
 
+	// If we make it here we need to ask for user input, so we need to give up
+	// and log an error instead (in case the server is running as a daemon).
+	// Failing hard with an error message makes the problem obvious, whereas a
+	// daemon blocked waiting on input can be hard to debug.
 	if needNewCertAndKey() {
-		initializeServerCertAndKey()
+		log.Error("the server cert/key need to be generated; run the server with either the -config-only or -manual-activation flag to generate the pair")
+		os.Exit(1)
 	}
 
 	s, err := server.NewServerFromFile(certFile, keyFile, caFile)
