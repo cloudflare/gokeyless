@@ -6,9 +6,9 @@ matrix:
     - go: 1.7.x
     - go: 1.8.x
     - go: 1.9.x
-    - go: tip
+    - go: 1.10.x
   allow_failures:
-    - go: tip
+    - go: master
 
 install:
   - go get golang.org/x/tools/cmd/goimports
@@ -23,5 +23,5 @@ script:
 notifications:
   email:
     recipients:
-      - joshlf@cloudflare.com
-      - zi@cloudflare.com
+      - cbroglie@cloudflare.com
+      - kyle@cloudflare.com
