@@ -43,7 +43,7 @@
     "x509",
     "x509/pkix"
   ]
-  revision = "3999d1f12477f88b144f3eb5be6cdd46e0e0c74b"
+  revision = "79ef9a848db9cc3dcd3e34757c33fecd89ab21bd"
 
 [[projects]]
   branch = "master"
@@ -112,6 +112,8 @@
   branch = "master"
   name = "golang.org/x/crypto"
   packages = [
+    "cryptobyte",
+    "cryptobyte/asn1",
     "ed25519",
     "ed25519/internal/edwards25519",
     "ocsp",
