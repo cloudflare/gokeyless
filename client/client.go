@@ -39,7 +39,7 @@ type Client struct {
 	// NOTE: For now DefaultRemote is very static to save dns lookup overhead
 	DefaultRemote Remote
 	// Blacklist is a list of addresses that this client won't dial.
-	Blacklist AddrSet
+	Blacklist *AddrSet
 	// remoteCache maps all known server names to corresponding remote.
 	remoteCache *ttlcache.LRU
 }
@@ -56,7 +56,7 @@ func NewClient(cert tls.Certificate, keyserverCA *x509.CertPool) *Client {
 			},
 		},
 		Dialer:      &net.Dialer{},
-		Blacklist:   NewAddrSet(),
+		Blacklist:   &AddrSet{},
 		remoteCache: ttlcache.NewLRU(remoteCacheSize, remoteCacheTTL, nil),
 	}
 }
@@ -83,21 +83,51 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 
 // An AddrSet is a set of addresses.
 type AddrSet struct {
-	m map[string]bool
+	addrs []*net.TCPAddr
+
+	subnets []*net.IPNet
+	snPorts []int
 }
 
-// NewAddrSet constructs a new, empty AddrSet.
-func NewAddrSet() AddrSet { return AddrSet{m: make(map[string]bool)} }
-
 // Add adds an addr to the set of addresses.
-func (as AddrSet) Add(addr net.Addr) {
+func (as *AddrSet) Add(addr net.Addr, port int) {
+	switch t := addr.(type) {
+	case *net.TCPAddr:
+		as.addrs = append(as.addrs, &net.TCPAddr{IP: t.IP, Port: port})
+	case *net.IPAddr:
+		as.addrs = append(as.addrs, &net.TCPAddr{IP: t.IP, Port: port})
+	case *net.IPNet:
+		as.subnets = append(as.subnets, t)
+		as.snPorts = append(as.snPorts, port)
+
+	default:
+		log.Debugf("silently ignoring unexpected address type: %T", addr)
+		return
+	}
+
 	log.Debugf("add to blacklist addr set: %s", addr)
-	as.m[addr.String()] = true
 }
 
 // Contains determines if an addr belongs to the set of addresses.
-func (as AddrSet) Contains(addr net.Addr) bool {
-	return as.m[addr.String()]
+func (as *AddrSet) Contains(addr net.Addr) bool {
+	t, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+
+	for _, cand := range as.addrs {
+		if t.Port == cand.Port && t.IP.Equal(cand.IP) {
+			return true
+		}
+	}
+
+	for i, sn := range as.subnets {
+		if t.Port == as.snPorts[i] && sn.Contains(t.IP) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // PopulateBlacklistFromHostname populates the client blacklist using an hostname.
@@ -109,10 +139,7 @@ func (c *Client) PopulateBlacklistFromHostname(host string, port int) {
 	}
 	if ips, err := LookupIPs(c.Resolvers, host); err == nil {
 		for _, ip := range ips {
-			c.Blacklist.Add(&net.TCPAddr{
-				IP:   ip,
-				Port: port,
-			})
+			c.Blacklist.Add(&net.IPAddr{IP: ip}, port)
 		}
 	}
 }
@@ -121,10 +148,7 @@ func (c *Client) PopulateBlacklistFromHostname(host string, port int) {
 // IPs resolved from domain SANs and IP SANs are put together with port and blacklisted.
 func (c *Client) PopulateBlacklistFromCert(cert *x509.Certificate, port int) {
 	for _, ip := range cert.IPAddresses {
-		c.Blacklist.Add(&net.TCPAddr{
-			IP:   ip,
-			Port: port,
-		})
+		c.Blacklist.Add(&net.IPAddr{IP: ip}, port)
 	}
 	for _, host := range cert.DNSNames {
 		c.PopulateBlacklistFromHostname(host, port)
@@ -133,7 +157,7 @@ func (c *Client) PopulateBlacklistFromCert(cert *x509.Certificate, port int) {
 
 // ClearBlacklist empties the client blacklist
 func (c *Client) ClearBlacklist() {
-	c.Blacklist = NewAddrSet()
+	c.Blacklist = &AddrSet{}
 }
 
 // registerSKI associates the SKI of a public key with a particular keyserver.
