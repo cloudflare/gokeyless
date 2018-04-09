@@ -240,7 +240,7 @@ func (c *Client) LookupServer(hostport string) (Remote, error) {
 
 // Dial dials a remote server, returning an existing connection if possible.
 func (s *singleRemote) Dial(c *Client) (*Conn, error) {
-	if c.Blacklist.Contains(s) {
+	if c.Blacklist.Contains(s.Addr) {
 		return nil, fmt.Errorf("server %s on client blacklist", s.String())
 	}
 
