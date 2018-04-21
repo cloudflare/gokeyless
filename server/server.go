@@ -25,7 +25,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cloudflare/cfssl/helpers"
+	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
@@ -102,6 +105,20 @@ func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (cryp
 	return keys.Add(nil, priv)
 }
 
+// AddFromURI loads all keys matching the given PKCS#11 URI to the keystore. LoadURI
+// is called to parse the URL, connect to the module, and populate a crypto.Signer,
+// which is stored in the Keystore.
+func (keys *DefaultKeystore) AddFromURI(uri string, LoadURI func(string) (crypto.Signer, error)) error {
+	log.Infof("loading %s...", uri)
+
+	priv, err := LoadURI(uri)
+	if err != nil {
+		return err
+	}
+
+	return keys.Add(nil, priv)
+}
+
 // Add adds a new key to the server's internal store. Stores in maps by SKI and
 // (if possible) Digest, SNI, Server IP, and Client IP.
 func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {
@@ -115,8 +132,31 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 
 	keys.skis[ski] = priv
 
-	log.Debugf("add key with SKI: %v", ski)
+	log.Debugf("add signer with SKI: %v", ski)
 	return nil
+}
+
+// DefaultLoadKey attempts to load a private key from PEM or DER.
+func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
+	priv, err = helpers.ParsePrivateKeyPEM(in)
+	if err == nil {
+		return priv, nil
+	}
+
+	return derhelpers.ParsePrivateKeyDER(in)
+}
+
+// DefaultLoadURI attempts to load a signer from a PKCS#11 URI.
+func DefaultLoadURI(uri string) (crypto.Signer, error) {
+	// This wrapper is here in case we want to parse vendor specific values
+	// based on the parameters in the URI or perform side operations, such
+	// as waiting for network to be up.
+	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
 
 // Get returns a key from keys, mapped from SKI.

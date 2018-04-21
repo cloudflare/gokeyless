@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -18,7 +17,6 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/server"
 )
@@ -53,6 +51,7 @@ type Config struct {
 type PrivateKeyStoreConfig struct {
 	Dir  string `yaml:"dir,omitempty" mapstructure:"dir"`
 	File string `yaml:"file,omitempty" mapstructure:"file"`
+	URI  string `yaml:"uri,omitempty" mapstructure:"uri"`
 }
 
 var (
@@ -147,10 +146,12 @@ func initConfig() error {
 
 	// Validate the config.
 	for _, store := range config.PrivateKeyStores {
-		if (store.Dir == "" && store.File == "") ||
-			(store.Dir != "" && store.File != "") {
-			return fmt.Errorf("private key stores must define exactly one of the 'dir' or 'file' keys")
+		if (store.Dir != "" && store.File == "" && store.URI == "") ||
+			(store.Dir == "" && store.File != "" && store.URI == "") ||
+			(store.Dir == "" && store.File == "" && store.URI != "") {
+			continue
 		}
+		return fmt.Errorf("private key stores must define exactly one of the 'dir', 'file', or 'uri' keys")
 	}
 
 	// Special handling for private key override flags since the config file
@@ -265,26 +266,20 @@ func initKeyStore() (server.Keystore, error) {
 	for _, store := range config.PrivateKeyStores {
 		switch {
 		case store.Dir != "":
-			if err := keys.AddFromDir(store.Dir, LoadKey); err != nil {
+			if err := keys.AddFromDir(store.Dir, server.DefaultLoadKey); err != nil {
 				return nil, err
 			}
 		case store.File != "":
-			if err := keys.AddFromFile(store.File, LoadKey); err != nil {
+			if err := keys.AddFromFile(store.File, server.DefaultLoadKey); err != nil {
+				return nil, err
+			}
+		case store.URI != "":
+			if err := keys.AddFromURI(store.URI, server.DefaultLoadURI); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return keys, nil
-}
-
-// LoadKey attempts to load a private key from PEM or DER.
-func LoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
-
-	return derhelpers.ParsePrivateKeyDER(in)
 }
 
 // validCertExpiry checks if cerficiate is currently valid.

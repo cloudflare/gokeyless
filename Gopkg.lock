@@ -3,6 +3,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/ThalesIgnite/crypto11"
+  packages = ["."]
+  revision = "a49ec8bedc9aafac9f97ff2bb1e14193a10d2a4a"
+
+[[projects]]
+  branch = "master"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
   revision = "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
@@ -100,6 +106,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/miekg/pkcs11"
+  packages = ["."]
+  revision = "287d9350987cc9334667882061e202e96cdfb4d0"
+
+[[projects]]
+  branch = "master"
   name = "github.com/mitchellh/mapstructure"
   packages = ["."]
   revision = "bb74f1db0675b241733089d5a1faa5dd8b0ef57b"
@@ -177,6 +189,12 @@
   version = "v1.0.2"
 
 [[projects]]
+  name = "github.com/youtube/vitess"
+  packages = ["go/pools"]
+  revision = "66e84fadcc1a7e956e7ffcebcaaba0b04132ca1f"
+  version = "v2.2"
+
+[[projects]]
   branch = "master"
   name = "go4.org"
   packages = ["testing/functest"]
@@ -201,6 +219,7 @@
   name = "golang.org/x/net"
   packages = [
     "bpf",
+    "context",
     "internal/iana",
     "internal/socket",
     "ipv4",
@@ -233,9 +252,19 @@
   revision = "5420a8b6744d3b0345ab293f6fcba19c978f1183"
   version = "v2.2.1"
 
+[[projects]]
+  name = "vitess.io/vitess"
+  packages = [
+    "go/cache",
+    "go/sync2",
+    "go/timer"
+  ]
+  revision = "66e84fadcc1a7e956e7ffcebcaaba0b04132ca1f"
+  version = "v2.2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "54c2e2bf2def557822d3312d9625543417767e1e3c68cec90028151d10126759"
+  inputs-digest = "65e4355badb177dfb4613bab1f84ec9e0fe925f5f8c9b60164e7b73c31ee8cb0"
   solver-name = "gps-cdcl"
   solver-version = 1

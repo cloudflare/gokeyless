@@ -28,13 +28,9 @@ install-config:
 	@chmod 700 $(CONFIG_PREFIX)/keys
 	@mkdir -p $(INIT_PREFIX)
 	@mkdir -p $(SYSTEMD_PREFIX)
+	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
 	@install -m755 pkg/gokeyless.sysv $(INIT_PREFIX)/gokeyless
 	@install -m755 pkg/gokeyless.service $(SYSTEMD_PREFIX)/gokeyless.service
-	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
-	@install -m644 pkg/default.pem $(CONFIG_PREFIX)/default.pem
-	@install -m400 pkg/default-key.pem $(CONFIG_PREFIX)/default-key.pem
-	@install -m400 pkg/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
-	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
 	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
@@ -83,3 +79,24 @@ $(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 dev: gokeyless
 gokeyless: $(shell find . -type f -name '*.go')
 	go build -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
+
+.PHONY: vet
+vet:
+	go vet `go list ./... | grep -v /vendor/`
+
+.PHONY: lint
+lint:
+	for i in `go list ./... | grep -v /vendor/`; do golint $$i; done
+
+.PHONY: test
+test:
+	go test -v -cover -race `go list ./... | grep -v /vendor/`
+	go test -v -cover -race ./tests -args -softhsm2
+
+.PHONY: test-nohsm
+test-nohsm:
+	go test -v -cover -race `go list ./... | grep -v /vendor/`
+
+.PHONY: benchmark-softhsm
+benchmark-softhsm:
+	go test -v -race ./server -bench HSM -args -softhsm2
