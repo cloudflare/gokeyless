@@ -102,6 +102,20 @@ func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (cryp
 	return keys.Add(nil, priv)
 }
 
+// AddFromURI loads all keys matching the given PKCS#11 URI to the keystore. LoadKey
+// is called to parse the URL, connect to the HSM, and populate a crypto.Signer,
+// which is stored in the Keystore.
+func (keys *DefaultKeystore) AddFromURI(uri string, LoadKey func([]byte) (crypto.Signer, error)) error {
+	log.Infof("loading %s...", uri)
+
+	priv, err := LoadKey(uri)
+	if err != nil {
+		return err
+	}
+
+	return keys.Add(nil, priv)
+}
+
 // Add adds a new key to the server's internal store. Stores in maps by SKI and
 // (if possible) Digest, SNI, Server IP, and Client IP.
 func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {

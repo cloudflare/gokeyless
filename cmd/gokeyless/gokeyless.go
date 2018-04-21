@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v2"
+	"github.com/thalesignite/crypto11"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
@@ -53,6 +54,7 @@ type Config struct {
 type PrivateKeyStoreConfig struct {
 	Dir  string `yaml:"dir,omitempty" mapstructure:"dir"`
 	File string `yaml:"file,omitempty" mapstructure:"file"`
+	URI  string `yaml:"uri,omitempty" mapstructure:"uri"`
 }
 
 var (
@@ -272,6 +274,10 @@ func initKeyStore() (server.Keystore, error) {
 			if err := keys.AddFromFile(store.File, LoadKey); err != nil {
 				return nil, err
 			}
+		case store.URI != "":
+			if err := keys.AddFromURI(store.URI, LoadHSMKey); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return keys, nil
@@ -285,6 +291,17 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	}
 
 	return derhelpers.ParsePrivateKeyDER(in)
+}
+
+// LoadHSMKey attempts to load a private key from an HSM.
+func LoadHSMKey(uri string) (priv crypto.Signer, err error) {
+	crypto11.ConfigureFromFile("/home/mahrud/go/src/github.com/cloudflare/gokeyless/config")
+	if key, err := crypto11.FindKeyPairOnSlot(0, []byte{0}, nil); err != nil {
+	fmt.Print("hi")
+		return nil, err
+	} else {
+		return key.(crypto.Signer), nil
+	}
 }
 
 // validCertExpiry checks if cerficiate is currently valid.
