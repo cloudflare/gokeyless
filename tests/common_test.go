@@ -5,13 +5,13 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"io/ioutil"
 	"time"
 
-	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
 )
@@ -38,6 +38,8 @@ var (
 	ecdsaKey *client.PrivateKey
 	remote   client.Remote
 )
+
+var testSoftHSM bool
 
 type dummySealer struct{}
 
@@ -72,16 +74,6 @@ func (DummyRPC) Error(_ string, _ *string) error {
 	return errors.New("remote rpc error")
 }
 
-// LoadKey attempts to load a private key from PEM or DER.
-func LoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
-
-	return derhelpers.ParsePrivateKeyDER(in)
-}
-
 // helper function reads a pub key from a file and convert it to a signer
 func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 	pemBytes, err := ioutil.ReadFile(filepath)
@@ -106,16 +98,30 @@ func init() {
 
 	log.Level = log.LevelFatal
 
+	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.Parse()
+
 	s, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
-	if err != nil {
-		log.Fatal(err)
+	if !testSoftHSM {
+		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.SetKeystore(keys)
+	} else {
+		keys := server.NewDefaultKeystore()
+		if err := keys.AddFromURI(params.RSAURI, server.DefaultLoadURI); err != nil {
+			log.Fatal(err)
+		}
+		if err := keys.AddFromURI(params.ECDSAURI, server.DefaultLoadURI); err != nil {
+			log.Fatal(err)
+		}
+		s.SetKeystore(keys)
 	}
-	s.SetKeystore(keys)
 
 	s.SetSealer(dummySealer{})
 	if err = s.RegisterRPC(DummyRPC{}); err != nil {

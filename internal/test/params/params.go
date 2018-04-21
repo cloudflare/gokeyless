@@ -1,5 +1,4 @@
-// Package params provides parameters useful in testing cryptographic
-// operations.
+// Package params provides parameters useful in testing cryptographic operations.
 package params
 
 import (
@@ -50,4 +49,26 @@ var (
 	ECDSASHA256Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA256, Curve: elliptic.P256(), Opts: crypto.SHA256, PayloadSize: 32}
 	ECDSASHA384Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA384, Curve: elliptic.P384(), Opts: crypto.SHA384, PayloadSize: 48}
 	ECDSASHA512Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA512, Curve: elliptic.P521(), Opts: crypto.SHA512, PayloadSize: 64}
+)
+
+const (
+	// RSAURI and ECDSAURI are sample PKCS #11 URIs used for testing HSM
+	// Compatibility. Before running tests, copy the contents of the
+	// testdata/tokens/ directory to your SoftHSM2 token directory, usually
+	// located at /var/lib/softhsm/tokens/, and run `make test-softhsm`
+	RSAURI   = "pkcs11:token=SoftHSM2%20Token;id=%03;slot-id=43989470?module-path=/usr/local/lib/softhsm/libsofthsm2.so&pin-value=1234"
+	ECDSAURI = "pkcs11:token=SoftHSM2%20Token;id=%02;slot-id=43989470?module-path=/usr/local/lib/softhsm/libsofthsm2.so&pin-value=1234"
+)
+
+// HSMSignParams represents a set of parameters to a HSM signing operation.
+type HSMSignParams struct {
+	Opcode      protocol.Op       // The Keyless protocol opcode for this operation
+	URI         string            // The PKCS#11 URI of the key to be used for signing
+	Opts        crypto.SignerOpts // Options to the signing function
+	PayloadSize int               // The size of the payload to be signed
+}
+
+var (
+	HSMECDSASHA256Params = HSMSignParams{Opcode: protocol.OpECDSASignSHA256, URI: ECDSAURI, Opts: crypto.SHA256, PayloadSize: 32}
+	HSMRSASHA512Params   = HSMSignParams{Opcode: protocol.OpRSASignSHA512, URI: RSAURI, Opts: crypto.SHA512, PayloadSize: 64}
 )

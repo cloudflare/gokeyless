@@ -2,9 +2,27 @@
 [![Build Status](https://travis-ci.org/cloudflare/gokeyless.png?branch=master)](https://travis-ci.org/cloudflare/gokeyless)
 [![GoDoc](https://godoc.org/github.com/cloudflare/gokeyless?status.png)](https://godoc.org/github.com/cloudflare/gokeyless)
 
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Go Keyless](#go-keyless)
+    - [Keyless SSL implementation in Go](#keyless-ssl-implementation-in-go)
+    - [Protocol](#protocol)
+    - [Key Management](#key-management)
+        - [Hardware Security Modules](#hardware-security-modules)
+- [Deploying](#deploying)
+    - [Installing](#installing)
+        - [Package Installation](#package-installation)
+        - [Source Installation](#source-installation)
+    - [Running](#running)
+    - [Testing](#testing)
+    - [License](#license)
+
+<!-- markdown-toc end -->
+
+
 ## Keyless SSL implementation in Go
-Go Keyless is an implementation Cloudflare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
-an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
+Go Keyless is an implementation Cloudflare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
 
 ## Protocol
 The Cloudflare Keyless SSL client communicates to the server via a binary
@@ -21,16 +39,16 @@ communicating policy information.
 
 Header:
 
-    0 - - 1 - - 2 - - 3 - - 4 - - - - 6 - - 7 - - 8
+    0 - - 1 - - 2 - - 3 - - 4 - - 5 - - 6 - - 7 - - 8
     | Maj | Min |   Length  |          ID           |
-    |                    Body                       |
-    |     Body     | <- 8 + Length
+    |                      Body                     |
+    |                      Body                     | <- 8 + Length
 
 Item:
 
-    0 - - 1 - - 2 - - 3 - - 4 - - - - 6 - - 7 - - 8
+    0 - - 1 - - 2 - - 3 - - 4 - - 5 - - 6 - - 7 - - 8
     | Tag |   Length  |          Data               |
-    |           Data             | <- 3 + Length
+    |                      Data                     | <- 3 + Length
 
 All numbers are in network byte order (big endian).
 
@@ -119,7 +137,19 @@ The private keys that this server is able to use should be stored with a `.key` 
 
 Note that the configuration file is the recommened way to specify these options; see below for more information.
 
-# Deploying 
+### Hardware Security Modules
+
+Private keys can also be stored on a Hardware Security Module. Keyless can access such a key using a [PKCS #11 URI](https://tools.ietf.org/html/rfc7512) in the configuration file. Here are some examples of URIs for keys stored on various HSM providers:
+
+    - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+    - uri: pkcs11:token=accelerator;object=thaleskey;slot-id=492971157?module-path=/opt/nfast/toolkits/pkcs11/libcknfast.so
+    - uri: pkcs11:token=YubiKey%20PIV;id=%00;slot-id=0?module-path=/usr/lib64/libykcs11.so&pin-value=123456&max-sessions=1
+    - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+    - uri: pkcs11:token=elab2parN;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pin-value=crypto1
+
+Note that for now only one PKCS #11 module can be used at a time, so if you have keys on multiple HSMs, we recommend using [p11-glue](https://p11-glue.github.io/p11-glue/) to consolidate access through one module.
+
+# Deploying
 
 ## Installing
 
@@ -143,6 +173,24 @@ The the keyserver for Keyless SSL consists of a single binary file, `gokeyless`.
 You should add your Cloudflare account details to the configuration file, and optionally customize the location of the private key directory. Most users should not need to modify the remaining defaults.
 
 Each option can optionally be overriden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
+
+## Testing
+
+Unit tests and benchmarks have been implemented for various parts of Go Keyless via `go test`. Most of the tests run out of the box, but some setup is necessary to run the HSM-related tests:
+
+1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2
+1. Copy the test tokens to the location of your SoftHSM2 token directory (commonly `/var/lib/softhsm/tokens`, but may vary):
+
+        $ cp -r tests/testdata/tokens/* /path/to/token/directory/
+
+1. The tests currently assume the SoftHSM2 library will be installed at `/usr/local/lib/softhsm/libsofthsm2.so`. If your system differs, you must create a symlink (sudo may be required):
+
+        $ mkdir -p /usr/local/lib/softhsm
+        $ ln -s /path/to/libsofthsm2.so /usr/local/lib/softhsm/libsofthsm2.so
+
+Then simply run `make test` to execute the test suite.
+
+Note that if you need to run the tests without first configuring SoftHSM2 for some reason, you can use the `test-nohsm` target.
 
 ## License
 
