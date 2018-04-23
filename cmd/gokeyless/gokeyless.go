@@ -293,15 +293,27 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	return derhelpers.ParsePrivateKeyDER(in)
 }
 
-// LoadHSMKey attempts to load a private key from an HSM.
+// LoadHSMKey attempts to find a private key stored on an HSM.
 func LoadHSMKey(uri string) (priv crypto.Signer, err error) {
-	crypto11.ConfigureFromFile("/home/mahrud/go/src/github.com/cloudflare/gokeyless/config")
-	if key, err := crypto11.FindKeyPairOnSlot(0, []byte{0}, nil); err != nil {
-	fmt.Print("hi")
+	var slot uint
+	var id, label []byte
+	var pkcs11File string
+
+	// FIXME this is temporary
+	pkcs11File = uri
+	crypto11.ConfigureFromFile(pkcs11File)
+
+	// TODO: Parse the URI here.
+	slot = 0 // 612970702
+	id = []byte{0}
+	label = nil
+
+	key, err := crypto11.FindKeyPairOnSlot(slot, id, label)
+	if err != nil {
 		return nil, err
-	} else {
-		return key.(crypto.Signer), nil
 	}
+
+	return key.(crypto.Signer), nil
 }
 
 // validCertExpiry checks if cerficiate is currently valid.
