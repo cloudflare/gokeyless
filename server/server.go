@@ -126,8 +126,9 @@ func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
 
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
+	config *ServeConfig
 	// config is initialized with the auth configuration used for communicating with keyless clients.
-	config *tls.Config
+	tlsConfig *tls.Config
 	// keys contains the private keys and certificates for the server.
 	keys Keystore
 	// stats stores statistics about keyless requests.
@@ -139,19 +140,20 @@ type Server struct {
 	// dispatcher is an RPC server that exposes arbitrary APIs to the client.
 	dispatcher *rpc.Server
 
-	// TODO(joshlf): Re-architect so that we don't need to store listeners in the
-	// struct (which is totally not thread safe)
-
-	// unixListener is the listener serving unix://[UnixAddr]
-	unixListener net.Listener
-	// tcpListener is the listener serving tcp://[Addr]
-	tcpListener net.Listener
+	listeners []net.Listener
+	wp        *workerPool
+	mtx       sync.Mutex
+	wg        sync.WaitGroup
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
-func NewServer(cert tls.Certificate, keylessCA *x509.CertPool) *Server {
+func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPool) *Server {
+	if config == nil {
+		config = DefaultServeConfig()
+	}
 	return &Server{
-		config: &tls.Config{
+		config: config,
+		tlsConfig: &tls.Config{
 			ClientCAs:    keylessCA,
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 			Certificates: []tls.Certificate{cert},
@@ -167,7 +169,7 @@ func NewServer(cert tls.Certificate, keylessCA *x509.CertPool) *Server {
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
-func NewServerFromFile(certFile, keyFile, caFile string) (*Server, error) {
+func NewServerFromFile(config *ServeConfig, certFile, keyFile, caFile string) (*Server, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -182,12 +184,17 @@ func NewServerFromFile(certFile, keyFile, caFile string) (*Server, error) {
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
 		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
 	}
-	return NewServer(cert, keylessCA), nil
+	return NewServer(config, cert, keylessCA), nil
+}
+
+// Config returns the Server's configuration.
+func (s *Server) Config() *ServeConfig {
+	return s.config
 }
 
 // TLSConfig returns the Server's TLS configuration.
 func (s *Server) TLSConfig() *tls.Config {
-	return s.config
+	return s.tlsConfig
 }
 
 // SetKeystore sets the Keystore used by s. It is NOT safe to call concurrently
@@ -668,70 +675,61 @@ func (c *conn) LogConnErr(err error) {
 	})
 }
 
-// Serve calls ServeConfig(l, DefaultServeConfig()).
-func (s *Server) Serve(l net.Listener) error {
-	return s.ServeConfig(l, DefaultServeConfig())
+func (s *Server) addListener(l net.Listener) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	if len(s.listeners) == 0 {
+		if s.wp != nil {
+			panic("workerPool exists without any listeners")
+		}
+		s.wp = newWorkerPool(s)
+	}
+	s.listeners = append(s.listeners, l)
+	s.wg.Add(1)
 }
 
-// ServeConfig accepts incoming connections on the Listener l, creating a new
+func (s *Server) removeListener(l net.Listener) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	var listeners []net.Listener
+	for i := range s.listeners {
+		if s.listeners[i] != l {
+			listeners = append(listeners, s.listeners[i])
+		}
+	}
+	if len(listeners)+1 != len(s.listeners) {
+		panic("attempt to remove listener which was not added")
+	}
+	if len(listeners) == 0 {
+		s.wp.Destroy()
+		s.wp = nil
+	}
+	s.listeners = listeners
+	s.wg.Done()
+}
+
+// Serve accepts incoming connections on the Listener l, creating a new
 // pair of service goroutines for each. The first time l.Accept returns a
 // non-temporary error, everything will be torn down.
 //
 // If l is neither a TCP listener nor a Unix listener, then the timeout will be
 // taken to be the lower of the TCP timeout and the Unix timeout specified in
-// cfg.
-func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
+// the server's config.
+func (s *Server) Serve(l net.Listener) error {
+	s.addListener(l)
+	defer s.removeListener(l)
 	defer l.Close()
 
-	var others []worker.Worker
-	var ecdsas []worker.Worker
-	var background []worker.BackgroundWorker
-	rbuf := buf_ecdsa.NewSyncRandBuffer(randBufferLen, elliptic.P256())
-	for i := 0; i < cfg.otherWorkers; i++ {
-		others = append(others, newOtherWorker(s, fmt.Sprintf("other-%v", i)))
-	}
-	for i := 0; i < cfg.ecdsaWorkers; i++ {
-		ecdsas = append(ecdsas, newECDSAWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
-	}
-	for i := 0; i < cfg.bgWorkers; i++ {
-		background = append(background, newRandGenWorker(rbuf))
-	}
-
-	bgpool := worker.NewBackgroundPool(background...)
-	otherpool := worker.NewPool(others...)
-	ecdsapool := worker.NewPool(ecdsas...)
-
-	utilCh := make(chan struct{}, 0)
-	var utilWg sync.WaitGroup
-	if util := cfg.utilization; util != nil {
-		go func() {
-			ticker := time.NewTicker(1 * time.Second)
-			utilWg.Add(1)
-			for {
-				select {
-				case <-ticker.C:
-					util(
-						float64(otherpool.Busy())/float64(cfg.otherWorkers),
-						float64(ecdsapool.Busy())/float64(cfg.ecdsaWorkers),
-					)
-
-				case <-utilCh:
-					ticker.Stop()
-					utilWg.Done()
-					return
-				}
-			}
-		}()
-	}
-
-	timeout := cfg.tcpTimeout
+	timeout := s.config.tcpTimeout
 	switch l.(type) {
 	case *net.TCPListener:
 	case *net.UnixListener:
-		timeout = cfg.unixTimeout
+		timeout = s.config.unixTimeout
 	default:
-		if cfg.unixTimeout < timeout {
-			timeout = cfg.unixTimeout
+		if s.config.unixTimeout < timeout {
+			timeout = s.config.unixTimeout
 		}
 	}
 
@@ -753,14 +751,6 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 		mapMtx.Unlock()
 		// Wait for all of the goroutines to quit.
 		wg.Wait()
-
-		// Destroy the pools
-		bgpool.Destroy()
-		otherpool.Destroy()
-		ecdsapool.Destroy()
-		// Stop publishing utilization info.
-		close(utilCh)
-		utilWg.Wait()
 	}()
 
 	for {
@@ -770,8 +760,8 @@ func (s *Server) ServeConfig(l net.Listener, cfg *ServeConfig) error {
 			return err
 		}
 
-		tconn := tls.Server(c, s.config)
-		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, ecdsapool, otherpool)
+		tconn := tls.Server(c, s.tlsConfig)
+		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
 		log.Debugf("spawning new connection: %v", c.RemoteAddr())
 		handle := client.SpawnConn(conn)
 
@@ -816,64 +806,55 @@ func accept(l net.Listener) (net.Conn, error) {
 	}
 }
 
-// ListenAndServe calls ListenAndServeConfig(DefaultServeConfig()).
-func (s *Server) ListenAndServe() error {
-	return s.ListenAndServeConfig(DefaultServeConfig())
-}
-
-// ListenAndServeConfig listens on the TCP network address s.Addr and then calls
-// ServeConfig to handle requests on incoming keyless connections.
-func (s *Server) ListenAndServeConfig(cfg *ServeConfig) error {
-	if cfg.tcpAddr != "" {
-		l, err := net.Listen("tcp", cfg.tcpAddr)
+// ListenAndServe listens on the TCP network address addr and then calls
+// Serve to handle requests on incoming keyless connections.
+func (s *Server) ListenAndServe(addr string) error {
+	if addr != "" {
+		l, err := net.Listen("tcp", addr)
 		if err != nil {
 			return err
 		}
-		s.tcpListener = l
 
 		log.Infof("Listening at tcp://%s\n", l.Addr())
-		return s.ServeConfig(l, cfg)
+		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty address")
 }
 
-// UnixListenAndServe calls UnixListenAndServeConfig(DefaultServeConfig()).
-func (s *Server) UnixListenAndServe() error {
-	return s.UnixListenAndServeConfig(DefaultServeConfig())
-}
-
-// UnixListenAndServeConfig listens on the Unix socket address and handles
+// UnixListenAndServe listens on the Unix socket address and handles
 // keyless requests.
-func (s *Server) UnixListenAndServeConfig(cfg *ServeConfig) error {
-	if cfg.unixAddr != "" {
-		l, err := net.Listen("unix", cfg.unixAddr)
+func (s *Server) UnixListenAndServe(path string) error {
+	if path != "" {
+		l, err := net.Listen("unix", path)
 		if err != nil {
 			return err
 		}
-		s.unixListener = l
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
-		return s.ServeConfig(l, cfg)
+		return s.Serve(l)
 	}
 	return errors.New("can't listen on empty path")
 }
 
 // Close shuts down the listeners.
 func (s *Server) Close() {
-	if s.unixListener != nil {
-		s.unixListener.Close()
+	// Close each active listener. This will result in the blocking calls to
+	// Accept to immediately return with error, which will trigger the teardown
+	// of all active connections and associated goroutines.
+	s.mtx.Lock()
+	for _, l := range s.listeners {
+		l.Close()
 	}
+	s.mtx.Unlock()
 
-	if s.tcpListener != nil {
-		s.tcpListener.Close()
-	}
+	// Block here until all goroutines have returned.
+	s.wg.Wait()
 }
 
 // ServeConfig is used to configure a call to Server.Serve. It specifies the
 // number of ECDSA worker goroutines, other worker goroutines, and background
 // worker goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
-	tcpAddr, unixAddr          string
 	ecdsaWorkers, otherWorkers int
 	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
@@ -908,18 +889,6 @@ func DefaultServeConfig() *ServeConfig {
 		tcpTimeout:   defaultTCPTimeout,
 		unixTimeout:  defaultUnixTimeout,
 	}
-}
-
-// TCPAddr sets the TCP address to listen on.
-func (s *ServeConfig) TCPAddr(addr string) *ServeConfig {
-	s.tcpAddr = addr
-	return s
-}
-
-// UnixAddr sets the Unix address to listen on.
-func (s *ServeConfig) UnixAddr(addr string) *ServeConfig {
-	s.unixAddr = addr
-	return s
 }
 
 // ECDSAWorkers specifies the number of ECDSA worker goroutines to use.
