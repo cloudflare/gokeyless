@@ -127,7 +127,7 @@ func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
 	config *ServeConfig
-	// config is initialized with the auth configuration used for communicating with keyless clients.
+	// tlsConfig is initialized with the auth configuration used for communicating with keyless clients.
 	tlsConfig *tls.Config
 	// keys contains the private keys and certificates for the server.
 	keys Keystore
