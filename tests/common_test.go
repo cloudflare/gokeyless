@@ -106,7 +106,7 @@ func init() {
 
 	log.Level = log.LevelFatal
 
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
+	s, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -125,8 +125,7 @@ func init() {
 	listening := make(chan bool)
 	go func() {
 		listening <- true
-		cfg := server.DefaultServeConfig().TCPAddr(serverAddr)
-		if err := s.ListenAndServeConfig(cfg); err != nil {
+		if err := s.ListenAndServe(serverAddr); err != nil {
 			log.Fatal(err)
 		}
 	}()

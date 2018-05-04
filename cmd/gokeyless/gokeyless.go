@@ -104,7 +104,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	s, err := server.NewServerFromFile(certFile, keyFile, caFile)
+	cfg := server.DefaultServeConfig()
+	s, err := server.NewServerFromFile(cfg, certFile, keyFile, caFile)
 	if err != nil {
 		log.Fatal("cannot start server:", err)
 	}
@@ -125,9 +126,8 @@ func main() {
 		}
 	}
 
-	cfg := server.DefaultServeConfig().TCPAddr(net.JoinHostPort("", port))
 	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
-	log.Fatal(s.ListenAndServeConfig(cfg))
+	log.Fatal(s.ListenAndServe(net.JoinHostPort("", port)))
 }
 
 // LoadKey attempts to load a private key from PEM or DER.

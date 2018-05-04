@@ -56,7 +56,7 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 func TestMain(m *testing.M) {
 	var err error
 	// Setup keyless server
-	s, err = server.NewServerFromFile(serverCert, serverKey, keylessCA)
+	s, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -173,7 +173,8 @@ func TestBadRemote(t *testing.T) {
 
 func TestSlowServer(t *testing.T) {
 	// Setup a slow keyless server
-	s2, err := server.NewServerFromFile(serverCert, serverKey, keylessCA)
+	cfg := server.DefaultServeConfig().TCPTimeout(time.Second * 30)
+	s2, err := server.NewServerFromFile(cfg, serverCert, serverKey, keylessCA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,9 +186,7 @@ func TestSlowServer(t *testing.T) {
 	sl := slowListener{l}
 
 	go func() {
-		cfg := server.DefaultServeConfig()
-		cfg.TCPTimeout(time.Second * 30)
-		if err := s2.ServeConfig(&sl, cfg); err != nil {
+		if err := s2.Serve(&sl); err != nil {
 			t.Fatal(err)
 		}
 	}()
