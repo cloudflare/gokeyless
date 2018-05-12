@@ -5,12 +5,17 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
@@ -22,55 +27,127 @@ const (
 	defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
 )
 
+// Config represents the gokeyless configuration file.
+type Config struct {
+	LogLevel int `yaml:"loglevel" mapstructure:"loglevel"`
+
+	Hostname     string `yaml:"hostname" mapstructure:"hostname"`
+	ZoneID       string `yaml:"zone_id" mapstructure:"zone_id"`
+	OriginCAKey  string `yaml:"origin_ca_key" mapstructure:"origin_ca_key"`
+	InitEndpoint string `yaml:"init_endpoint" mapstructure:"init_endpoint"`
+
+	CertFile      string `yaml:"cert" mapstructure:"cert"`
+	KeyFile       string `yaml:"key" mapstructure:"key"`
+	CACertFile    string `yaml:"ca_cert" mapstructure:"ca_cert"`
+	CSRFile       string `yaml:"csr" mapstructure:"csr"`
+	PrivateKeyDir string `yaml:"private_key_dir" mapstructure:"private_key_dir"`
+
+	Port        int `yaml:"port" mapstructure:"port"`
+	MetricsPort int `yaml:"metrics_port" mapstructure:"metrics_port"`
+
+	PidFile string `yaml:"pid_file" mapstructure:"pid_file"`
+}
+
 var (
-	csrFile = "server.csr"
+	config Config
 
-	apiKeyFile   string
-	initEndpoint string
-	hostname     string
-	port         string
-	zoneID       string
-	metricsAddr  string
-	certFile     string
-	keyFile      string
-	caFile       string
-	keyDir       string
-	pidFile      string
-	manualMode   bool
-	configMode   bool
-	versionMode  bool
+	configFile       string
+	manualMode       bool
+	configMode       bool
+	versionMode      bool
+	helpMode         bool
+	outputConfigMode bool
 
-	version string
+	version = "dev"
 )
 
 func init() {
-	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
-	flag.StringVar(&hostname, "hostname", "", "keyserver hostname (IP address is OK)")
-	flag.StringVar(&zoneID, "zone-id", "", "Cloudflare Zone ID for account detail lookup")
-	flag.StringVar(&apiKeyFile, "api-key-file", "", "file of API key used for server certificate issuance")
-	flag.StringVar(&initEndpoint, "init-endpoint", defaultEndpoint, "API endpoint for server initialization")
-	flag.StringVar(&certFile, "cert", "server.pem", "Keyless server authentication certificate")
-	flag.StringVar(&keyFile, "key", "server-key.pem", "Keyless server authentication key")
-	flag.StringVar(&caFile, "ca-file", "keyless_cacert.pem", "Keyless client certificate authority")
-	flag.StringVar(&keyDir, "private-key-directory", "./keys", "Directory in which private keys are stored with .key extension")
-	flag.StringVar(&port, "port", "2407", "Keyless port on which to listen")
-	flag.StringVar(&metricsAddr, "metrics-addr", "localhost:2406", "address where the metrics API is served")
-	flag.StringVar(&pidFile, "pid-file", "", "File to store PID of running server")
-	flag.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR, and exits. Use the CSR to get server certificate issued manually.")
-	flag.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
-	flag.BoolVar(&versionMode, "version", false, "Print version and exit")
+	flagset := pflag.CommandLine
+	flagset.SortFlags = false
+
+	// These flags can all override values from the config file. Hyphens are
+	// used for flags (POSIX convention), but they are normalized to underscores
+	// (YAML convention) via our pflags normalize function:
+	flagset.SetNormalizeFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+		return pflag.NormalizedName(strings.Replace(name, "-", "_", -1))
+	})
+	flagset.IntP("loglevel", "l", 0, "Log level (0 = DEBUG, 5 = FATAL)")
+	viper.SetDefault("loglevel", log.LevelInfo)
+	flagset.String("hostname", "", "Hostname of this key server (must match configuration in Cloudflare dashboard)")
+	flagset.String("zone-id", "", "Cloudflare Zone ID")
+	flagset.String("init-endpoint", "", "Cloudflare API endpoint for server initialization")
+	viper.SetDefault("init_endpoint", defaultEndpoint)
+	flagset.MarkHidden("init-endpoint") // users should not need this
+	flagset.String("cert", "", "Key server authentication certificate")
+	viper.SetDefault("cert", "server.pem")
+	flagset.String("key", "", "Key server authentication key")
+	viper.SetDefault("key", "server-key.pem")
+	flagset.String("ca-cert", "", "Key client certificate authority")
+	viper.SetDefault("ca_cert", "keyless_cacert.pem")
+	flagset.String("csr", "", "File to write CSR for server initialization")
+	viper.SetDefault("csr", "server.csr")
+	flagset.String("private-key-dir", "", "Directory in which private keys are stored with .key extension")
+	viper.SetDefault("private_key_dir", "./keys")
+	flagset.Int("port", 0, "Port for key server to listen on (must match configuration in Cloudflare dashboard)")
+	viper.SetDefault("port", 2407)
+	flagset.Int("metrics-port", 0, "Port for key server to serve /metrics")
+	viper.SetDefault("metrics_port", 2406)
+	flagset.String("pid-file", "", "File to store PID of running server")
+
+	// These are control flags which do not have configuration file
+	// counterparts.
+	flagset.StringVarP(&configFile, "config-file", "c", "", "Configuration file path")
+	flagset.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR, and exits. Use the CSR to get server certificate issued manually.")
+	flagset.MarkHidden("manual-activation") // users should not need this
+	flagset.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
+	flagset.BoolVarP(&versionMode, "version", "v", false, "Print version and exit")
+	flagset.BoolVarP(&helpMode, "help", "h", false, "Print usage exit")
+	// Temporary option to demo config overrides.
+	flagset.BoolVarP(&outputConfigMode, "output-config", "o", false, "Print usage exit")
+	flagset.MarkHidden("output_config")
+}
+
+func initConfig() error {
+	pflag.Parse()
+	viper.BindPFlags(pflag.CommandLine)
+	viper.AutomaticEnv()
+
+	viper.SetConfigType("yaml")
+	if configFile != "" {
+		viper.SetConfigFile(configFile)
+	} else {
+		viper.SetConfigName("gokeyless")
+		// Check for a config file in the current directory first, then fallback
+		// to the system wide location.
+		viper.AddConfigPath(".")
+		viper.AddConfigPath("/etc/keyless")
+	}
+
+	if err := viper.ReadInConfig(); err != nil {
+		// File not found is non-fatal, unless it was explicitly provided.
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok || configFile != "" {
+			return err
+		}
+	}
+
+	return viper.Unmarshal(&config)
 }
 
 func main() {
-	flag.Parse()
+	if err := initConfig(); err != nil {
+		log.Fatal(err)
+	}
+	log.Level = config.LogLevel
 
 	switch {
+	case helpMode:
+		pflag.Usage()
+		os.Exit(0)
 	case versionMode:
 		fmt.Println("gokeyless version", version)
 		os.Exit(0)
 	case manualMode && configMode:
-		log.Error("can't specify both -manual-activation and -config-only!")
-		os.Exit(1)
+		log.Fatal("can't specify both -manual-activation and -config-only!")
 	case manualMode:
 		// Allow manual activation (requires the CSR to be manually signed).
 		// manual activation won't proceed to start the server
@@ -80,10 +157,10 @@ func main() {
 			manualActivation()
 
 			log.Infof("contact CloudFlare for manual signing of csr in %q",
-				csrFile)
+				config.CSRFile)
 		} else {
 			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact CloudFlare for manual signing",
-				csrFile, keyFile)
+				config.CSRFile, config.KeyFile)
 		}
 		os.Exit(0)
 	case configMode:
@@ -93,6 +170,13 @@ func main() {
 			log.Info("already configured; exiting")
 		}
 		os.Exit(0)
+	case outputConfigMode:
+		b, err := yaml.Marshal(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Print(string(b))
+		os.Exit(0)
 	}
 
 	// If we make it here we need to ask for user input, so we need to give up
@@ -100,34 +184,36 @@ func main() {
 	// Failing hard with an error message makes the problem obvious, whereas a
 	// daemon blocked waiting on input can be hard to debug.
 	if needNewCertAndKey() {
-		log.Error("the server cert/key need to be generated; run the server with either the -config-only or -manual-activation flag to generate the pair")
+		log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_key values in your config file, or run the server with either the -config-only or -manual-activation flag to generate the pair interactively")
 		os.Exit(1)
 	}
 
 	cfg := server.DefaultServeConfig()
-	s, err := server.NewServerFromFile(cfg, certFile, keyFile, caFile)
+	s, err := server.NewServerFromFile(cfg, config.CertFile, config.KeyFile, config.CACertFile)
 	if err != nil {
 		log.Fatal("cannot start server:", err)
 	}
 
-	keys, err := server.NewKeystoreFromDir(keyDir, LoadKey)
+	keys, err := server.NewKeystoreFromDir(config.PrivateKeyDir, LoadKey)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	s.SetKeystore(keys)
 
-	if pidFile != "" {
-		if f, err := os.Create(pidFile); err != nil {
-			log.Errorf("error creating pid file: %v", err)
+	if config.PidFile != "" {
+		if f, err := os.Create(config.PidFile); err != nil {
+			log.Fatalf("error creating pid file: %v", err)
 		} else {
 			fmt.Fprintf(f, "%d", os.Getpid())
 			f.Close()
 		}
 	}
 
-	go func() { log.Critical(s.MetricsListenAndServe(metricsAddr)) }()
-	log.Fatal(s.ListenAndServe(net.JoinHostPort("", port)))
+	go func() {
+		log.Critical(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
+	}()
+	log.Fatal(s.ListenAndServe(net.JoinHostPort("", strconv.Itoa(config.Port))))
 }
 
 // LoadKey attempts to load a private key from PEM or DER.
@@ -161,14 +247,14 @@ func validCertExpiry(cert *x509.Certificate) bool {
 
 // needNewCertAndKey checks the validity of certificate and key
 func needNewCertAndKey() bool {
-	_, err := tls.LoadX509KeyPair(certFile, keyFile)
+	_, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
 	if err != nil {
 		log.Errorf("cannot load server cert/key: %v", err)
 		return true
 	}
 
 	// error is ignore because tls.LoadX509KeyPair already verify the existence of the file
-	certBytes, _ := ioutil.ReadFile(certFile)
+	certBytes, _ := ioutil.ReadFile(config.CertFile)
 	// error is ignore because tls.LoadX509KeyPair already verify the file can be parsed
 	cert, _ := helpers.ParseCertificatePEM(certBytes)
 	// verify the leaf certificate
@@ -182,7 +268,7 @@ func needNewCertAndKey() bool {
 
 // verifyCSRAndKey checks if csr and key files exist and if they match
 func verifyCSRAndKey() bool {
-	csrBytes, err := ioutil.ReadFile(csrFile)
+	csrBytes, err := ioutil.ReadFile(config.CSRFile)
 	if err != nil {
 		log.Errorf("cannot read csr file: %v", err)
 		return false
@@ -205,7 +291,7 @@ func verifyCSRAndKey() bool {
 		return false
 	}
 
-	keyBytes, err := ioutil.ReadFile(keyFile)
+	keyBytes, err := ioutil.ReadFile(config.KeyFile)
 	if err != nil {
 		log.Errorf("cannot read private key file: %v", err)
 		return false

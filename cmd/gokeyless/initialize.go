@@ -51,14 +51,14 @@ func initAPICall(token, hostname, zoneID, csr string) ([]byte, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", initEndpoint, body)
+	req, err := http.NewRequest("POST", config.InitEndpoint, body)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("X-Auth-User-Service-Key", token)
 
-	log.Infof("making API call: %s", initEndpoint)
+	log.Infof("making API call: %s", config.InitEndpoint)
 	resp, err := new(http.Client).Do(req)
 	if err != nil {
 		return nil, err
@@ -90,74 +90,57 @@ func initAPICall(token, hostname, zoneID, csr string) ([]byte, error) {
 	return nil, fmt.Errorf("no certificate in API response: %#v", apiResp)
 }
 
-// tokenFromPrompt populates the Host and Token fields of a new *apiToken.
-func tokenFromPrompt() string {
-	var token string
-
+func interactivePrompt() {
 	fmt.Println("Let's generate a keyserver certificate from CF API")
-	if hostname == "" {
+	if config.Hostname == "" {
 		fmt.Print("Hostname for this Keyless server: ")
-		fmt.Scanln(&hostname)
+		fmt.Scanln(&config.Hostname)
 	}
-	if zoneID == "" {
+	if config.ZoneID == "" {
 		fmt.Print("Cloudflare Zone ID for this Keyless server: ")
-		fmt.Scanln(&zoneID)
+		fmt.Scanln(&config.ZoneID)
 	}
-	fmt.Print("Origin CA Key: ")
-	fmt.Scanln(&token)
-	return token
-}
-
-func getTokenFromFile() string {
-	if apiKeyFile == "" {
-		return ""
+	if config.OriginCAKey == "" {
+		fmt.Print("Origin CA Key: ")
+		fmt.Scanln(&config.OriginCAKey)
 	}
-
-	log.Infof("reading token from file %s", apiKeyFile)
-	token, err := ioutil.ReadFile(apiKeyFile)
-	if err != nil {
-		log.Errorf("Unable to read from file %s: %v", apiKeyFile, err)
-	}
-
-	return string(token)
 }
 
 func initializeServerCertAndKey() {
-	token := getTokenFromFile()
-	if len(token) == 0 {
-		token = tokenFromPrompt()
+	if config.Hostname == "" || config.ZoneID == "" || config.OriginCAKey == "" {
+		interactivePrompt()
 	}
 
-	csr, key, err := generateCSR(hostname)
+	csr, key, err := generateCSR(config.Hostname)
 	if err != nil {
 		log.Fatal("failed to generate csr and key: ", err)
 	}
 
-	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
+	if err := ioutil.WriteFile(config.KeyFile, key, 0600); err != nil {
 		log.Fatal("failed to write to key file: ", err)
 	}
-	log.Infof("key is generated and saved to %s", keyFile)
+	log.Infof("key is generated and saved to %s", config.KeyFile)
 
-	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
+	if err := ioutil.WriteFile(config.CSRFile, csr, 0600); err != nil {
 		log.Fatal("failed to write to csr file:", err)
 	}
-	log.Infof("csr is generated and saved to %s", csrFile)
+	log.Infof("csr is generated and saved to %s", config.CSRFile)
 
 	log.Info("contacting Cloudflare API for CSR signing")
 
-	cert, err := initAPICall(token, hostname, zoneID, string(csr))
+	cert, err := initAPICall(config.OriginCAKey, config.Hostname, config.ZoneID, string(csr))
 	if err != nil {
 		log.Fatal("initialization failed due to API error:", err)
 	}
 
-	if err := os.Remove(certFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(config.CertFile); err != nil && !os.IsNotExist(err) {
 		log.Fatal("couldn't remove old certificate file: ", err)
 	}
 
-	if err := ioutil.WriteFile(certFile, cert, 0644); err != nil {
+	if err := ioutil.WriteFile(config.CertFile, cert, 0644); err != nil {
 		log.Fatal("couldn't write to certificate file: ", err)
 	}
-	log.Infof("certificate saved to %s", certFile)
+	log.Infof("certificate saved to %s", config.CertFile)
 
 	return
 }
@@ -186,13 +169,13 @@ func manualActivation() {
 		log.Fatal("failed to generate csr and key: ", err)
 	}
 
-	if err := ioutil.WriteFile(keyFile, key, 0600); err != nil {
+	if err := ioutil.WriteFile(config.KeyFile, key, 0600); err != nil {
 		log.Fatal("failed to write to key file:", err)
 	}
-	log.Infof("key is generated and saved to %s", keyFile)
+	log.Infof("key is generated and saved to %s", config.KeyFile)
 
-	if err := ioutil.WriteFile(csrFile, csr, 0600); err != nil {
+	if err := ioutil.WriteFile(config.CSRFile, csr, 0600); err != nil {
 		log.Fatal("failed to write to csr file:", err)
 	}
-	log.Infof("csr is generated and saved to %s", csrFile)
+	log.Infof("csr is generated and saved to %s", config.CSRFile)
 }
