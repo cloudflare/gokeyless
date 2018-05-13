@@ -1,5 +1,3 @@
-BUILD_DEPS := go
-
 NAME := gokeyless
 VENDOR := "CloudFlare"
 LICENSE := "See License File"
@@ -13,7 +11,8 @@ PREFIX                       := usr/local
 INSTALL_BIN                  := $(DESTDIR)/$(PREFIX)/bin
 INIT_PREFIX                  := $(DESTDIR)/etc/init.d
 SYSTEMD_PREFIX               := $(DESTDIR)/lib/systemd/system
-CONFIG_PREFIX                := $(DESTDIR)/etc/keyless
+CONFIG_PATH                  := etc/keyless
+CONFIG_PREFIX                := $(DESTDIR)/$(CONFIG_PATH)
 
 ARCH := amd64
 DEB_PACKAGE := $(NAME)_$(VERSION)_$(ARCH).deb
@@ -36,6 +35,7 @@ install-config:
 	@install -m400 pkg/default-key.pem $(CONFIG_PREFIX)/default-key.pem
 	@install -m400 pkg/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
 	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
+	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
 	@GOOS=linux GOARCH=$(ARCH) go build -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
@@ -60,8 +60,9 @@ $(DEB_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	@$(FPM) \
 	-t deb \
 	--before-install pkg/debian/before-install.sh \
-	--before-remove  pkg/debian/before-remove.sh \
-	--after-install  pkg/debian/after-install.sh \
+	--before-remove pkg/debian/before-remove.sh \
+	--after-install pkg/debian/after-install.sh \
+	--config-files /$(CONFIG_PATH)/gokeyless.yaml \
 	--deb-compression bzip2 \
 	--deb-user root --deb-group root \
 	.
@@ -71,8 +72,9 @@ $(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	-t rpm \
 	--rpm-os linux \
 	--before-install pkg/centos/before-install.sh \
-	--before-remove  pkg/centos/before-remove.sh \
-	--after-install  pkg/centos/after-install.sh \
+	--before-remove pkg/centos/before-remove.sh \
+	--after-install pkg/centos/after-install.sh \
+	--config-files /$(CONFIG_PATH)/gokeyless.yaml \
 	--rpm-use-file-permissions \
 	--rpm-user root --rpm-group root \
 	.
