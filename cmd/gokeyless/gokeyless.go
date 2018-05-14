@@ -156,10 +156,10 @@ func main() {
 			log.Info("csr and key are not usable. generating server csr and key")
 			manualActivation()
 
-			log.Infof("contact CloudFlare for manual signing of csr in %q",
+			log.Infof("contact Cloudflare for manual signing of csr in %q",
 				config.CSRFile)
 		} else {
-			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact CloudFlare for manual signing",
+			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact Cloudflare for manual signing",
 				config.CSRFile, config.KeyFile)
 		}
 		os.Exit(0)
@@ -184,8 +184,11 @@ func main() {
 	// Failing hard with an error message makes the problem obvious, whereas a
 	// daemon blocked waiting on input can be hard to debug.
 	if needNewCertAndKey() {
-		log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_key values in your config file, or run the server with either the -config-only or -manual-activation flag to generate the pair interactively")
-		os.Exit(1)
+		if needInteractivePrompt() {
+			log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_key values in your config file, or run the server with either the -config-only or -manual-activation flag to generate the pair interactively")
+			os.Exit(1)
+		}
+		initializeServerCertAndKey()
 	}
 
 	cfg := server.DefaultServeConfig()
