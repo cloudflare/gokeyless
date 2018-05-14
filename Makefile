@@ -1,5 +1,5 @@
 NAME := gokeyless
-VENDOR := "CloudFlare"
+VENDOR := "Cloudflare"
 LICENSE := "See License File"
 URL := "https://github.com/cloudflare/gokeyless"
 DESCRIPTION="A Go implementation of the keyless server protocol"
