@@ -2,14 +2,12 @@
 [![Build Status](https://travis-ci.org/cloudflare/gokeyless.png?branch=master)](https://travis-ci.org/cloudflare/gokeyless)
 [![GoDoc](https://godoc.org/github.com/cloudflare/gokeyless?status.png)](https://godoc.org/github.com/cloudflare/gokeyless)
 
-
 ## Keyless SSL implementation in Go
-Go Keyless is an implementation CloudFlare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
+Go Keyless is an implementation Cloudflare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
 an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
 
 ## Protocol
-
-The CloudFlare Keyless SSL client communicates to the server via a binary
+The Cloudflare Keyless SSL client communicates to the server via a binary
 protocol over a mutually authenticated TLS 1.2 tunnel.  Messages are in binary
 format and identified by a unique ID.
 
@@ -111,25 +109,16 @@ following options are required and take a path to these files. These two
 parameters set up the certificate (and associated private key) that will be
 presented by the server when a client connects.
 
-     -cert
-     -key
-
-In order to get server credential, we can use the following parameter to
-generate the server private key and certificate signing request (CSR). It
-will create a private key stored as `server-key.pem` (or the path specified
-by `-key`) and a CSR file `server.csr`.
-Use the CSR file to get the server certificate issued from CloudFlare
-keyserver CA.
-
-     -manual-activation
+     --cert
+     --key
 
 The private keys that this server is able to use should be stored in
 PEM format in a directory denoted by the option:
 
-    --private-key-directory
+    --private-key-dir
 
 In order to authenticate the client's certificate, a custom CA file is
-required.  This CA file available is provided by CloudFlare and specified
+required.  This CA file available is provided by Cloudflare and specified
 with:
 
     --ca-file
@@ -159,22 +148,19 @@ $ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
 This is the keyserver for Keyless SSL. It consists of a single binary file
 `gokeyless` that has the following command-line options:
 
-- `-port` (optional) The TCP port on which to listen for connections. These
+- `--port` (optional) The TCP port on which to listen for connections. These
   connections must be TLSv1.2. Defaults to 2407.
-- `-ca-file` Path to a PEM-encoded file containing the CA certificate(s) used to
+- `--ca-file` Path to a PEM-encoded file containing the CA certificate(s) used to
   sign client certificates presented on connection.
-- `-cert`, `-key` Path to PEM-encoded files containing the
+- `--cert`, `--key` Path to PEM-encoded files containing the
   certificate and private key that are used when a connection is made to the
   server. These must be signed by an authority that the client side recognizes.
-- `--private-key-directory` Path to a directory containing private keys which
+- `--private-key-dir` Path to a directory containing private keys which
   the keyserver provides decoding service against. The key files must end with
   ".key" and be PEM-encoded. There should be no trailing / on the path.
-- `-loglevel` (optional) Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants). Defaults to `LevelInfo`.
-- `-pid-file` (optional) Path to a file into which the PID of the
-  keyserver. This file is only written if the keyserver starts successfully.
-- `-manual-activation` (optional) This makes the keyserver generate
-  the server key and the CSR written to files. And we will manually get the
-  server certificate issued.
+- `--loglevel` (optional) Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants). Defaults to `LevelInfo`.
+- `--pid-file` (optional) Path to a file into which the PID of the
+  keyserver. This file is only written if the key server starts successfully.
 
 ## License
 
