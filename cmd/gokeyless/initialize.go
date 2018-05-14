@@ -106,8 +106,12 @@ func interactivePrompt() {
 	}
 }
 
+func needInteractivePrompt() bool {
+	return config.Hostname == "" || config.ZoneID == "" || config.OriginCAKey == ""
+}
+
 func initializeServerCertAndKey() {
-	if config.Hostname == "" || config.ZoneID == "" || config.OriginCAKey == "" {
+	if needInteractivePrompt() {
 		interactivePrompt()
 	}
 
