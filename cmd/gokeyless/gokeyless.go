@@ -36,11 +36,12 @@ type Config struct {
 	OriginCAKey  string `yaml:"origin_ca_key" mapstructure:"origin_ca_key"`
 	InitEndpoint string `yaml:"init_endpoint" mapstructure:"init_endpoint"`
 
-	CertFile      string `yaml:"cert" mapstructure:"cert"`
-	KeyFile       string `yaml:"key" mapstructure:"key"`
-	CACertFile    string `yaml:"ca_cert" mapstructure:"ca_cert"`
-	CSRFile       string `yaml:"csr" mapstructure:"csr"`
-	PrivateKeyDir string `yaml:"private_key_dir" mapstructure:"private_key_dir"`
+	CertFile   string `yaml:"cert" mapstructure:"cert"`
+	KeyFile    string `yaml:"key" mapstructure:"key"`
+	CACertFile string `yaml:"ca_cert" mapstructure:"ca_cert"`
+	CSRFile    string `yaml:"csr" mapstructure:"csr"`
+
+	PrivateKeyStores []PrivateKeyStoreConfig `yaml:"private_key_stores" mapstructure:"private_key_stores"`
 
 	Port        int `yaml:"port" mapstructure:"port"`
 	MetricsPort int `yaml:"metrics_port" mapstructure:"metrics_port"`
@@ -48,8 +49,17 @@ type Config struct {
 	PidFile string `yaml:"pid_file" mapstructure:"pid_file"`
 }
 
+// PrivateKeyStoreConfig defines a key store.
+type PrivateKeyStoreConfig struct {
+	Dir  string `yaml:"dir,omitempty" mapstructure:"dir"`
+	File string `yaml:"file,omitempty" mapstructure:"file"`
+}
+
 var (
 	config Config
+
+	privateKeyDirs  string
+	privateKeyFiles string
 
 	configFile       string
 	manualMode       bool
@@ -86,13 +96,14 @@ func init() {
 	viper.SetDefault("ca_cert", "keyless_cacert.pem")
 	flagset.String("csr", "", "File to write CSR for server initialization")
 	viper.SetDefault("csr", "server.csr")
-	flagset.String("private-key-dir", "", "Directory in which private keys are stored with .key extension")
-	viper.SetDefault("private_key_dir", "./keys")
 	flagset.Int("port", 0, "Port for key server to listen on (must match configuration in Cloudflare dashboard)")
 	viper.SetDefault("port", 2407)
 	flagset.Int("metrics-port", 0, "Port for key server to serve /metrics")
 	viper.SetDefault("metrics_port", 2406)
 	flagset.String("pid-file", "", "File to store PID of running server")
+	// These override the private_key_stores value from the config file.
+	flagset.StringVar(&privateKeyDirs, "private-key-dirs", "", "Comma-separated list of directories in which private keys are stored with .key extension")
+	flagset.StringVar(&privateKeyFiles, "private-key-files", "", "Comma-separated list of private key files")
 
 	// These are control flags which do not have configuration file
 	// counterparts.
@@ -130,7 +141,38 @@ func initConfig() error {
 		}
 	}
 
-	return viper.Unmarshal(&config)
+	if err := viper.Unmarshal(&config); err != nil {
+		return err
+	}
+
+	// Validate the config.
+	for _, store := range config.PrivateKeyStores {
+		if (store.Dir == "" && store.File == "") ||
+			(store.Dir != "" && store.File != "") {
+			return fmt.Errorf("private key stores must define exactly one of the 'dir' or 'file' keys")
+		}
+	}
+
+	// Special handling for private key override flags since the config file
+	// uses a slice of structs.
+	if privateKeyDirs != "" || privateKeyFiles != "" {
+		var dirs, files []string
+		if privateKeyDirs != "" {
+			dirs = strings.Split(strings.TrimSpace(privateKeyDirs), ",")
+		}
+		if privateKeyFiles != "" {
+			files = strings.Split(strings.TrimSpace(privateKeyFiles), ",")
+		}
+		config.PrivateKeyStores = make([]PrivateKeyStoreConfig, 0, len(dirs)+len(files))
+		for _, dir := range dirs {
+			config.PrivateKeyStores = append(config.PrivateKeyStores, PrivateKeyStoreConfig{Dir: dir})
+		}
+		for _, file := range files {
+			config.PrivateKeyStores = append(config.PrivateKeyStores, PrivateKeyStoreConfig{File: file})
+		}
+	}
+
+	return nil
 }
 
 func main() {
@@ -197,11 +239,10 @@ func main() {
 		log.Fatal("cannot start server:", err)
 	}
 
-	keys, err := server.NewKeystoreFromDir(config.PrivateKeyDir, LoadKey)
+	keys, err := initKeyStore()
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	s.SetKeystore(keys)
 
 	if config.PidFile != "" {
@@ -217,6 +258,23 @@ func main() {
 		log.Critical(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
 	}()
 	log.Fatal(s.ListenAndServe(net.JoinHostPort("", strconv.Itoa(config.Port))))
+}
+
+func initKeyStore() (server.Keystore, error) {
+	keys := server.NewDefaultKeystore()
+	for _, store := range config.PrivateKeyStores {
+		switch {
+		case store.Dir != "":
+			if err := keys.AddFromDir(store.Dir, LoadKey); err != nil {
+				return nil, err
+			}
+		case store.File != "":
+			if err := keys.AddFromFile(store.File, LoadKey); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return keys, nil
 }
 
 // LoadKey attempts to load a private key from PEM or DER.

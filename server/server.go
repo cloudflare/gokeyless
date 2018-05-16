@@ -61,32 +61,45 @@ func NewDefaultKeystore() *DefaultKeystore {
 // into a crypto.Signer, which is stored in the Keystore.
 func NewKeystoreFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) (Keystore, error) {
 	keys := NewDefaultKeystore()
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	if err := keys.AddFromDir(dir, LoadKey); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// AddFromDir adds all of the ".key" files in dir to the keystore. For each
+// ".key" file, LoadKey is called to parse the file's contents into a
+// crypto.Signer, which is stored in the Keystore.
+func (keys *DefaultKeystore) AddFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		if !info.IsDir() && keyExt.MatchString(info.Name()) {
-			log.Infof("loading %s...", path)
-
-			in, err := ioutil.ReadFile(path)
-			if err != nil {
-				return err
-			}
-
-			priv, err := LoadKey(in)
-			if err != nil {
-				return err
-			}
-
-			return keys.Add(nil, priv)
+			return keys.AddFromFile(path, LoadKey)
 		}
 		return nil
 	})
+}
+
+// AddFromFile adds the key in the given file to the keystore. LoadKey is called
+// to parse the file's contents into a crypto.Signer, which is stored in the
+// Keystore.
+func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (crypto.Signer, error)) error {
+	log.Infof("loading %s...", path)
+
+	in, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return keys, nil
+
+	priv, err := LoadKey(in)
+	if err != nil {
+		return err
+	}
+
+	return keys.Add(nil, priv)
 }
 
 // Add adds a new key to the server's internal store. Stores in maps by SKI and
