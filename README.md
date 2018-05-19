@@ -104,24 +104,20 @@ server need a TLS 1.2 compatible key pair. The client must present a client
 certificate that can be verified against the CA that the keyless server is
 configured to use.
 
-The server will need a valid key and certificate pair in PEM format.  The
-following options are required and take a path to these files. These two
-parameters set up the certificate (and associated private key) that will be
-presented by the server when a client connects.
+The server will need a valid key and certificate pair in PEM format that the Cloudflare Keyless SSL clients will trust (the server will automatically generate the pair using the Cloudflare API). The following options are required and take a path to these files. These two parameters set up the certificate (and associated private key) that will be presented by the server when a client connects.
 
      --cert
      --key
 
-The private keys that this server is able to use should be stored in
-PEM format in a directory denoted by the option:
+In order for this server to authenticate the Cloudflare client's certificate, a custom CA file is required. This CA certificate is provided by Cloudflare and specified with:
 
-    --private-key-dir
+    --ca-cert
 
-In order to authenticate the client's certificate, a custom CA file is
-required.  This CA file available is provided by Cloudflare and specified
-with:
+The private keys that this server is able to use should be stored with a `.key` extension in either PEM or DER format, in one or more comma-separated directories denoted by the option:
 
-    --ca-file
+    --private-key-dirs
+
+Note that the configuration file is the recommened way to specify these options; see below for more information.
 
 # Deploying 
 
@@ -133,8 +129,7 @@ Instructions for installing Go Keyless from `.deb` and `.rpm` packages can be fo
 ### Source Installation
 Compiling Go Keyless requires Go 1.7. Binary distributions can be found at [golang.org/dl](https://golang.org/dl/).
 
-Installing the appropriate package for your operating system should leave you with a  [working Go
-installation](http://golang.org/doc/install) and a properly set `GOPATH`.
+Installing the appropriate package for your operating system should leave you with a [working Go installation](http://golang.org/doc/install) and a properly set `GOPATH`.
 
 ```
 $ go get -u github.com/cloudflare/gokeyless/...
@@ -143,24 +138,11 @@ $ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
 
 ## Running
 
-### Command-line Arguments
+The the keyserver for Keyless SSL consists of a single binary file, `gokeyless`. When you run the binary, it will first check for a `gokeyless.yaml` file in the current working directory, falling back to the system wide file located at `/etc/keyless/gokeyless.yaml` (the default configuration file will be placed there if you install via one of the `.deb` or `.rpm` packages).
 
-This is the keyserver for Keyless SSL. It consists of a single binary file
-`gokeyless` that has the following command-line options:
+You should add your Cloudflare account details to the configuration file, and optionally customize the location of the private key directory. Most users should not need to modify the remaining defaults.
 
-- `--port` (optional) The TCP port on which to listen for connections. These
-  connections must be TLSv1.2. Defaults to 2407.
-- `--ca-file` Path to a PEM-encoded file containing the CA certificate(s) used to
-  sign client certificates presented on connection.
-- `--cert`, `--key` Path to PEM-encoded files containing the
-  certificate and private key that are used when a connection is made to the
-  server. These must be signed by an authority that the client side recognizes.
-- `--private-key-dir` Path to a directory containing private keys which
-  the keyserver provides decoding service against. The key files must end with
-  ".key" and be PEM-encoded. There should be no trailing / on the path.
-- `--loglevel` (optional) Level of logging as [defined here](https://godoc.org/github.com/cloudflare/cfssl/log#pkg-constants). Defaults to `LevelInfo`.
-- `--pid-file` (optional) Path to a file into which the PID of the
-  keyserver. This file is only written if the key server starts successfully.
+Each option can optionally be overriden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
 
 ## License
 
