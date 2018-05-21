@@ -1,5 +1,6 @@
 # Set the log level (0 = DEBUG, 5 = FATAL).
 loglevel: 1
+
 # Hostname must match the key server hostname that was configured in the
 # Cloudflare dashboard
 hostname:
@@ -8,17 +9,21 @@ zone_id:
 # Origin CA Key can be found on the Cloudflare dashboard under the 'My
 # Profile' section.
 origin_ca_key:
+
 # Configure one or more private key directories.
 private_key_stores:
 - dir: /etc/keyless/keys
+
 # Optionally customize the location of the certificates and private
 # keys.
 cert: /etc/keyless/server.pem
 key: /etc/keyless/server-key.pem
 ca_cert: /etc/keyless/keyless_cacert.pem
 csr: /etc/keyless/server.csr
+
 # Optionally customize the listen ports.
 port: 2407
 metrics_port: 2406
+
 # Optionally write the PID to a file.
 pid_file:
