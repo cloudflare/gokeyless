@@ -149,10 +149,12 @@ func initConfig() error {
 
 	// Validate the config.
 	for _, store := range config.PrivateKeyStores {
-		if (store.Dir == "" && store.File == "") ||
-			(store.Dir != "" && store.File != "") {
-			return fmt.Errorf("private key stores must define exactly one of the 'dir' or 'file' keys")
+		if (store.Dir != "" && store.File == "" && store.URI == "") ||
+			(store.Dir == "" && store.File != "" && store.URI == "") ||
+			(store.Dir == "" && store.File == "" && store.URI != "") {
+			continue
 		}
+		return fmt.Errorf("private key stores must define exactly one of the 'dir' or 'file' keys")
 	}
 
 	// Special handling for private key override flags since the config file
@@ -275,7 +277,7 @@ func initKeyStore() (server.Keystore, error) {
 				return nil, err
 			}
 		case store.URI != "":
-			if err := keys.AddFromURI(store.URI, LoadHSMKey); err != nil {
+			if err := keys.AddFromURI(store.URI, LoadURI); err != nil {
 				return nil, err
 			}
 		}
@@ -293,20 +295,28 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	return derhelpers.ParsePrivateKeyDER(in)
 }
 
-// LoadHSMKey attempts to find a private key stored on an HSM.
-func LoadHSMKey(uri string) (priv crypto.Signer, err error) {
+// LoadURI attempts to load a signer from a PKCS#11 URI.
+func LoadURI(uri string) (priv crypto.Signer, err error) {
+//- uri: pkcs11:token="SoftHSM2 Token";id=02?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+//- uri: pkcs11:token="YubiKey PIV";id=00?module-path=/usr/lib64/libykcs11.so&pin-value=123456
+//- uri: pkcs11:token="elab2par29";id=04?module-path=/usr/lib/libCryptoki2_64.so&pin-value=crypto1
+	config := &crypto11.PKCS11Config {
+//	Path: "/usr/lib64/libsofthsm2.so", TokenSerial: "", TokenLabel: "SoftHSM2 Token", Pin: "1234"}
+//	Path: "/usr/lib64/libykcs11.so", TokenSerial: "", TokenLabel: "YubiKey PIV", Pin: "123456"}
+	Path: "/usr/lib/libCryptoki2_64.so", TokenSerial: "", TokenLabel: "elab2par29", Pin: "crypto1"}
+
+	_, err = crypto11.Configure(config)
+	if err != nil {
+		return nil, err
+	}
+
 	var slot uint
 	var id, label []byte
-	var pkcs11File string
-
-	// FIXME this is temporary
-	pkcs11File = uri
-	crypto11.ConfigureFromFile(pkcs11File)
 
 	// TODO: Parse the URI here.
-	slot = 0 // 612970702
-	id = []byte{0}
-	label = nil
+	slot = 0 // 1347340732
+	id = []byte{04}
+	label = nil // []byte("")
 
 	key, err := crypto11.FindKeyPairOnSlot(slot, id, label)
 	if err != nil {

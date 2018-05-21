@@ -1,5 +1,0 @@
-{
-  "Path" : "/usr/lib64/libykcs11.so",
-  "TokenLabel": "YubiKey PIV",
-  "Pin" : "123456"
-}

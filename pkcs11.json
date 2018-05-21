@@ -1,5 +1,0 @@
-{
-  "Path" : "/usr/lib64/libsofthsm2.so",
-  "TokenLabel": "SoftHSM2 Token",
-  "Pin" : "123456"
-}
