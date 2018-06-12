@@ -105,10 +105,11 @@ func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (cryp
 // AddFromURI loads all keys matching the given PKCS#11 URI to the keystore. LoadKey
 // is called to parse the URL, connect to the module, and populate a crypto.Signer,
 // which is stored in the Keystore.
-func (keys *DefaultKeystore) AddFromURI(uri string, LoadKey func(string) (crypto.Signer, error)) error {
+func (keys *DefaultKeystore) AddFromURI(uri string, LoadKey func(PKCS11URI) (crypto.Signer, error)) error {
 	log.Infof("loading %s...", uri)
 
-	priv, err := LoadKey(uri)
+	pk11uri := RFC7512Parser(uri)
+	priv, err := LoadKey(pk11uri)
 	if err != nil {
 		return err
 	}
