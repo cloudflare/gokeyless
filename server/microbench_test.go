@@ -184,6 +184,28 @@ func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (ke
 	return k, payload
 }
 
+func benchHSMSign(b *testing.B, params params.HSMSignParams) {
+	pk11uri := RFC7512Parser(params.URI)
+	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
+	benchSign(b, key, rand.Reader, payload[:], params.Opts)
+}
+
+func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
+	pk11uri := RFC7512Parser(params.URI)
+	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
+	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
+}
+
+// prepareHSMSigner performs the boilerplate of generating values needed to
+// benchmark signatures on a Hardware Security Module.
+func prepareHSMSigner(b *testing.B, pk11uri PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
+	k, err := LoadPKCS11Key(pk11uri)
+	testutil.MustPrefix(b, "could not load PKCS11 key", err)
+	payload = make([]byte, payloadsize)
+	mustReadFull(b, rand.Reader, payload[:])
+	return k, payload
+}
+
 func BenchmarkCryptoRand(b *testing.B) {
 	buf := make([]byte, b.N)
 	b.SetBytes(1)
@@ -320,4 +342,18 @@ func BenchmarkRandParallelForSignECDSASHA384(b *testing.B) {
 }
 func BenchmarkRandParallelForSignECDSASHA512(b *testing.B) {
 	benchRandParallelForSignECDSA(b, params.ECDSASHA512Params)
+}
+
+func BenchmarkHSMSignRSASHA512(b *testing.B) {
+	benchHSMSign(b, params.HSMRSASHA512Params)
+}
+func BenchmarkHSMSignECDSASHA256(b *testing.B) {
+	benchHSMSign(b, params.HSMECDSASHA256Params)
+}
+
+func BenchmarkHSMSignParallelRSASHA512(b *testing.B) {
+	benchHSMSignParallel(b, params.HSMRSASHA512Params)
+}
+func BenchmarkHSMSignParallelECDSASHA256(b *testing.B) {
+	benchHSMSignParallel(b, params.HSMECDSASHA256Params)
 }

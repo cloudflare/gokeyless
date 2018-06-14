@@ -2,11 +2,13 @@ package server
 
 import (
 	"fmt"
+	"crypto"
 	"strconv"
 	"strings"
 	"net/url"
 	"regexp"
 
+	"github.com/thalesignite/crypto11"
 	"github.com/cloudflare/cfssl/log"
 )
 
@@ -93,4 +95,29 @@ func RFC7512Parser(uri string) PKCS11URI {
 	}
 
 	return pk11uri
+}
+
+// LoadPKCS11Key attempts to load a signer from a PKCS#11 URI.
+// See https://tools.ietf.org/html/rfc7512#section-2.3
+func LoadPKCS11Key(pk11uri PKCS11URI) (priv crypto.Signer, err error) {
+	config := &crypto11.PKCS11Config {
+		Path:        pk11uri.ModulePath,
+		TokenSerial: pk11uri.Serial,
+		TokenLabel:  pk11uri.Token,
+		Pin:         pk11uri.PinValue,
+	}
+
+	_, err = crypto11.Configure(config)
+	if err != nil {
+		log.Warning(err)
+		return nil, err
+	}
+
+	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotId, pk11uri.Id, pk11uri.Object)
+	if err != nil {
+		log.Warning(err)
+		return nil, err
+	}
+
+	return key.(crypto.Signer), nil
 }

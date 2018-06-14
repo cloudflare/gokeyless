@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v2"
-	"github.com/thalesignite/crypto11"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
@@ -296,28 +295,12 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // LoadURI attempts to load a signer from a PKCS#11 URI.
-// See https://tools.ietf.org/html/rfc7512#section-2.3
-func LoadURI(pk11uri server.PKCS11URI) (priv crypto.Signer, err error) {
-	config := &crypto11.PKCS11Config {
-		Path:        pk11uri.ModulePath,
-		TokenSerial: pk11uri.Serial,
-		TokenLabel:  pk11uri.Token,
-		Pin:         pk11uri.PinValue,
-	}
-
-	_, err = crypto11.Configure(config)
-	if err != nil {
-		log.Warning(err)
-		return nil, err
-	}
-
-	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotId, pk11uri.Id, pk11uri.Object)
-	if err != nil {
-		log.Warning(err)
-		return nil, err
-	}
-
-	return key.(crypto.Signer), nil
+func LoadURI(uri string) (priv crypto.Signer, err error) {
+	// This wrapper is here in case we want to parse vendor specific values
+	// based on the parameters in the URI or perform side operations, such
+	// as waiting for network to be up.
+	pk11uri := server.RFC7512Parser(uri)
+	return server.LoadPKCS11Key(pk11uri)
 }
 
 // validCertExpiry checks if cerficiate is currently valid.

@@ -3,43 +3,16 @@ package tests
 import (
 	"crypto"
 
-	"github.com/thalesignite/crypto11"
-
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
-const (
-	// testdata/tokens/b01b1e37-d655-6f75-917c-52054b8e924a -> /var/lib/softhsm/tokens/
-	rsaPK11URI   = "pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
-	// testdata/tokens/d6a8ab57-d5c5-aaf0-70b6-d01595c28127 -> /var/lib/softhsm/tokens/
-	ecdsaPK11URI = "pkcs11:token=SoftHSM2%20EC%20Token;id=%02;slot-id=1400733853?module-path=/usr/lib64/libsofthsm2.so&pin-value=12345"
-)
 
-// LoadURI attempts to load a signer from a PKCS#11 URI.
-// See https://tools.ietf.org/html/rfc7512#section-2.3
-func LoadURI(pk11uri server.PKCS11URI) (priv crypto.Signer, err error) {
-	config := &crypto11.PKCS11Config {
-		Path:        pk11uri.ModulePath,
-		TokenSerial: pk11uri.Serial,
-		TokenLabel:  pk11uri.Token,
-		Pin:         pk11uri.PinValue,
-	}
-
-	_, err = crypto11.Configure(config)
-	if err != nil {
-		log.Warning(err)
-		return nil, err
-	}
-
-	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotId, pk11uri.Id, pk11uri.Object)
-	if err != nil {
-		log.Warning(err)
-		return nil, err
-	}
-
-	return key.(crypto.Signer), nil
+func LoadURI(uri string) (priv crypto.Signer, err error) {
+	pk11uri := server.RFC7512Parser(uri)
+	return server.LoadPKCS11Key(pk11uri)
 }
 
 // Set up compatible server and client for use by tests.
@@ -54,10 +27,10 @@ func init() {
 	}
 
 	keys := server.NewDefaultKeystore()
-	if err := keys.AddFromURI(rsaPK11URI, LoadURI); err != nil {
+	if err := keys.AddFromURI(params.rsaURI, LoadURI); err != nil {
 		log.Fatal(err)
 	}
-	if err := keys.AddFromURI(ecdsaPK11URI, LoadURI); err != nil {
+	if err := keys.AddFromURI(params.ecdsaURI, LoadURI); err != nil {
 		log.Fatal(err)
 	}
 	s.SetKeystore(keys)
