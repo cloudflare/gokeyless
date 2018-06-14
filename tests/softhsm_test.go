@@ -9,7 +9,6 @@ import (
 	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
-
 func LoadURI(uri string) (priv crypto.Signer, err error) {
 	pk11uri := server.RFC7512Parser(uri)
 	return server.LoadPKCS11Key(pk11uri)
@@ -27,10 +26,10 @@ func init() {
 	}
 
 	keys := server.NewDefaultKeystore()
-	if err := keys.AddFromURI(params.rsaURI, LoadURI); err != nil {
+	if err := keys.AddFromURI(params.RSAURI, LoadURI); err != nil {
 		log.Fatal(err)
 	}
-	if err := keys.AddFromURI(params.ecdsaURI, LoadURI); err != nil {
+	if err := keys.AddFromURI(params.ECDSAURI, LoadURI); err != nil {
 		log.Fatal(err)
 	}
 	s.SetKeystore(keys)
