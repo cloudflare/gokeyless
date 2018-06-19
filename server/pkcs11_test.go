@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,10 @@ func TestParser(t *testing.T) {
 }
 
 func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
+	if os.Getenv("TESTHSM") == "" {
+		t.Skip("skipping test; $TESTHSM not set")
+	}
+
 	p := params.HSMRSASHA512Params
 	pk11uri := RFC7512Parser(p.URI)
 	key, err := LoadPKCS11Key(pk11uri)
