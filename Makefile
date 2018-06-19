@@ -85,11 +85,12 @@ gokeyless: $(shell find . -type f -name '*.go')
 	go build -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
 
 SOFTHSM_TOKENS_PATH          := $(DESTDIR)/var/lib/softhsm/tokens
-SOFTHSM_CONFIG_PATH          := $(DESTDIR)/etc/softhsm2.conf
+SOFTHSM_CONFIG_PATH          := $(DESTDIR)/etc
 
 .PHONY: dev-softhsm
-dev-softhsm: install-config
+dev-softhsm:
+	@mkdir -p  $(SOFTHSM_CONFIG_PATH)
 	@mkdir -p  $(SOFTHSM_TOKENS_PATH)
 	@chmod 700 $(SOFTHSM_TOKENS_PATH)
 	@cp -r pkg/testing-tokens/*      $(SOFTHSM_TOKENS_PATH)
-	@install -m644 pkg/softhsm2.conf $(SOFTHSM_CONFIG_PATH)
+	@install -m644 pkg/softhsm2.conf $(SOFTHSM_CONFIG_PATH)/softhsm2.conf

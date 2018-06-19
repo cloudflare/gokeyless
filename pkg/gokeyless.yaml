@@ -13,7 +13,7 @@ origin_ca_key:
 # Configure one or more private key directories.
 private_key_stores:
 - dir: /etc/keyless/keys
-- uri: pkcs11:token=SoftHSM2%20Token;id=%02;slot-id=1347340732?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+- uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
 
 # Optionally customize the location of the certificates and private
 # keys.
