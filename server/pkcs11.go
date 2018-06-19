@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"crypto"
 	"strconv"
 	"strings"
@@ -41,56 +40,92 @@ type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 }
 
 func RFC7512Parser(uri string) PKCS11URI {
-/* FIXME: specific sections allow specific extra characters, include those as well.
-   pk11-res-avail       = ":" / "[" / "]" / "@" / "!" / "$" /
-                          "'" / "(" / ")" / "*" / "+" / "," / "="
-   pk11-path-res-avail  = pk11-res-avail / "&"
-   ; "/" and "?" in the query component MAY be unencoded but "&" MUST
-   ; be encoded since it functions as a delimiter within the component.
-   pk11-query-res-avail = pk11-res-avail / "/" / "?" / "|"
-*/
-	r, _ := regexp.Compile("pkcs11:([a-z]+=[a-zA-Z0-9%]+;)*([a-z]+=[a-zA-Z0-9%]+)(\\?([a-z]+=[a-zA-Z0-9%]+&)*([a-z]+=[a-zA-Z0-9%]+))?")
+	aChar := "[a-z-_]"
+	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
+	pAttr := aChar+"+="+pChar+"+"
+	pClause := "("+pAttr+";)*("+pAttr+")"
+	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
+	qAttr := aChar+"+="+qChar+"+"
+	qClause := "("+qAttr+"&)*("+qAttr+")"
+	r, _ := regexp.Compile("^pkcs11:"+pClause+"(\\?"+qClause+")?$")
 
 	if ! r.MatchString(uri) {
-		log.Error("PKCS#11 URI is malformed.")
+		log.Error("PKCS#11 URI is malformed: " + uri)
 		return PKCS11URI{Id: []byte{}}
 	}
 
 	var pk11uri PKCS11URI
+	var pAttrs []string
+	var qAttrs []string
+	var parts  []string
+	var value string
 
 	uri = strings.Split(uri, "pkcs11:")[1]
-	parts := strings.Split(uri, "?")
-	pAttr := strings.Split(parts[0], ";")
-	qAttr := strings.Split(parts[1], "&")
+	parts = strings.Split(uri, "?")
+	pAttrs = strings.Split(parts[0], ";")
+	if 1 < len(parts) {
+		qAttrs = strings.Split(parts[1], "&")
+	}
 
-	for _, attr := range pAttr {
-		// TODO: do we need to trim attr here?
-		parts := strings.Split(attr, "=")
-		value, _ := url.QueryUnescape(parts[1])
+	for _, attr := range pAttrs {
+		parts = strings.Split(attr, "=")
+		parts[0] = strings.Trim(parts[0], " \n\t\r")
+		if 1 < len(parts) {
+			parts[1] = strings.Trim(parts[1], " \n\t\r")
+			value, _ = url.QueryUnescape(parts[1])
+		}
 		switch parts[0] {
 		case "token":
 			pk11uri.Token = value
+		case "manufacturer":
+			pk11uri.Manuf = value
+		case "serial":
+			pk11uri.Serial = value
+		case "model":
+			pk11uri.Model = value
+		case "library-manufacturer":
+			pk11uri.LibManuf = value
+		case "library-description":
+			pk11uri.LibDesc = value
+		case "library-version":
+			pk11uri.LibVer = value // TODO 1*DIGIT [ "." 1*DIGIT ]
+		case "object":
+			pk11uri.Object = []byte(value)
+		case "type":
+			pk11uri.Type = value // TODO public, private, cert, secret-key, data
 		case "id":
 			pk11uri.Id = []byte(value)
+		case "slot-manufacturer":
+			pk11uri.SlotManuf = value
+		case "slot-description":
+			pk11uri.SlotDesc = value
 		case "slot-id":
-			id, _ := strconv.ParseUint(value, 10, 32) // FIXME what is the bit size
+			id, _ := strconv.ParseUint(value, 10, 32) // TODO what is the bit size
 			pk11uri.SlotId = uint(id)
 		default:
-			fmt.Print(parts[0])
+			log.Warning("Unrecognized PKCS#11 URI Component: " + parts[0])
 		}
 	}
 
-	for _, attr := range qAttr {
+	for _, attr := range qAttrs {
 		// TODO: do we need to trim attr here?
-		parts := strings.Split(attr, "=")
+		parts = strings.Split(attr, "=")
+		parts[0] = strings.Trim(parts[0], " \n\t\r")
+		if 1 < len(parts) {
+			parts[1] = strings.Trim(parts[1], " \n\t\r")
+			value, _ = url.QueryUnescape(parts[1])
+		}
 		switch parts[0] {
+		case "pin-source":
+			pk11uri.PinSource = value
 		case "pin-value":
-			pk11uri.PinValue = parts[1]
+			pk11uri.PinValue = value
+		case "module-name":
+			pk11uri.ModuleName = value
 		case "module-path":
-			value, _ := url.QueryUnescape(parts[1])
 			pk11uri.ModulePath = value
 		default:
-			fmt.Print(parts[0])
+			log.Warning("Unrecognized PKCS#11 URI Query: " + parts[0])
 		}
 	}
 
