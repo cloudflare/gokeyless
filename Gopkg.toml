@@ -53,6 +53,10 @@
   branch = "master"
   name = "go4.org"
 
+[[constraint]]
+  branch = "session-handles"
+  name = "github.com/cbroglie/crypto11"
+
 [prune]
   go-tests = true
   unused-packages = true

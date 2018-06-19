@@ -2,12 +2,12 @@ package server
 
 import (
 	"crypto"
-	"strconv"
-	"strings"
 	"net/url"
 	"regexp"
+	"strconv"
+	"strings"
 
-	"github.com/thalesignite/crypto11"
+	"github.com/cbroglie/crypto11"
 	"github.com/cloudflare/cfssl/log"
 )
 

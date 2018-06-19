@@ -1,11 +1,16 @@
 package server
 
 import (
-	"testing"
+	"crypto/rand"
+	"io"
 	"strings"
+	"sync"
+	"testing"
+
+	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
-var samples string = `pkcs11:id=0
+var samples = `pkcs11:id=0
 pkcs11:id=0;token=b
 pkcs11:id=b?pin-value=1234
 pkcs11:id=b?pin-value=1234&module-path=/a/b.so
@@ -25,4 +30,43 @@ func TestParser(t *testing.T) {
 			t.Fail()
 		}
 	}
+}
+
+func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
+	p := params.HSMRSASHA512Params
+	pk11uri := RFC7512Parser(p.URI)
+	key, err := LoadPKCS11Key(pk11uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, p.PayloadSize)
+	_, err = io.ReadFull(rand.Reader, payload[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const n = 2000
+	const m = 10
+
+	// The barrier is used to ensure that goroutines only start running once we
+	// release them - we don't want any getting a head start and finishing
+	// before others are started.
+	var barrier, wg sync.WaitGroup
+	barrier.Add(1)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			barrier.Wait()
+			for i := 0; i < m; i++ {
+				_, err := key.Sign(rand.Reader, payload, p.Opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			wg.Done()
+		}()
+	}
+
+	barrier.Done()
+	wg.Wait()
 }
