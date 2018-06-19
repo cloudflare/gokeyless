@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"os"
 	"io/ioutil"
 	"time"
 
@@ -12,8 +13,9 @@ import (
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
 const (
@@ -82,6 +84,12 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	return derhelpers.ParsePrivateKeyDER(in)
 }
 
+// LoadURI attempts to load a private key from SOFTHSM.
+func LoadURI(uri string) (priv crypto.Signer, err error) {
+	pk11uri := server.RFC7512Parser(uri)
+	return server.LoadPKCS11Key(pk11uri)
+}
+
 // helper function reads a pub key from a file and convert it to a signer
 func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 	pemBytes, err := ioutil.ReadFile(filepath)
@@ -111,11 +119,22 @@ func init() {
 		log.Fatal(err)
 	}
 
-	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
-	if err != nil {
-		log.Fatal(err)
+	if os.Getenv("TESTHSM") == "" {
+		keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.SetKeystore(keys)
+	} else {
+		keys := server.NewDefaultKeystore()
+		if err := keys.AddFromURI(params.RSAURI, LoadURI); err != nil {
+			log.Fatal(err)
+		}
+		if err := keys.AddFromURI(params.ECDSAURI, LoadURI); err != nil {
+			log.Fatal(err)
+		}
+		s.SetKeystore(keys)
 	}
-	s.SetKeystore(keys)
 
 	s.SetSealer(dummySealer{})
 	if err = s.RegisterRPC(DummyRPC{}); err != nil {

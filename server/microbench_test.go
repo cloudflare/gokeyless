@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"io"
+	"os"
 	"fmt"
 	"runtime"
 	"sync"
@@ -375,22 +376,40 @@ func BenchmarkRandParallelForSignECDSASHA512(b *testing.B) {
 }
 
 func BenchmarkHSMSignRSASHA512(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSign(b, params.HSMRSASHA512Params)
 }
 func BenchmarkHSMSignECDSASHA256(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSign(b, params.HSMECDSASHA256Params)
 }
 
 func BenchmarkHSMSignParallelRSASHA512(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSignParallel(b, params.HSMRSASHA512Params)
 }
 func BenchmarkHSMSignParallelECDSASHA256(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSignParallel(b, params.HSMECDSASHA256Params)
 }
 
 func BenchmarkHSMSignConcurrencyRSASHA512(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSignConcurrency(b, params.HSMRSASHA512Params)
 }
 func BenchmarkHSMSignConcurrencyECDSASHA256(b *testing.B) {
+	if os.Getenv("TESTHSM") == "" {
+		b.Skip("skipping test; $TESTHSM not set")
+	}
 	benchHSMSignConcurrency(b, params.HSMECDSASHA256Params)
 }
