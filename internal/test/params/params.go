@@ -67,6 +67,6 @@ type HSMSignParams struct {
 }
 
 var (
-	HSMECDSASHA256Params = HSMSignParams{Opcode: protocol.OpECDSASignSHA256, URI: ECDSAURI,	Opts: crypto.SHA256, PayloadSize: 32}
-	HSMRSASHA512Params = HSMSignParams{Opcode: protocol.OpRSASignSHA512, URI: RSAURI, Opts: crypto.SHA512, PayloadSize: 64}
+	HSMECDSASHA256Params = HSMSignParams{Opcode: protocol.OpECDSASignSHA256, URI: ECDSAURI, Opts: crypto.SHA256, PayloadSize: 32}
+	HSMRSASHA512Params   = HSMSignParams{Opcode: protocol.OpRSASignSHA512, URI: RSAURI, Opts: crypto.SHA512, PayloadSize: 64}
 )
