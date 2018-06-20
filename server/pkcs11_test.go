@@ -19,15 +19,16 @@ pkcs11:id=b;token=b?pin-value=1234&module-path=/a/b.so
 pkcs11:token=Thalesn6000;id=%00?module-path=/opt/nfast/toolkits/pkcs11/libcknfast.so&pin-value=1234
 pkcs11:token=SoftHSM2;id=%00;slot-id=1359138056?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
 pkcs11:token=YubiKey%20PIV;id=%00;slot-id=0?module-path=/usr/lib64/libykcs11.so&pin-value=123456
-pkcs11:token=Gemalto;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pin-value=abcd`
+pkcs11:token=Gemalto;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pin-value=abcd
+pkcs11:token=A;manufacturer=B;serial=C;model=D;library-manufacturer=E;library-description=F;library-version=G;object=H;type=I;id=J;slot-manufacturer=K;slot-description=L;slot-id=M?pin-source=N&pin-value=O&module-name=P&module-path=Q&max-sessions=R`
 
 // TODO add false tests too
 
-func TestParser(t *testing.T) {
+func TestRFC7512Parser(t *testing.T) {
 	tests := strings.Split(samples, "\n")
 	for _, test := range tests {
 		if _, err := RFC7512Parser(test); err != nil {
-			t.Fail()
+			t.Fatal(err)
 		}
 	}
 }

@@ -53,7 +53,7 @@ var (
 
 const (
 	// testdata/tokens/b01b1e37-d655-6f75-917c-52054b8e924a -> /var/lib/softhsm/tokens/
-	RSAURI   = "pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
+	RSAURI = "pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
 	// testdata/tokens/d6a8ab57-d5c5-aaf0-70b6-d01595c28127 -> /var/lib/softhsm/tokens/
 	ECDSAURI = "pkcs11:token=SoftHSM2%20EC%20Token;id=%02;slot-id=1400733853?module-path=/usr/lib64/libsofthsm2.so&pin-value=12345"
 )
@@ -67,16 +67,6 @@ type HSMSignParams struct {
 }
 
 var (
-	HSMECDSASHA256Params = HSMSignParams{
-		Opcode:      protocol.OpECDSASignSHA256,
-		URI:         ECDSAURI,
-		Opts:        crypto.SHA256,
-		PayloadSize: 32,
-	}
-	HSMRSASHA512Params   = HSMSignParams{
-		Opcode:      protocol.OpRSASignSHA512,
-		URI:         RSAURI,
-		Opts:        crypto.SHA512,
-		PayloadSize: 64,
-	}
+	HSMECDSASHA256Params = HSMSignParams{Opcode: protocol.OpECDSASignSHA256, URI: ECDSAURI,	Opts: crypto.SHA256, PayloadSize: 32}
+	HSMRSASHA512Params = HSMSignParams{Opcode: protocol.OpRSASignSHA512, URI: RSAURI, Opts: crypto.SHA512, PayloadSize: 64}
 )

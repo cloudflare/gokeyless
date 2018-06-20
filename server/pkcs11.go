@@ -1,18 +1,19 @@
 package server
 
 import (
-	"fmt"
 	"crypto"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/cbroglie/crypto11"
-	"github.com/cloudflare/cfssl/log"
 )
 
-// PKCS11URI defines a PKCS#11 URI: https://tools.ietf.org/html/rfc7512#section-2.3
+// The PKCS#11 URI is a scheme for identifying PKCS#11 objects stored on PKCS#11
+// tokens and how to access them.
+// For more information read: https://tools.ietf.org/html/rfc7512#section-2.3
 type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 	// path-attr: (; delimited)
 	Token  string //        token <- CK_TOKEN_INFO
@@ -25,12 +26,12 @@ type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 	LibVer   string //      library-version <- CK_INFO
 
 	Object []byte // object <- CKA_LABEL
-	Type   string //   type <- CKA_CLASS (cert, data, private, public, or secret-key)
+	Type   string //   type <- CKA_CLASS
 	ID     []byte //     id <- CKA_ID
 
 	SlotManuf string // slot-manufacturer <- CK_SLOT_INFO
 	SlotDesc  string //  slot-description <- CK_SLOT_INFO
-	SlotID      uint //           slot-id <- CK_SLOT_ID
+	SlotID    uint   //           slot-id <- CK_SLOT_ID
 
 	// query-attr: (& delimited)
 	PinSource string // pin-source
@@ -40,29 +41,34 @@ type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 	ModulePath string // module-path
 
 	// Vendor specific query attributes:
-	MaxSessions int
+	MaxSessions int // max-sessions
 }
 
+// This function parses PKCS#11 URIs defined in RFC 7512 into PKCS11URI objects.
+// An error is returned if the input string does not appear to follow the rules
+// or if there are unrecognized components.
 func RFC7512Parser(uri string) (*PKCS11URI, error) {
+	// First we check that the URI matches the specifications:
 	aChar := "[a-z-_]"
 	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
-	pAttr := aChar+"+="+pChar+"+"
-	pClause := "("+pAttr+";)*("+pAttr+")"
+	pAttr := aChar + "+=" + pChar + "+"
+	pClause := "(" + pAttr + ";)*(" + pAttr + ")"
 	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
-	qAttr := aChar+"+="+qChar+"+"
-	qClause := "("+qAttr+"&)*("+qAttr+")"
-	r, _ := regexp.Compile("^pkcs11:"+pClause+"(\\?"+qClause+")?$")
+	qAttr := aChar + "+=" + qChar + "+"
+	qClause := "(" + qAttr + "&)*(" + qAttr + ")"
+	r, _ := regexp.Compile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
 
-	if ! r.MatchString(uri) {
+	if !r.MatchString(uri) {
 		return nil, fmt.Errorf("PKCS#11 URI is malformed: %s", uri)
 	}
 
 	var pk11uri PKCS11URI
 	var pAttrs []string
 	var qAttrs []string
-	var parts  []string
+	var parts []string
 	var value string
 
+	// Then we parse the URI string
 	uri = strings.Split(uri, "pkcs11:")[1]
 	parts = strings.Split(uri, "?")
 	pAttrs = strings.Split(parts[0], ";")
@@ -91,11 +97,13 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 		case "library-description":
 			pk11uri.LibDesc = value
 		case "library-version":
-			pk11uri.LibVer = value // TODO 1*DIGIT [ "." 1*DIGIT ]
+			// TODO 1*DIGIT [ "." 1*DIGIT ]
+			pk11uri.LibVer = value
 		case "object":
 			pk11uri.Object = []byte(value)
 		case "type":
-			pk11uri.Type = value // TODO public, private, cert, secret-key, data
+			// TODO public, private, cert, secret-key, data
+			pk11uri.Type = value
 		case "id":
 			pk11uri.ID = []byte(value)
 		case "slot-manufacturer":
@@ -103,7 +111,8 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 		case "slot-description":
 			pk11uri.SlotDesc = value
 		case "slot-id":
-			id, _ := strconv.ParseUint(value, 10, 32) // TODO what is the bit size
+			// TODO what is the bit size
+			id, _ := strconv.ParseUint(value, 10, 32)
 			pk11uri.SlotID = uint(id)
 		default:
 			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Component: %s", parts[0])
@@ -111,7 +120,6 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 	}
 
 	for _, attr := range qAttrs {
-		// TODO: do we need to trim attr here?
 		parts = strings.Split(attr, "=")
 		parts[0] = strings.Trim(parts[0], " \n\t\r")
 		if 1 < len(parts) {
@@ -138,10 +146,11 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 	return &pk11uri, nil
 }
 
-// LoadPKCS11Key attempts to load a signer from a PKCS#11 URI.
-// See https://tools.ietf.org/html/rfc7512#section-2.3
+// LoadPKCS11Key attempts to load a Signer given a PKCS11URI object identifier.
+// An error is returned if the crypto11 module cannot find the module, token,
+// or the specified object.
 func LoadPKCS11Key(pk11uri *PKCS11URI) (crypto.Signer, error) {
-	config := &crypto11.PKCS11Config {
+	config := &crypto11.PKCS11Config{
 		Path:        pk11uri.ModulePath,
 		TokenSerial: pk11uri.Serial,
 		TokenLabel:  pk11uri.Token,
@@ -151,13 +160,11 @@ func LoadPKCS11Key(pk11uri *PKCS11URI) (crypto.Signer, error) {
 
 	_, err := crypto11.Configure(config)
 	if err != nil {
-		log.Warning(err)
 		return nil, err
 	}
 
 	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotID, pk11uri.ID, pk11uri.Object)
 	if err != nil {
-		log.Warning(err)
 		return nil, err
 	}
 

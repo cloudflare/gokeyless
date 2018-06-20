@@ -5,17 +5,17 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"os"
 	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/server"
-	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/internal/test/params"
+	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/server"
 )
 
 const (
