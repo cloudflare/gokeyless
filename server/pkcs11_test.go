@@ -26,8 +26,7 @@ pkcs11:token=Gemalto;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pi
 func TestParser(t *testing.T) {
 	tests := strings.Split(samples, "\n")
 	for _, test := range tests {
-		pk11uri := RFC7512Parser(test)
-		if len(pk11uri.Id) == 0 {
+		if _, err := RFC7512Parser(test); err != nil {
 			t.Fail()
 		}
 	}
@@ -39,7 +38,7 @@ func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
 	}
 
 	p := params.HSMRSASHA512Params
-	pk11uri := RFC7512Parser(p.URI)
+	pk11uri, err := RFC7512Parser(p.URI)
 	key, err := LoadPKCS11Key(pk11uri)
 	if err != nil {
 		t.Fatal(err)

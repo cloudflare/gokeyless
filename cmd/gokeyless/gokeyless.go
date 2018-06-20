@@ -153,7 +153,7 @@ func initConfig() error {
 			(store.Dir == "" && store.File == "" && store.URI != "") {
 			continue
 		}
-		return fmt.Errorf("private key stores must define exactly one of the 'dir' or 'file' keys")
+		return fmt.Errorf("private key stores must define exactly one of the 'dir', 'file', or 'uri' keys")
 	}
 
 	// Special handling for private key override flags since the config file
@@ -295,11 +295,15 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // LoadURI attempts to load a signer from a PKCS#11 URI.
-func LoadURI(uri string) (priv crypto.Signer, err error) {
+func LoadURI(uri string) (crypto.Signer, error) {
 	// This wrapper is here in case we want to parse vendor specific values
 	// based on the parameters in the URI or perform side operations, such
 	// as waiting for network to be up.
-	pk11uri := server.RFC7512Parser(uri)
+	pk11uri, err := server.RFC7512Parser(uri)
+	if err != nil {
+		return nil, err
+	}
+
 	return server.LoadPKCS11Key(pk11uri)
 }
 

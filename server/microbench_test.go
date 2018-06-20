@@ -210,26 +210,26 @@ func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (ke
 }
 
 func benchHSMSign(b *testing.B, params params.HSMSignParams) {
-	pk11uri := RFC7512Parser(params.URI)
+	pk11uri, _ := RFC7512Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSign(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
-	pk11uri := RFC7512Parser(params.URI)
+	pk11uri, _ := RFC7512Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchHSMSignConcurrency(b *testing.B, params params.HSMSignParams) {
-	pk11uri := RFC7512Parser(params.URI)
+	pk11uri, _ := RFC7512Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignConcurrency(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 // prepareHSMSigner performs the boilerplate of generating values needed to
 // benchmark signatures on a Hardware Security Module.
-func prepareHSMSigner(b *testing.B, pk11uri PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
+func prepareHSMSigner(b *testing.B, pk11uri *PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
 	k, err := LoadPKCS11Key(pk11uri)
 	testutil.MustPrefix(b, "could not load PKCS11 key", err)
 	payload = make([]byte, payloadsize)
