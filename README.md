@@ -119,7 +119,19 @@ The private keys that this server is able to use should be stored with a `.key` 
 
 Note that the configuration file is the recommened way to specify these options; see below for more information.
 
-# Deploying 
+### Hardware Security Modules
+
+Private keys can also be stored on a Hardware Security Module. Keyless can access such a key using a [PKCS #11 URI](https://tools.ietf.org/html/rfc7512) in the configuration file. Here are some examples of URIs for keys stored on various HSM providers:
+
+    - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+    - uri: pkcs11:token=accelerator;object=thaleskey;slot-id=492971157?module-path=/opt/nfast/toolkits/pkcs11/libcknfast.so
+    - uri: pkcs11:token=YubiKey%20PIV;id=%00;slot-id=0?module-path=/usr/lib64/libykcs11.so&pin-value=123456&max-sessions=1
+    - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
+    - uri: pkcs11:token=elab2parN;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pin-value=crypto1
+
+Note that for now only one PKCS #11 module can be used at a time, so if you have keys on multiple HSMs, we recommend using [p11-glue](https://p11-glue.github.io/p11-glue/) to consolidate access through one module.
+
+# Deploying
 
 ## Installing
 

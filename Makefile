@@ -28,13 +28,9 @@ install-config:
 	@chmod 700 $(CONFIG_PREFIX)/keys
 	@mkdir -p $(INIT_PREFIX)
 	@mkdir -p $(SYSTEMD_PREFIX)
+	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
 	@install -m755 pkg/gokeyless.sysv $(INIT_PREFIX)/gokeyless
 	@install -m755 pkg/gokeyless.service $(SYSTEMD_PREFIX)/gokeyless.service
-	@install -m644 pkg/keyless_cacert.pem $(CONFIG_PREFIX)/keyless_cacert.pem
-	@install -m644 pkg/default.pem $(CONFIG_PREFIX)/default.pem
-	@install -m400 pkg/default-key.pem $(CONFIG_PREFIX)/default-key.pem
-	@install -m400 pkg/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
-	@install -m400 pkg/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
 	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
@@ -84,13 +80,20 @@ dev: gokeyless
 gokeyless: $(shell find . -type f -name '*.go')
 	go build -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
 
+.PHONY: install-dev
+install-dev: install-config
+	@install -m644 tests/testdata/default.pem $(CONFIG_PREFIX)/default.pem
+	@install -m400 tests/testdata/default-key.pem $(CONFIG_PREFIX)/default-key.pem
+	@install -m400 tests/testdata/testing-ecdsa.key $(CONFIG_PREFIX)/keys/testing-ecdsa.key
+	@install -m400 tests/testdata/testing-rsa.key $(CONFIG_PREFIX)/keys/testing-rsa.key
+
 SOFTHSM_TOKENS_PATH          := $(DESTDIR)/var/lib/softhsm/tokens
 SOFTHSM_CONFIG_PATH          := $(DESTDIR)/etc
 
-.PHONY: dev-softhsm
-dev-softhsm:
+.PHONY: install-dev-softhsm
+install-dev-softhsm: install-dev
 	@mkdir -p  $(SOFTHSM_CONFIG_PATH)
 	@mkdir -p  $(SOFTHSM_TOKENS_PATH)
 	@chmod 700 $(SOFTHSM_TOKENS_PATH)
-	@cp -r pkg/testing-tokens/*      $(SOFTHSM_TOKENS_PATH)
-	@install -m644 pkg/softhsm2.conf $(SOFTHSM_CONFIG_PATH)/softhsm2.conf
+	@cp -r tests/testdata/tokens/*      $(SOFTHSM_TOKENS_PATH)
+	@install -m644 tests/testdata/softhsm2.conf $(SOFTHSM_CONFIG_PATH)/softhsm2.conf
