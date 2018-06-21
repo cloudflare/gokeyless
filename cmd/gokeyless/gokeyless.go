@@ -299,7 +299,7 @@ func LoadURI(uri string) (crypto.Signer, error) {
 	// This wrapper is here in case we want to parse vendor specific values
 	// based on the parameters in the URI or perform side operations, such
 	// as waiting for network to be up.
-	pk11uri, err := server.RFC7512Parser(uri)
+	pk11uri, err := server.PKCS11Parser(uri)
 	if err != nil {
 		return nil, err
 	}

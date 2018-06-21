@@ -11,11 +11,15 @@ import (
 	"github.com/cbroglie/crypto11"
 )
 
-// The PKCS#11 URI is a scheme for identifying PKCS#11 objects stored on PKCS#11
-// tokens and how to access them.
+// A PKCS11URI represents a PKCS#11 object stored on a PKCS#11 token and
+// information for accessing it. The general form represented is:
+//
+//	pkcs11:path-attr[?query-attr]
+//
+// Path and query attributes are delimited by ';' and '&', respectively.
 // For more information read: https://tools.ietf.org/html/rfc7512#section-2.3
-type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
-	// path-attr: (; delimited)
+type PKCS11URI struct {
+	// path attributes:
 	Token  string //        token <- CK_TOKEN_INFO
 	Manuf  string // manufacturer <- CK_TOKEN_INFO
 	Serial string //       serial <- CK_TOKEN_INTO
@@ -33,7 +37,7 @@ type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 	SlotDesc  string //  slot-description <- CK_SLOT_INFO
 	SlotID    uint   //           slot-id <- CK_SLOT_ID
 
-	// query-attr: (& delimited)
+	// query attributes:
 	PinSource string // pin-source
 	PinValue  string //  pin-value
 
@@ -44,11 +48,11 @@ type PKCS11URI struct { // pkcs11:path-attr[?query-attr]
 	MaxSessions int // max-sessions
 }
 
-// This function parses PKCS#11 URIs defined in RFC 7512 into PKCS11URI objects.
+// PKCS11Parser decodes a PKCS#11 URI as defined in RFC 7512 into an PKCS11URI object.
 // An error is returned if the input string does not appear to follow the rules
-// or if there are unrecognized components.
-func RFC7512Parser(uri string) (*PKCS11URI, error) {
-	// First we check that the URI matches the specifications:
+// or if there are unrecognized path or query attributes.
+func PKCS11Parser(uri string) (*PKCS11URI, error) {
+	// Check that the URI matches the specification from RFC 7512:
 	aChar := "[a-z-_]"
 	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
 	pAttr := aChar + "+=" + pChar + "+"
@@ -68,7 +72,7 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 	var parts []string
 	var value string
 
-	// Then we parse the URI string
+	// Separate the scheme name, path, and query attributes:
 	uri = strings.Split(uri, "pkcs11:")[1]
 	parts = strings.Split(uri, "?")
 	pAttrs = strings.Split(parts[0], ";")
@@ -76,12 +80,15 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 		qAttrs = strings.Split(parts[1], "&")
 	}
 
+	// Parse the path attributes:
 	for _, attr := range pAttrs {
 		parts = strings.Split(attr, "=")
 		parts[0] = strings.Trim(parts[0], " \n\t\r")
-		if 1 < len(parts) {
+		if len(parts) == 2 {
 			parts[1] = strings.Trim(parts[1], " \n\t\r")
 			value, _ = url.QueryUnescape(parts[1])
+		} else {
+			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
 		}
 		switch parts[0] {
 		case "token":
@@ -111,20 +118,23 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 		case "slot-description":
 			pk11uri.SlotDesc = value
 		case "slot-id":
-			// TODO what is the bit size
+			// TODO the bit size is not clarified.
 			id, _ := strconv.ParseUint(value, 10, 32)
 			pk11uri.SlotID = uint(id)
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Component: %s", parts[0])
+			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
 		}
 	}
 
+	// Parse the query attributes:
 	for _, attr := range qAttrs {
 		parts = strings.Split(attr, "=")
 		parts[0] = strings.Trim(parts[0], " \n\t\r")
-		if 1 < len(parts) {
+		if len(parts) == 2 {
 			parts[1] = strings.Trim(parts[1], " \n\t\r")
 			value, _ = url.QueryUnescape(parts[1])
+		} else {
+			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
 		}
 		switch parts[0] {
 		case "pin-source":
@@ -139,7 +149,7 @@ func RFC7512Parser(uri string) (*PKCS11URI, error) {
 			maxSessions, _ := strconv.ParseUint(value, 10, 32)
 			pk11uri.MaxSessions = int(maxSessions)
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query: %s", parts[0])
+			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
 		}
 	}
 

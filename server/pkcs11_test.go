@@ -26,16 +26,16 @@ var negatives string = `pkcs11:
 pkcs12:id=0
 pkcs11:id=b?pin-value=1234;module-path=/a/b.so`
 
-func TestRFC7512Parser(t *testing.T) {
+func TestPKCS11Parser(t *testing.T) {
 	tests := strings.Split(samples, "\n")
 	for _, uri := range tests {
-		if _, err := RFC7512Parser(uri); err != nil {
+		if _, err := PKCS11Parser(uri); err != nil {
 			t.Fatal(err)
 		}
 	}
 	tests = strings.Split(negatives, "\n")
 	for _, uri := range tests {
-		if _, err := RFC7512Parser(uri); err == nil {
+		if _, err := PKCS11Parser(uri); err == nil {
 			t.Fatalf("PKCS#11 Parser failed to detect a wrong URI: %s", uri)
 		}
 	}
@@ -47,7 +47,7 @@ func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
 	}
 
 	p := params.HSMRSASHA512Params
-	pk11uri, err := RFC7512Parser(p.URI)
+	pk11uri, err := PKCS11Parser(p.URI)
 	key, err := LoadPKCS11Key(pk11uri)
 	if err != nil {
 		t.Fatal(err)

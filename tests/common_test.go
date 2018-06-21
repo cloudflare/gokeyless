@@ -86,7 +86,7 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 
 // LoadURI attempts to load a private key from SOFTHSM.
 func LoadURI(uri string) (priv crypto.Signer, err error) {
-	pk11uri, _ := server.RFC7512Parser(uri)
+	pk11uri, _ := server.PKCS11Parser(uri)
 	return server.LoadPKCS11Key(pk11uri)
 }
 

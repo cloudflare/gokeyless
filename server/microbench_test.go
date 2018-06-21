@@ -210,19 +210,19 @@ func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (ke
 }
 
 func benchHSMSign(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := RFC7512Parser(params.URI)
+	pk11uri, _ := PKCS11Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSign(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := RFC7512Parser(params.URI)
+	pk11uri, _ := PKCS11Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchHSMSignConcurrency(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := RFC7512Parser(params.URI)
+	pk11uri, _ := PKCS11Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignConcurrency(b, key, rand.Reader, payload[:], params.Opts)
 }
