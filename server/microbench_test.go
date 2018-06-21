@@ -6,7 +6,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -42,29 +41,6 @@ func benchSignParallel(b *testing.B, key crypto.Signer, rnd io.Reader, payload [
 		go func() {
 			barrier.Wait()
 			for i := 0; i < b.N; i++ {
-				_, err := key.Sign(rnd, payload, opts)
-				testutil.MustPrefix(b, "could not create signature", err)
-			}
-			wg.Done()
-		}()
-	}
-
-	b.ResetTimer()
-	barrier.Done()
-	wg.Wait()
-}
-
-func benchSignConcurrency(b *testing.B, key crypto.Signer, rnd io.Reader, payload []byte, opts crypto.SignerOpts) {
-	// The barrier is used to ensure that goroutines only start running once we
-	// release them.
-	var barrier, wg sync.WaitGroup
-	barrier.Add(1)
-	wg.Add(b.N)
-	fmt.Println(b.N)
-	for i := 0; i < b.N; i++ {
-		go func() {
-			barrier.Wait()
-			for i := 0; i < 32; i++ {
 				_, err := key.Sign(rnd, payload, opts)
 				testutil.MustPrefix(b, "could not create signature", err)
 			}
@@ -219,12 +195,6 @@ func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
 	pk11uri, _ := PKCS11Parser(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
-}
-
-func benchHSMSignConcurrency(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := PKCS11Parser(params.URI)
-	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
-	benchSignConcurrency(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 // prepareHSMSigner performs the boilerplate of generating values needed to
@@ -399,17 +369,4 @@ func BenchmarkHSMSignParallelECDSASHA256(b *testing.B) {
 		b.Skip("skipping test; $TESTHSM not set")
 	}
 	benchHSMSignParallel(b, params.HSMECDSASHA256Params)
-}
-
-func BenchmarkHSMSignConcurrencyRSASHA512(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
-	}
-	benchHSMSignConcurrency(b, params.HSMRSASHA512Params)
-}
-func BenchmarkHSMSignConcurrencyECDSASHA256(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
-	}
-	benchHSMSignConcurrency(b, params.HSMECDSASHA256Params)
 }
