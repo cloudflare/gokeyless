@@ -52,10 +52,12 @@ var (
 )
 
 const (
-	// testdata/tokens/b01b1e37-d655-6f75-917c-52054b8e924a -> /var/lib/softhsm/tokens/
-	RSAURI = "pkcs11:token=SoftHSM2%20RSA%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
-	// testdata/tokens/d6a8ab57-d5c5-aaf0-70b6-d01595c28127 -> /var/lib/softhsm/tokens/
-	ECDSAURI = "pkcs11:token=SoftHSM2%20EC%20Token;id=%02;slot-id=1400733853?module-path=/usr/lib64/libsofthsm2.so&pin-value=12345"
+	// RSAURI and ECDSAURI are sample PKCS #11 URIs used for testing HSM
+	// Compatibility. Before running tests, copy the contents of the
+	// testdata/tokens/ directory to your SoftHSM2 token directory, usually
+	// located at /var/lib/softhsm/tokens/, and run `export TESTHSM=1`
+	RSAURI   = "pkcs11:token=SoftHSM2%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
+	ECDSAURI = "pkcs11:token=SoftHSM2%20Token;id=%02;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
 )
 
 // HSMSignParams represents a set of parameters to a HSM signing operation.
