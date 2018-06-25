@@ -1,4 +1,4 @@
-package server
+package rfc7512
 
 import (
 	"crypto/rand"
@@ -11,7 +11,7 @@ import (
 	"github.com/cloudflare/gokeyless/internal/test/params"
 )
 
-var samples string = `pkcs11:id=0
+var samples = `pkcs11:id=0
 pkcs11:id=0;token=b
 pkcs11:id=b?pin-value=1234
 pkcs11:id=b?pin-value=1234&module-path=/a/b.so
@@ -22,20 +22,20 @@ pkcs11:token=YubiKey%20PIV;id=%00;slot-id=0?module-path=/usr/lib64/libykcs11.so&
 pkcs11:token=Gemalto;id=%04;slot-id=0?module-path=/usr/lib/libCryptoki2_64.so&pin-value=abcd
 pkcs11:token=A;manufacturer=B;serial=C;model=D;library-manufacturer=E;library-description=F;library-version=G;object=H;type=I;id=J;slot-manufacturer=K;slot-description=L;slot-id=M?pin-source=N&pin-value=O&module-name=P&module-path=Q&max-sessions=R`
 
-var negatives string = `pkcs11:
+var negatives = `pkcs11:
 pkcs12:id=0
 pkcs11:id=b?pin-value=1234;module-path=/a/b.so`
 
-func TestPKCS11Parser(t *testing.T) {
+func TestParsePKCS11URI(t *testing.T) {
 	tests := strings.Split(samples, "\n")
 	for _, uri := range tests {
-		if _, err := PKCS11Parser(uri); err != nil {
+		if _, err := ParsePKCS11URI(uri); err != nil {
 			t.Fatal(err)
 		}
 	}
 	tests = strings.Split(negatives, "\n")
 	for _, uri := range tests {
-		if _, err := PKCS11Parser(uri); err == nil {
+		if _, err := ParsePKCS11URI(uri); err == nil {
 			t.Fatalf("PKCS#11 Parser failed to detect a wrong URI: %s", uri)
 		}
 	}
@@ -47,7 +47,7 @@ func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
 	}
 
 	p := params.HSMRSASHA512Params
-	pk11uri, err := PKCS11Parser(p.URI)
+	pk11uri, err := ParsePKCS11URI(p.URI)
 	key, err := LoadPKCS11Key(pk11uri)
 	if err != nil {
 		t.Fatal(err)

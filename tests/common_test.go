@@ -13,6 +13,7 @@ import (
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
@@ -86,8 +87,8 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 
 // LoadURI attempts to load a private key from SOFTHSM.
 func LoadURI(uri string) (priv crypto.Signer, err error) {
-	pk11uri, _ := server.PKCS11Parser(uri)
-	return server.LoadPKCS11Key(pk11uri)
+	pk11uri, _ := rfc7512.ParsePKCS11URI(uri)
+	return rfc7512.LoadPKCS11Key(pk11uri)
 }
 
 // helper function reads a pub key from a file and convert it to a signer

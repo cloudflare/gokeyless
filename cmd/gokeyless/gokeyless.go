@@ -20,6 +20,7 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -299,12 +300,12 @@ func LoadURI(uri string) (crypto.Signer, error) {
 	// This wrapper is here in case we want to parse vendor specific values
 	// based on the parameters in the URI or perform side operations, such
 	// as waiting for network to be up.
-	pk11uri, err := server.PKCS11Parser(uri)
+	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
 	if err != nil {
 		return nil, err
 	}
 
-	return server.LoadPKCS11Key(pk11uri)
+	return rfc7512.LoadPKCS11Key(pk11uri)
 }
 
 // validCertExpiry checks if cerficiate is currently valid.

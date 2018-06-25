@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/joshlf/testutil"
 )
@@ -186,21 +187,21 @@ func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (ke
 }
 
 func benchHSMSign(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := PKCS11Parser(params.URI)
+	pk11uri, _ := rfc7512.ParsePKCS11URI(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSign(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
-	pk11uri, _ := PKCS11Parser(params.URI)
+	pk11uri, _ := rfc7512.ParsePKCS11URI(params.URI)
 	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
 	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
 }
 
 // prepareHSMSigner performs the boilerplate of generating values needed to
 // benchmark signatures on a Hardware Security Module.
-func prepareHSMSigner(b *testing.B, pk11uri *PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
-	k, err := LoadPKCS11Key(pk11uri)
+func prepareHSMSigner(b *testing.B, pk11uri *rfc7512.PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
+	k, err := rfc7512.LoadPKCS11Key(pk11uri)
 	testutil.MustPrefix(b, "could not load PKCS11 key", err)
 	payload = make([]byte, payloadsize)
 	mustReadFull(b, rand.Reader, payload[:])

@@ -1,4 +1,4 @@
-package server
+package rfc7512
 
 import (
 	"crypto"
@@ -48,10 +48,10 @@ type PKCS11URI struct {
 	MaxSessions int // max-sessions
 }
 
-// PKCS11Parser decodes a PKCS#11 URI as defined in RFC 7512 into an PKCS11URI object.
+// ParsePKCS11URI decodes a PKCS#11 URI as defined in RFC 7512 into an PKCS11URI object.
 // An error is returned if the input string does not appear to follow the rules
 // or if there are unrecognized path or query attributes.
-func PKCS11Parser(uri string) (*PKCS11URI, error) {
+func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 	// Check that the URI matches the specification from RFC 7512:
 	aChar := "[a-z-_]"
 	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
