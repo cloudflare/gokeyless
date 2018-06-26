@@ -86,9 +86,13 @@ func LoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // LoadURI attempts to load a private key from SOFTHSM.
-func LoadURI(uri string) (priv crypto.Signer, err error) {
-	pk11uri, _ := rfc7512.ParsePKCS11URI(uri)
-	return rfc7512.LoadPKCS11Key(pk11uri)
+func LoadURI(uri string) (crypto.Signer, error) {
+	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
 
 // helper function reads a pub key from a file and convert it to a signer

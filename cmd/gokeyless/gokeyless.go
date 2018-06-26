@@ -305,7 +305,7 @@ func LoadURI(uri string) (crypto.Signer, error) {
 		return nil, err
 	}
 
-	return rfc7512.LoadPKCS11Key(pk11uri)
+	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
 
 // validCertExpiry checks if cerficiate is currently valid.

@@ -201,7 +201,7 @@ func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
 // prepareHSMSigner performs the boilerplate of generating values needed to
 // benchmark signatures on a Hardware Security Module.
 func prepareHSMSigner(b *testing.B, pk11uri *rfc7512.PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
-	k, err := rfc7512.LoadPKCS11Key(pk11uri)
+	k, err := rfc7512.LoadPKCS11Signer(pk11uri)
 	testutil.MustPrefix(b, "could not load PKCS11 key", err)
 	payload = make([]byte, payloadsize)
 	mustReadFull(b, rand.Reader, payload[:])

@@ -1,3 +1,6 @@
+// Package rfc7512 provides a parser for the PKCS #11 URI format as specified in
+// RFC 7512: The PKCS #11 URI Scheme. Additionally, it provides a wrapper around
+// the crypto11 package for loading a key pair as a crypto.Signer object.
 package rfc7512
 
 import (
@@ -11,8 +14,8 @@ import (
 	"github.com/cbroglie/crypto11"
 )
 
-// A PKCS11URI represents a PKCS#11 object stored on a PKCS#11 token and
-// information for accessing it. The general form represented is:
+// PKCS11URI contains the information for accessing a PKCS #11 object, such as
+// a public key, private key, or a certificate. The general form represented is:
 //
 //	pkcs11:path-attr[?query-attr]
 //
@@ -156,10 +159,21 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 	return &pk11uri, nil
 }
 
-// LoadPKCS11Key attempts to load a Signer given a PKCS11URI object identifier.
+// LoadPKCS11Signer attempts to load a Signer given a PKCS11URI object that
+// identifies a key pair. At least three attributes must be specified:
+//
+//	Module:	use ModulePath to locate the PKCS #11 module library.
+//	Token:	use Serial or Token to specify the PKCS #11 token.
+//	Slot:	use SlotID, ID, or Object to specify the PKCS #11 key pair.
+//
+// For certain modules, a query attribute max-sessions is required in order to
+// prevent openning too many sessions to the module. Certain additional attributes,
+// such as pin-value, may be necessary depending on the situation. Refer to the
+// documentation for your PKCS #11 module for more details.
+//
 // An error is returned if the crypto11 module cannot find the module, token,
 // or the specified object.
-func LoadPKCS11Key(pk11uri *PKCS11URI) (crypto.Signer, error) {
+func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 	config := &crypto11.PKCS11Config{
 		Path:        pk11uri.ModulePath,
 		TokenSerial: pk11uri.Serial,

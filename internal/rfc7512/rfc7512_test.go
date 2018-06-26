@@ -48,7 +48,7 @@ func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
 
 	p := params.HSMRSASHA512Params
 	pk11uri, err := ParsePKCS11URI(p.URI)
-	key, err := LoadPKCS11Key(pk11uri)
+	signer, err := LoadPKCS11Signer(pk11uri)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestHSMSignConcurrencyRSASHA512(t *testing.T) {
 		go func() {
 			barrier.Wait()
 			for i := 0; i < m; i++ {
-				_, err := key.Sign(rand.Reader, payload, p.Opts)
+				_, err := signer.Sign(rand.Reader, payload, p.Opts)
 				if err != nil {
 					t.Fatal(err)
 				}
