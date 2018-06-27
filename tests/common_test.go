@@ -9,11 +9,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
-	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
@@ -75,26 +72,6 @@ func (DummyRPC) Error(_ string, _ *string) error {
 	return errors.New("remote rpc error")
 }
 
-// LoadKey attempts to load a private key from PEM or DER.
-func LoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
-
-	return derhelpers.ParsePrivateKeyDER(in)
-}
-
-// LoadURI attempts to load a private key from SOFTHSM.
-func LoadURI(uri string) (crypto.Signer, error) {
-	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
-	if err != nil {
-		return nil, err
-	}
-
-	return rfc7512.LoadPKCS11Signer(pk11uri)
-}
-
 // helper function reads a pub key from a file and convert it to a signer
 func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 	pemBytes, err := ioutil.ReadFile(filepath)
@@ -125,17 +102,17 @@ func init() {
 	}
 
 	if os.Getenv("TESTHSM") == "" {
-		keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
+		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
 		if err != nil {
 			log.Fatal(err)
 		}
 		s.SetKeystore(keys)
 	} else {
 		keys := server.NewDefaultKeystore()
-		if err := keys.AddFromURI(params.RSAURI, LoadURI); err != nil {
+		if err := keys.AddFromURI(params.RSAURI, server.DefaultLoadURI); err != nil {
 			log.Fatal(err)
 		}
-		if err := keys.AddFromURI(params.ECDSAURI, LoadURI); err != nil {
+		if err := keys.AddFromURI(params.ECDSAURI, server.DefaultLoadURI); err != nil {
 			log.Fatal(err)
 		}
 		s.SetKeystore(keys)

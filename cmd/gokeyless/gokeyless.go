@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -18,9 +17,7 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -269,43 +266,20 @@ func initKeyStore() (server.Keystore, error) {
 	for _, store := range config.PrivateKeyStores {
 		switch {
 		case store.Dir != "":
-			if err := keys.AddFromDir(store.Dir, LoadKey); err != nil {
+			if err := keys.AddFromDir(store.Dir, server.DefaultLoadKey); err != nil {
 				return nil, err
 			}
 		case store.File != "":
-			if err := keys.AddFromFile(store.File, LoadKey); err != nil {
+			if err := keys.AddFromFile(store.File, server.DefaultLoadKey); err != nil {
 				return nil, err
 			}
 		case store.URI != "":
-			if err := keys.AddFromURI(store.URI, LoadURI); err != nil {
+			if err := keys.AddFromURI(store.URI, server.DefaultLoadURI); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return keys, nil
-}
-
-// LoadKey attempts to load a private key from PEM or DER.
-func LoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
-
-	return derhelpers.ParsePrivateKeyDER(in)
-}
-
-// LoadURI attempts to load a signer from a PKCS#11 URI.
-func LoadURI(uri string) (crypto.Signer, error) {
-	// This wrapper is here in case we want to parse vendor specific values
-	// based on the parameters in the URI or perform side operations, such
-	// as waiting for network to be up.
-	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
-	if err != nil {
-		return nil, err
-	}
-
-	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
 
 // validCertExpiry checks if cerficiate is currently valid.
