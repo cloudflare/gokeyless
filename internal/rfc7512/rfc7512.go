@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cbroglie/crypto11"
+	"github.com/ThalesIgnite/crypto11"
 )
 
 // PKCS11URI contains the information for accessing a PKCS #11 object, such as

@@ -176,16 +176,16 @@ func GenerateRSAKeyPairOnSession(session *PKCS11Session, slot uint, id []byte, l
 // Note that the SessionKeyLen option (for PKCS#1v1.5 decryption) is not supported.
 //
 // The underlying PKCS#11 implementation may impose further restrictions.
-func (decrypter *PKCS11PrivateKeyRSA) Decrypt(rand io.Reader, ciphertext []byte, options crypto.DecrypterOpts) (plaintext []byte, err error) {
-	err = withSession(decrypter.Slot, func(session *PKCS11Session) error {
+func (priv *PKCS11PrivateKeyRSA) Decrypt(rand io.Reader, ciphertext []byte, options crypto.DecrypterOpts) (plaintext []byte, err error) {
+	err = withSession(priv.Slot, func(session *PKCS11Session) error {
 		if options == nil {
-			plaintext, err = decryptPKCS1v15(session, decrypter, ciphertext, 0)
+			plaintext, err = decryptPKCS1v15(session, priv, ciphertext, 0)
 		} else {
 			switch o := options.(type) {
 			case *rsa.PKCS1v15DecryptOptions:
-				plaintext, err = decryptPKCS1v15(session, decrypter, ciphertext, o.SessionKeyLen)
+				plaintext, err = decryptPKCS1v15(session, priv, ciphertext, o.SessionKeyLen)
 			case *rsa.OAEPOptions:
-				plaintext, err = decryptOAEP(session, decrypter, ciphertext, o.Hash, o.Label)
+				plaintext, err = decryptOAEP(session, priv, ciphertext, o.Hash, o.Label)
 			default:
 				err = ErrUnsupportedRSAOptions
 			}
@@ -307,16 +307,16 @@ func signPKCS1v15(session *PKCS11Session, key *PKCS11PrivateKeyRSA, digest []byt
 // crypto.rsa.PSSSaltLengthEqualsHash (recommended) or pass an
 // explicit salt length. Moreover the underlying PKCS#11
 // implementation may impose further restrictions.
-func (signer *PKCS11PrivateKeyRSA) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+func (priv *PKCS11PrivateKeyRSA) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	if err != nil {
 		return nil, err
 	}
-	err = withSession(signer.Slot, func(session *PKCS11Session) error {
+	err = withSession(priv.Slot, func(session *PKCS11Session) error {
 		switch opts.(type) {
 		case *rsa.PSSOptions:
-			signature, err = signPSS(session, signer, digest, opts.(*rsa.PSSOptions))
+			signature, err = signPSS(session, priv, digest, opts.(*rsa.PSSOptions))
 		default: /* PKCS1-v1_5 */
-			signature, err = signPKCS1v15(session, signer, digest, opts.HashFunc())
+			signature, err = signPKCS1v15(session, priv, digest, opts.HashFunc())
 		}
 		return err
 	})

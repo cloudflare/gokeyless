@@ -19,7 +19,7 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Access cryptographic keys from PKCS#11 using Go crypto API.
+// Package crypto11 enables access to cryptographic keys from PKCS#11 using Go crypto API.
 //
 // For simple use:
 //

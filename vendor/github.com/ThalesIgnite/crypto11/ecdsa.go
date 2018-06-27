@@ -143,10 +143,9 @@ var wellKnownCurves = map[string]curveInfo{
 func marshalEcParams(c elliptic.Curve) ([]byte, error) {
 	if ci, ok := wellKnownCurves[c.Params().Name]; ok {
 		return ci.oid, nil
-	} else {
-		// TODO use ANSI X9.62 ECParameters representation instead
-		return nil, ErrUnsupportedEllipticCurve
 	}
+	// TODO use ANSI X9.62 ECParameters representation instead
+	return nil, ErrUnsupportedEllipticCurve
 }
 
 func unmarshalEcParams(b []byte) (elliptic.Curve, error) {
@@ -155,9 +154,8 @@ func unmarshalEcParams(b []byte) (elliptic.Curve, error) {
 		if bytes.Compare(b, ci.oid) == 0 {
 			if ci.curve != nil {
 				return ci.curve, nil
-			} else {
-				return nil, ErrUnsupportedEllipticCurve
 			}
+			return nil, ErrUnsupportedEllipticCurve
 		}
 	}
 	// TODO try ANSI X9.62 ECParameters representation

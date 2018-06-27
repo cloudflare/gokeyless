@@ -3,15 +3,15 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/ThalesIgnite/crypto11"
+  packages = ["."]
+  revision = "a49ec8bedc9aafac9f97ff2bb1e14193a10d2a4a"
+
+[[projects]]
+  branch = "master"
   name = "github.com/beorn7/perks"
   packages = ["quantile"]
   revision = "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
-
-[[projects]]
-  branch = "session-handles"
-  name = "github.com/cbroglie/crypto11"
-  packages = ["."]
-  revision = "b614ed55078ab74770e236d06365eb6916565aac"
 
 [[projects]]
   name = "github.com/cloudflare/cfssl"
@@ -265,6 +265,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b165791985ee01d6b55b4ab5a9edc576f9d8d969ee326dee503a8338f6cf713c"
+  inputs-digest = "65e4355badb177dfb4613bab1f84ec9e0fe925f5f8c9b60164e7b73c31ee8cb0"
   solver-name = "gps-cdcl"
   solver-version = 1

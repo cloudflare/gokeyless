@@ -82,7 +82,7 @@ func FindKeyPair(id []byte, label []byte) (crypto.PrivateKey, error) {
 	return FindKeyPairOnSlot(defaultSlot, id, label)
 }
 
-// FindKeyPairOnSession retrieves a previously created asymmetric key, using a specified slot.
+// FindKeyPairOnSlot retrieves a previously created asymmetric key, using a specified slot.
 //
 // Either (but not both) of id and label may be nil, in which case they are ignored.
 func FindKeyPairOnSlot(slot uint, id []byte, label []byte) (crypto.PrivateKey, error) {

@@ -21,7 +21,7 @@
 
 package crypto11
 
-// A random number reader that uses PKCS#11.
+// PKCS11RandReader is a random number reader that uses PKCS#11.
 type PKCS11RandReader struct {
 }
 

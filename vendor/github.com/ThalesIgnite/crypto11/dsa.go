@@ -47,14 +47,18 @@ func exportDSAPublicKey(session *PKCS11Session, pubHandle pkcs11.ObjectHandle) (
 	if err != nil {
 		return nil, err
 	}
-	var p, q, g, x big.Int
+	var p, q, g, y big.Int
 	p.SetBytes(exported[0].Value)
 	q.SetBytes(exported[1].Value)
 	g.SetBytes(exported[2].Value)
-	x.SetBytes(exported[3].Value)
+	y.SetBytes(exported[3].Value)
 	result := dsa.PublicKey{
-		dsa.Parameters{&p, &q, &g},
-		&x,
+		Parameters: dsa.Parameters{
+			P: &p,
+			Q: &q,
+			G: &g,
+		},
+		Y: &y,
 	}
 	return &result, nil
 }

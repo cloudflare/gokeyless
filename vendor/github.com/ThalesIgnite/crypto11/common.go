@@ -14,7 +14,7 @@ import (
 // ErrMalformedDER represents a failure to decode an ASN.1-encoded message
 var ErrMalformedDER = errors.New("crypto11: malformed DER message")
 
-// ErrMalformedDER represents a failure to decode a signature.  This
+// ErrMalformedSignature represents a failure to decode a signature.  This
 // means the PKCS#11 library has returned an empty or odd-length byte
 // string.
 var ErrMalformedSignature = errors.New("crypto11xo: malformed signature")
@@ -94,8 +94,8 @@ func dsaGeneric(slot uint, key pkcs11.ObjectHandle, mechanism uint, digest []byt
 
 // Pick a random label for a key
 func generateKeyLabel() ([]byte, error) {
-	const label_size = 32
-	rawLabel := make([]byte, label_size)
+	const labelSize = 32
+	rawLabel := make([]byte, labelSize)
 	var rand PKCS11RandReader
 	sz, err := rand.Read(rawLabel)
 	if err != nil {
@@ -104,7 +104,7 @@ func generateKeyLabel() ([]byte, error) {
 	if sz < len(rawLabel) {
 		return nil, ErrCannotGetRandomData
 	}
-	label := make([]byte, 2*label_size)
+	label := make([]byte, 2*labelSize)
 	base64.URLEncoding.Encode(label, rawLabel)
 	return label, nil
 }
