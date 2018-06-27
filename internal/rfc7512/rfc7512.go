@@ -14,13 +14,8 @@ import (
 	"github.com/ThalesIgnite/crypto11"
 )
 
-// PKCS11URI contains the information for accessing a PKCS #11 object, such as
-// a public key, private key, or a certificate. The general form represented is:
-//
-//	pkcs11:path-attr[?query-attr]
-//
-// Path and query attributes are delimited by ';' and '&', respectively.
-// For more information read: https://tools.ietf.org/html/rfc7512#section-2.3
+// PKCS11URI contains the information for accessing a PKCS #11 storage object,
+// such as a public key, private key, or a certificate.
 type PKCS11URI struct {
 	// path attributes:
 	Token  string //        token <- CK_TOKEN_INFO
@@ -51,7 +46,23 @@ type PKCS11URI struct {
 	MaxSessions int // max-sessions
 }
 
-// ParsePKCS11URI decodes a PKCS#11 URI as defined in RFC 7512 into an PKCS11URI object.
+// ParsePKCS11URI decodes a PKCS #11 URI and returns it as a PKCS11URI object.
+//
+// A PKCS #11 URI is a sequence of attribute value pairs separated by a
+// semicolon that form a one-level path component, optionally followed
+// by a query. The general form represented is:
+//
+//	pkcs11:path-component[?query-component]
+//
+// The URI path component contains attributes that identify a resource
+// in a one-level hierarchy provided by Cryptoki producers.  The query
+// component can contain a few attributes that may be needed to retrieve
+// the resource identified by the URI path component.  Attributes in the
+// path component are delimited by the ';' character, attributes in the
+// query component use '&' as a delimiter.
+//
+// For more information read: https://tools.ietf.org/html/rfc7512#section-2.3
+//
 // An error is returned if the input string does not appear to follow the rules
 // or if there are unrecognized path or query attributes.
 func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
