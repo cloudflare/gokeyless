@@ -2,9 +2,27 @@
 [![Build Status](https://travis-ci.org/cloudflare/gokeyless.png?branch=master)](https://travis-ci.org/cloudflare/gokeyless)
 [![GoDoc](https://godoc.org/github.com/cloudflare/gokeyless?status.png)](https://godoc.org/github.com/cloudflare/gokeyless)
 
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Go Keyless](#go-keyless)
+    - [Keyless SSL implementation in Go](#keyless-ssl-implementation-in-go)
+    - [Protocol](#protocol)
+    - [Key Management](#key-management)
+        - [Hardware Security Modules](#hardware-security-modules)
+- [Deploying](#deploying)
+    - [Installing](#installing)
+        - [Package Installation](#package-installation)
+        - [Source Installation](#source-installation)
+    - [Running](#running)
+    - [Testing](#testing)
+    - [License](#license)
+
+<!-- markdown-toc end -->
+
+
 ## Keyless SSL implementation in Go
-Go Keyless is an implementation Cloudflare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as
-an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
+Go Keyless is an implementation Cloudflare's [Keyless SSL](https://blog.cloudflare.com/keyless-ssl-the-nitty-gritty-technical-details/) Protocol in Go. It is provided as an upgrade to the previous [C implementation](https://github.com/cloudflare/keyless).
 
 ## Protocol
 The Cloudflare Keyless SSL client communicates to the server via a binary
@@ -21,16 +39,16 @@ communicating policy information.
 
 Header:
 
-    0 - - 1 - - 2 - - 3 - - 4 - - - - 6 - - 7 - - 8
+    0 - - 1 - - 2 - - 3 - - 4 - - 5 - - 6 - - 7 - - 8
     | Maj | Min |   Length  |          ID           |
-    |                    Body                       |
-    |     Body     | <- 8 + Length
+    |                      Body                     |
+    |                      Body                     | <- 8 + Length
 
 Item:
 
-    0 - - 1 - - 2 - - 3 - - 4 - - - - 6 - - 7 - - 8
+    0 - - 1 - - 2 - - 3 - - 4 - - 5 - - 6 - - 7 - - 8
     | Tag |   Length  |          Data               |
-    |           Data             | <- 3 + Length
+    |                      Data                     | <- 3 + Length
 
 All numbers are in network byte order (big endian).
 
@@ -155,6 +173,10 @@ The the keyserver for Keyless SSL consists of a single binary file, `gokeyless`.
 You should add your Cloudflare account details to the configuration file, and optionally customize the location of the private key directory. Most users should not need to modify the remaining defaults.
 
 Each option can optionally be overriden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
+
+## Testing
+
+Unit tests and benchmarks have been implemented for various parts of Go Keyless. The easiest way to run these tests is to simply clone this reoisitory and run `go test ./... -count 1` or simply `make test`. In order to run the tests using SoftHSM2, after installing SoftHSM2 in your environment, copy the contents of `tests/testdata/tokens` to your installations token directory (usually at `/var/lib/softhsm/tokens`) and run `make test-softhsm`.
 
 ## License
 

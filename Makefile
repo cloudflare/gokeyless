@@ -97,3 +97,12 @@ install-dev-softhsm: install-dev
 	@chmod 700 $(SOFTHSM_TOKENS_PATH)
 	@cp -r tests/testdata/tokens/*      $(SOFTHSM_TOKENS_PATH)
 	@install -m644 tests/testdata/softhsm2.conf $(SOFTHSM_CONFIG_PATH)/softhsm2.conf
+
+.PHONY: test
+test:
+	go test ./... -count 1
+
+.PHONY: test-softhsm
+test-softhsm:
+	TESTHSM=1 go test ./tests -count 1
+	TESTHSM=1 go test ./server -bench HSM -count 1
