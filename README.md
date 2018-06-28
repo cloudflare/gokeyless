@@ -106,14 +106,14 @@ configured to use.
 
 The server will need a valid key and certificate pair in PEM format that the Cloudflare Keyless SSL clients will trust (the server will automatically generate the pair using the Cloudflare API). The following options are required and take a path to these files. These two parameters set up the certificate (and associated private key) that will be presented by the server when a client connects.
 
-     --cert
-     --key
+     --auth-cert
+     --auth-key
 
 In order for this server to authenticate the Cloudflare client's certificate, a custom CA file is required. This CA certificate is provided by Cloudflare and specified with:
 
-    --ca-cert
+    --cloudflare-ca-cert
 
-The private keys that this server is able to use should be stored with a `.key` extension in either PEM or DER format, in one or more comma-separated directories denoted by the option:
+The private keys that this server is able to use must be stored with a `.key` extension in either PEM or DER format, in one or more comma-separated directories denoted by the option:
 
     --private-key-dirs
 
