@@ -6,14 +6,23 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"flag"
 	"io"
 	"runtime"
 	"sync"
 	"testing"
 
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/joshlf/testutil"
 )
+
+var testSoftHSM bool
+
+func init() {
+	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.Parse()
+}
 
 // mustReadFull tries to read from r until b is fully populated, calling
 // tb.Fatal on failure.
@@ -184,6 +193,28 @@ func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (ke
 	return k, payload
 }
 
+func benchHSMSign(b *testing.B, params params.HSMSignParams) {
+	pk11uri, _ := rfc7512.ParsePKCS11URI(params.URI)
+	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
+	benchSign(b, key, rand.Reader, payload[:], params.Opts)
+}
+
+func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
+	pk11uri, _ := rfc7512.ParsePKCS11URI(params.URI)
+	key, payload := prepareHSMSigner(b, pk11uri, params.PayloadSize)
+	benchSignParallel(b, key, rand.Reader, payload[:], params.Opts)
+}
+
+// prepareHSMSigner performs the boilerplate of generating values needed to
+// benchmark signatures on a Hardware Security Module.
+func prepareHSMSigner(b *testing.B, pk11uri *rfc7512.PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
+	k, err := rfc7512.LoadPKCS11Signer(pk11uri)
+	testutil.MustPrefix(b, "could not load PKCS11 key", err)
+	payload = make([]byte, payloadsize)
+	mustReadFull(b, rand.Reader, payload[:])
+	return k, payload
+}
+
 func BenchmarkCryptoRand(b *testing.B) {
 	buf := make([]byte, b.N)
 	b.SetBytes(1)
@@ -320,4 +351,30 @@ func BenchmarkRandParallelForSignECDSASHA384(b *testing.B) {
 }
 func BenchmarkRandParallelForSignECDSASHA512(b *testing.B) {
 	benchRandParallelForSignECDSA(b, params.ECDSASHA512Params)
+}
+
+func BenchmarkHSMSignRSASHA512(b *testing.B) {
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
+	}
+	benchHSMSign(b, params.HSMRSASHA512Params)
+}
+func BenchmarkHSMSignECDSASHA256(b *testing.B) {
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
+	}
+	benchHSMSign(b, params.HSMECDSASHA256Params)
+}
+
+func BenchmarkHSMSignParallelRSASHA512(b *testing.B) {
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
+	}
+	benchHSMSignParallel(b, params.HSMRSASHA512Params)
+}
+func BenchmarkHSMSignParallelECDSASHA256(b *testing.B) {
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
+	}
+	benchHSMSignParallel(b, params.HSMECDSASHA256Params)
 }

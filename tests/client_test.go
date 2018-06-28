@@ -135,6 +135,9 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
+	if testSoftHSM {
+		t.Skip("skipping test; SoftHSM2 does not support PKCS1v15")
+	}
 
 	var pub *rsa.PublicKey
 	var ok bool
