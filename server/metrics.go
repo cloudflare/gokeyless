@@ -10,14 +10,15 @@ import (
 )
 
 type statistics struct {
-	requestExecDuration  *prometheus.HistogramVec
-	requestTotalDuration *prometheus.HistogramVec
-	requests             *prometheus.CounterVec
-	requestsInvalid      *prometheus.CounterVec
-	keyLoadDuration      prometheus.Histogram
-	connFailures         prometheus.Counter
-	queuedECDSARequests  prometheus.Gauge
-	queuedOtherRequests  prometheus.Gauge
+	requestExecDuration   *prometheus.HistogramVec
+	requestTotalDuration  *prometheus.HistogramVec
+	requests              *prometheus.CounterVec
+	requestsInvalid       *prometheus.CounterVec
+	requestsInternalError *prometheus.CounterVec
+	keyLoadDuration       prometheus.Histogram
+	connFailures          prometheus.Counter
+	queuedECDSARequests   prometheus.Gauge
+	queuedOtherRequests   prometheus.Gauge
 }
 
 var (
@@ -48,6 +49,10 @@ func newStatistics() *statistics {
 			Name: "keyless_requests_invalid",
 			Help: "Number of invalid requests by opcode.",
 		}, []string{"opcode"}),
+		requestsInternalError: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "keyless_requests_internal_error",
+			Help: "Number of requests resulting in internal errors by opcode.",
+		}, []string{"opcode"}),
 		keyLoadDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "keyless_key_load_duration",
 			Help:    "Time to load a requested key.",
@@ -74,6 +79,10 @@ func (stats *statistics) logRequest(opcode protocol.Op) {
 
 func (stats *statistics) logInvalid(opcode protocol.Op) {
 	stats.requestsInvalid.WithLabelValues(opcode.String()).Inc()
+}
+
+func (stats *statistics) logInternalError(opcode protocol.Op) {
+	stats.requestsInternalError.WithLabelValues(opcode.String()).Inc()
 }
 
 func (stats *statistics) logConnFailure() {
@@ -118,6 +127,7 @@ func (s *Server) RegisterMetrics() {
 		s.stats.requestTotalDuration,
 		s.stats.requests,
 		s.stats.requestsInvalid,
+		s.stats.requestsInternalError,
 		s.stats.keyLoadDuration,
 		s.stats.connFailures,
 		s.stats.queuedECDSARequests,
