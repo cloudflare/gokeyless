@@ -161,6 +161,9 @@ Compiling Go Keyless requires Go 1.7. Binary distributions can be found at [gola
 
 Installing the appropriate package for your operating system should leave you with a [working Go installation](http://golang.org/doc/install) and a properly set `GOPATH`.
 
+PKCS#11 support also requires cgo, which needs a working toolchain. Install the `build-essential` and `libltdl-dev` packages on debian, or their equivalents for your OS.
+
+Then install the `gokeyless` binary:
 ```
 $ go get -u github.com/cloudflare/gokeyless/...
 $ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
