@@ -44,7 +44,7 @@ type Keystore interface {
 	// this key, so it's advisable to perform any precomputation on this key that
 	// may speed up signing over the course of multiple signatures (e.g.,
 	// crypto/rsa.PrivateKey's Precompute method).
-	Get(*protocol.Operation) (crypto.Signer, bool)
+	Get(*protocol.Operation) (crypto.Signer, error)
 }
 
 // DefaultKeystore is a simple in-memory Keystore.
@@ -146,7 +146,7 @@ func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
+func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, error) {
 	keys.mtx.RLock()
 	defer keys.mtx.RUnlock()
 
@@ -155,12 +155,11 @@ func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, bool) {
 		priv, found := keys.skis[ski]
 		if found {
 			log.Infof("fetch key with SKI: %s", ski)
-			return priv, found
+			return priv, nil
 		}
 	}
 
-	log.Errorf("couldn't fetch key for %s.", op)
-	return nil, false
+	return nil, fmt.Errorf("couldn't fetch key for %s", op)
 }
 
 // Server is a Keyless Server capable of performing opaque key operations.
@@ -315,8 +314,6 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 
 	requestBegin := time.Now()
 	var opts crypto.SignerOpts
-	var key crypto.Signer
-	var ok bool
 	switch pkt.Operation.Opcode {
 	case protocol.OpPing:
 		w.s.stats.logRequestExecDuration(pkt.Opcode, 0, requestBegin)
@@ -363,17 +360,23 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 
 	case protocol.OpRSADecrypt:
 		keyLoadBegin := time.Now()
-		if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
-			log.Error(protocol.ErrKeyNotFound)
+		key, err := w.s.keys.Get(&pkt.Operation)
+		if err != nil {
+			log.Errorf("failed to load key: %v", err)
+			w.s.stats.logInternalError(pkt.Opcode)
+			return makeErrResponse(req, protocol.ErrInternal)
+		} else if key == nil {
+			log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
 			w.s.stats.logInvalid(pkt.Opcode)
 			return makeErrResponse(req, protocol.ErrKeyNotFound)
 		}
 		w.s.stats.logKeyLoadDuration(keyLoadBegin)
+
 		// Reset request beginning time; we don't want to have the request execution
 		// duration include the duration to load the key.
 		requestBegin = time.Now()
 
-		if _, ok = key.Public().(*rsa.PublicKey); !ok {
+		if _, ok := key.Public().(*rsa.PublicKey); !ok {
 			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
 			w.s.stats.logInvalid(pkt.Opcode)
 			return makeErrResponse(req, protocol.ErrCrypto)
@@ -434,8 +437,13 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	}
 
 	keyLoadBegin := time.Now()
-	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
-		log.Error(protocol.ErrKeyNotFound)
+	key, err := w.s.keys.Get(&pkt.Operation)
+	if err != nil {
+		log.Errorf("failed to load key: %v", err)
+		w.s.stats.logInternalError(pkt.Opcode)
+		return makeErrResponse(req, protocol.ErrInternal)
+	} else if key == nil {
+		log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(pkt.Opcode)
 		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
@@ -492,8 +500,6 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, &pkt.Operation)
 
 	var opts crypto.SignerOpts
-	var key crypto.Signer
-	var ok bool
 	switch pkt.Operation.Opcode {
 	case protocol.OpECDSASignMD5SHA1:
 		opts = crypto.MD5SHA1
@@ -514,8 +520,13 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	}
 
 	keyLoadBegin := time.Now()
-	if key, ok = w.s.keys.Get(&pkt.Operation); !ok {
-		log.Error(protocol.ErrKeyNotFound)
+	key, err := w.s.keys.Get(&pkt.Operation)
+	if err != nil {
+		log.Errorf("failed to load key: %v", err)
+		w.s.stats.logInternalError(pkt.Opcode)
+		return makeErrResponse(req, protocol.ErrInternal)
+	} else if key == nil {
+		log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
 		w.s.stats.logInvalid(pkt.Opcode)
 		return makeErrResponse(req, protocol.ErrKeyNotFound)
 	}
@@ -533,7 +544,6 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	}
 
 	var sig []byte
-	var err error
 	if k, ok := key.(*ecdsa.PrivateKey); ok && k.Curve == elliptic.P256() {
 		sig, err = buf_ecdsa.Sign(rand.Reader, k, pkt.Operation.Payload, opts, w.buf)
 	} else {
