@@ -176,13 +176,21 @@ Each option can optionally be overriden via environment variables or command-lin
 
 ## Testing
 
-Unit tests and benchmarks have been implemented for various parts of Go Keyless. The easiest way to run these tests is to simply clone this reoisitory and run:
+Unit tests and benchmarks have been implemented for various parts of Go Keyless via `go test`. Most of the tests run out of the box, but some setup is necessary to run the HSM-related tests:
 
-```
-$ go test -v -cover -race `go list ./... | grep -v /vendor/`
-```
+1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2
+1. Copy the test tokens to the location of your SoftHSM2 token directory (commonly `/var/lib/softhsm/tokens`, but may vary):
 
-In order to run the tests using SoftHSM2, after installing SoftHSM2 in your environment, copy the contents of `tests/testdata/tokens` to your installations token directory (usually at `/var/lib/softhsm/tokens`) and run `make test`.
+        $ cp -r tests/testdata/tokens/* /path/to/token/directory/
+
+1. The tests currently assume the SoftHSM2 library will be installed at `/usr/local/lib/softhsm/libsofthsm2.so`. If your system differs, you must create a symlink (sudo may be required):
+
+        $ mkdir -p /usr/local/lib/softhsm
+        $ ln -s /path/to/libsofthsm2.so /usr/local/lib/softhsm/libsofthsm2.so
+
+Then simply run `make test` to execute the test suite.
+
+Note that if you need to run the tests without first configuring SoftHSM2 for some reason, you can use the `test-nohsm` target.
 
 ## License
 

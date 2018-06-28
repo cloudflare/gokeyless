@@ -101,6 +101,7 @@ install-dev-softhsm: install-dev
 .PHONY: vet
 vet:
 	go vet `go list ./... | grep -v /vendor/`
+
 .PHONY: lint
 lint:
 	for i in `go list ./... | grep -v /vendor/`; do golint $$i; done
