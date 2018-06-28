@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -136,7 +135,7 @@ func TestRSADecrypt(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
-	if os.Getenv("TESTHSM") != "" {
+	if testSoftHSM {
 		t.Skip("skipping test; SoftHSM2 does not support PKCS1v15")
 	}
 

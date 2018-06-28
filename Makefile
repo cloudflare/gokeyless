@@ -98,11 +98,22 @@ install-dev-softhsm: install-dev
 	@cp -r tests/testdata/tokens/*      $(SOFTHSM_TOKENS_PATH)
 	@install -m644 tests/testdata/softhsm2.conf $(SOFTHSM_CONFIG_PATH)/softhsm2.conf
 
+.PHONY: vet
+vet:
+	go vet `go list ./... | grep -v /vendor/`
+.PHONY: lint
+lint:
+	for i in `go list ./... | grep -v /vendor/`; do golint $$i; done
+
 .PHONY: test
 test:
-	go test ./... -count 1
+	go test -v -cover -race `go list ./... | grep -v /vendor/`
+	go test -v -cover -race ./tests -args -softhsm2
 
-.PHONY: test-softhsm
-test-softhsm:
-	TESTHSM=1 go test ./tests -count 1
-	TESTHSM=1 go test ./server -bench HSM -count 1
+.PHONY: test-nohsm
+test-nohsm:
+	go test -v -cover -race `go list ./... | grep -v /vendor/`
+
+.PHONY: benchmark-softhsm
+benchmark-softhsm:
+	go test -v -race ./server -bench HSM -args -softhsm2

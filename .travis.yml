@@ -16,9 +16,7 @@ install:
 
 script:
   - go get -t $(go list ./... | grep -v /vendor/)
-  - go vet $(go list ./... | grep -v /vendor/)
-  - for i in `go list ./... | grep -v /vendor/`; do golint $i; done
-  - go test -v -race $(go list ./... | grep -v /vendor/)
+  - make vet lint test-nohsm
 
 notifications:
   email:

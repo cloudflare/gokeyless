@@ -55,7 +55,7 @@ const (
 	// RSAURI and ECDSAURI are sample PKCS #11 URIs used for testing HSM
 	// Compatibility. Before running tests, copy the contents of the
 	// testdata/tokens/ directory to your SoftHSM2 token directory, usually
-	// located at /var/lib/softhsm/tokens/, and run `export TESTHSM=1`
+	// located at /var/lib/softhsm/tokens/, and run `make test-softhsm`
 	RSAURI   = "pkcs11:token=SoftHSM2%20Token;id=%03;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
 	ECDSAURI = "pkcs11:token=SoftHSM2%20Token;id=%02;slot-id=43989470?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234"
 )

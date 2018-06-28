@@ -5,8 +5,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"io/ioutil"
-	"os"
 	"time"
 
 	"github.com/cloudflare/cfssl/log"
@@ -38,6 +38,8 @@ var (
 	ecdsaKey *client.PrivateKey
 	remote   client.Remote
 )
+
+var testSoftHSM bool
 
 type dummySealer struct{}
 
@@ -96,12 +98,15 @@ func init() {
 
 	log.Level = log.LevelFatal
 
+	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.Parse()
+
 	s, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if os.Getenv("TESTHSM") == "" {
+	if !testSoftHSM {
 		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
 		if err != nil {
 			log.Fatal(err)

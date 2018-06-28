@@ -176,7 +176,13 @@ Each option can optionally be overriden via environment variables or command-lin
 
 ## Testing
 
-Unit tests and benchmarks have been implemented for various parts of Go Keyless. The easiest way to run these tests is to simply clone this reoisitory and run `go test ./... -count 1` or simply `make test`. In order to run the tests using SoftHSM2, after installing SoftHSM2 in your environment, copy the contents of `tests/testdata/tokens` to your installations token directory (usually at `/var/lib/softhsm/tokens`) and run `make test-softhsm`.
+Unit tests and benchmarks have been implemented for various parts of Go Keyless. The easiest way to run these tests is to simply clone this reoisitory and run:
+
+```
+$ go test -v -cover -race `go list ./... | grep -v /vendor/`
+```
+
+In order to run the tests using SoftHSM2, after installing SoftHSM2 in your environment, copy the contents of `tests/testdata/tokens` to your installations token directory (usually at `/var/lib/softhsm/tokens`) and run `make test`.
 
 ## License
 

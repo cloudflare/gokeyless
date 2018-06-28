@@ -6,8 +6,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"flag"
 	"io"
-	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -16,6 +16,13 @@ import (
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/joshlf/testutil"
 )
+
+var testSoftHSM bool
+
+func init() {
+	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.Parse()
+}
 
 // mustReadFull tries to read from r until b is fully populated, calling
 // tb.Fatal on failure.
@@ -347,27 +354,27 @@ func BenchmarkRandParallelForSignECDSASHA512(b *testing.B) {
 }
 
 func BenchmarkHSMSignRSASHA512(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
 	}
 	benchHSMSign(b, params.HSMRSASHA512Params)
 }
 func BenchmarkHSMSignECDSASHA256(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
 	}
 	benchHSMSign(b, params.HSMECDSASHA256Params)
 }
 
 func BenchmarkHSMSignParallelRSASHA512(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
 	}
 	benchHSMSignParallel(b, params.HSMRSASHA512Params)
 }
 func BenchmarkHSMSignParallelECDSASHA256(b *testing.B) {
-	if os.Getenv("TESTHSM") == "" {
-		b.Skip("skipping test; $TESTHSM not set")
+	if !testSoftHSM {
+		b.Skip("skipping test; -softhsm2 flag is not set")
 	}
 	benchHSMSignParallel(b, params.HSMECDSASHA256Params)
 }
