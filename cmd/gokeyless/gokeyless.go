@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
@@ -31,13 +31,13 @@ type Config struct {
 
 	Hostname     string `yaml:"hostname" mapstructure:"hostname"`
 	ZoneID       string `yaml:"zone_id" mapstructure:"zone_id"`
-	OriginCAKey  string `yaml:"origin_ca_key" mapstructure:"origin_ca_key"`
+	OriginCAKey  string `yaml:"origin_ca_api_key" mapstructure:"origin_ca_api_key"`
 	InitEndpoint string `yaml:"init_endpoint" mapstructure:"init_endpoint"`
 
-	CertFile   string `yaml:"cert" mapstructure:"cert"`
-	KeyFile    string `yaml:"key" mapstructure:"key"`
-	CACertFile string `yaml:"ca_cert" mapstructure:"ca_cert"`
-	CSRFile    string `yaml:"csr" mapstructure:"csr"`
+	CertFile   string `yaml:"auth_cert" mapstructure:"auth_cert"`
+	KeyFile    string `yaml:"auth_key" mapstructure:"auth_key"`
+	CSRFile    string `yaml:"auth_csr" mapstructure:"auth_csr"`
+	CACertFile string `yaml:"cloudflare_ca_cert" mapstructure:"cloudflare_ca_cert"`
 
 	PrivateKeyStores []PrivateKeyStoreConfig `yaml:"private_key_stores" mapstructure:"private_key_stores"`
 
@@ -84,17 +84,18 @@ func init() {
 	viper.SetDefault("loglevel", log.LevelInfo)
 	flagset.String("hostname", "", "Hostname of this key server (must match configuration in Cloudflare dashboard)")
 	flagset.String("zone-id", "", "Cloudflare Zone ID")
+	flagset.String("origin_ca_api_key", "", "Cloudflare Origin CA API key")
 	flagset.String("init-endpoint", "", "Cloudflare API endpoint for server initialization")
 	viper.SetDefault("init_endpoint", defaultEndpoint)
 	flagset.MarkHidden("init-endpoint") // users should not need this
-	flagset.String("cert", "", "Key server authentication certificate")
-	viper.SetDefault("cert", "server.pem")
-	flagset.String("key", "", "Key server authentication key")
-	viper.SetDefault("key", "server-key.pem")
-	flagset.String("ca-cert", "", "Key client certificate authority")
-	viper.SetDefault("ca_cert", "keyless_cacert.pem")
-	flagset.String("csr", "", "File to write CSR for server initialization")
-	viper.SetDefault("csr", "server.csr")
+	flagset.String("auth-cert", "", "Key server authentication certificate")
+	viper.SetDefault("auth_cert", "server.pem")
+	flagset.String("auth-key", "", "Key server authentication key")
+	viper.SetDefault("auth_key", "server-key.pem")
+	flagset.String("auth-csr", "", "File to write CSR for server authentication certificate initialization")
+	viper.SetDefault("auth_csr", "server.csr")
+	flagset.String("cloudflare-ca-cert", "", "Key client certificate authority (key clients run on Cloudflare's edge servers)")
+	viper.SetDefault("cloudflare_ca_cert", "keyless_cacert.pem")
 	flagset.Int("port", 0, "Port for key server to listen on (must match configuration in Cloudflare dashboard)")
 	viper.SetDefault("port", 2407)
 	flagset.Int("metrics-port", 0, "Port for key server to serve /metrics")

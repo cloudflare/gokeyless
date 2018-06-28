@@ -2,24 +2,26 @@
 loglevel: 1
 
 # Hostname must match the key server hostname that was configured in the
-# Cloudflare dashboard
+# Cloudflare dashboard during custom certificate upload.
 hostname:
+
 # Zone ID can be found on the Cloudflare dashboard 'Overview' tab.
 zone_id:
-# Origin CA Key can be found on the Cloudflare dashboard under the 'My
+
+# Origin CA API Key can be found on the Cloudflare dashboard under the 'My
 # Profile' section.
-origin_ca_key:
+origin_ca_api_key:
 
 # Configure one or more private key directories.
 private_key_stores:
 - dir: /etc/keyless/keys
 
-# Optionally customize the location of the certificates and private
-# keys.
-cert: /etc/keyless/server.pem
-key: /etc/keyless/server-key.pem
-ca_cert: /etc/keyless/keyless_cacert.pem
-csr: /etc/keyless/server.csr
+# Optionally customize the location of the certificates used for mutual
+# authentication with Cloudflare keyless clients.
+auth_cert: /etc/keyless/server.pem
+auth_key: /etc/keyless/server-key.pem
+auth_csr: /etc/keyless/server.csr
+cloudflare_ca_cert: /etc/keyless/keyless_cacert.pem
 
 # Optionally customize the listen ports.
 port: 2407
