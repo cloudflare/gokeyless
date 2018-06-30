@@ -28,7 +28,6 @@ import (
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
@@ -144,19 +143,6 @@ func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
 	}
 
 	return derhelpers.ParsePrivateKeyDER(in)
-}
-
-// DefaultLoadURI attempts to load a signer from a PKCS#11 URI.
-func DefaultLoadURI(uri string) (crypto.Signer, error) {
-	// This wrapper is here in case we want to parse vendor specific values
-	// based on the parameters in the URI or perform side operations, such
-	// as waiting for network to be up.
-	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
-	if err != nil {
-		return nil, err
-	}
-
-	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
 
 // Get returns a key from keys, mapped from SKI.

@@ -14,7 +14,8 @@ SYSTEMD_PREFIX               := $(DESTDIR)/lib/systemd/system
 CONFIG_PATH                  := etc/keyless
 CONFIG_PREFIX                := $(DESTDIR)/$(CONFIG_PATH)
 
-ARCH := amd64
+OS ?= linux
+ARCH ?= amd64
 DEB_PACKAGE := $(NAME)_$(VERSION)_$(ARCH).deb
 RPM_PACKAGE := $(NAME)-$(VERSION).$(ARCH).rpm
 
@@ -34,7 +35,7 @@ install-config:
 	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
-	@GOOS=linux GOARCH=$(ARCH) go build -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
+	@GOOS=$(OS) GOARCH=$(ARCH) go build -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
 
 .PHONY: clean
 clean:
