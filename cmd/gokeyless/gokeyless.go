@@ -275,7 +275,7 @@ func initKeyStore() (server.Keystore, error) {
 				return nil, err
 			}
 		case store.URI != "":
-			if err := keys.AddFromURI(store.URI, server.DefaultLoadURI); err != nil {
+			if err := keys.AddFromURI(store.URI, loadURI); err != nil {
 				return nil, err
 			}
 		}
