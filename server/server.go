@@ -151,15 +151,16 @@ func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, error) 
 	defer keys.mtx.RUnlock()
 
 	ski := op.SKI
-	if ski.Valid() {
-		priv, found := keys.skis[ski]
-		if found {
-			log.Infof("fetch key with SKI: %s", ski)
-			return priv, nil
-		}
+	if !ski.Valid() {
+		return nil, fmt.Errorf("keyless: invalid SKI %s", ski)
+	}
+	priv, found := keys.skis[ski]
+	if found {
+		log.Infof("fetch key with SKI: %s", ski)
+		return priv, nil
 	}
 
-	return nil, fmt.Errorf("couldn't fetch key for %s", op)
+	return nil, fmt.Errorf("keyless: no key with SKI %s", ski)
 }
 
 // Server is a Keyless Server capable of performing opaque key operations.
