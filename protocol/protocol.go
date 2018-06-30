@@ -105,11 +105,10 @@ const (
 type Error byte
 
 const (
-	// TODO(joshlf): Hard-code these (instead of using iota) to be consistent with
-	// the Opcode constants?
-
+	// ErrNone indicates no error occurred.
+	ErrNone Error = iota
 	// ErrCrypto indicates a cryptography failure.
-	ErrCrypto Error = iota + 1
+	ErrCrypto
 	// ErrKeyNotFound indicates key can't be found using the operation packet.
 	ErrKeyNotFound
 	// ErrRead indicates I/O read failure.
@@ -131,32 +130,36 @@ const (
 )
 
 func (e Error) Error() string {
-	var errStr string
+	return "keyless: " + e.String()
+}
+
+func (e Error) String() string {
 	switch e {
+	case ErrNone:
+		return "no error"
 	case ErrCrypto:
-		errStr = "cryptography error"
+		return "cryptography error"
 	case ErrKeyNotFound:
-		errStr = "key not found due to no matching SKI/SNI/ServerIP"
+		return "key not found due to no matching SKI/SNI/ServerIP"
 	case ErrRead:
-		errStr = "read failure"
+		return "read failure"
 	case ErrVersionMismatch:
-		errStr = "version mismatch"
+		return "version mismatch"
 	case ErrBadOpcode:
-		errStr = "bad opcode"
+		return "bad opcode"
 	case ErrUnexpectedOpcode:
-		errStr = "unexpected opcode"
+		return "unexpected opcode"
 	case ErrFormat:
-		errStr = "malformed message"
+		return "malformed message"
 	case ErrInternal:
-		errStr = "internal error"
+		return "internal error"
 	case ErrCertNotFound:
-		errStr = "certificate not found"
+		return "certificate not found"
 	case ErrExpired:
-		errStr = "sealing key expired"
+		return "sealing key expired"
 	default:
-		errStr = "unknown error"
+		return "unknown error"
 	}
-	return "keyless: " + errStr
 }
 
 const (
