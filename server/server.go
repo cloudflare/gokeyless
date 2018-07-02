@@ -366,10 +366,10 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		keyLoadBegin := time.Now()
 		key, err := w.s.keys.Get(&pkt.Operation)
 		if err != nil {
-			log.Errorf("failed to load key: %v", err)
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
 		} else if key == nil {
-			log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
 			return w.s.makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
 		}
 		w.s.stats.logKeyLoadDuration(keyLoadBegin)
@@ -429,10 +429,10 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	keyLoadBegin := time.Now()
 	key, err := w.s.keys.Get(&pkt.Operation)
 	if err != nil {
-		log.Errorf("failed to load key: %v", err)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 		return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
 	} else if key == nil {
-		log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
 		return w.s.makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
 	}
 	w.s.stats.logKeyLoadDuration(keyLoadBegin)
@@ -500,10 +500,10 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	keyLoadBegin := time.Now()
 	key, err := w.s.keys.Get(&pkt.Operation)
 	if err != nil {
-		log.Errorf("failed to load key: %v", err)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 		return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
 	} else if key == nil {
-		log.Errorf("failed to load key: %v", protocol.ErrKeyNotFound)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
 		return w.s.makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
 	}
 	w.s.stats.logKeyLoadDuration(keyLoadBegin)
