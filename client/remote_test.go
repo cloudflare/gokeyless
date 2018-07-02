@@ -173,7 +173,7 @@ func TestBadRemote(t *testing.T) {
 
 func TestSlowServer(t *testing.T) {
 	// Setup a slow keyless server
-	cfg := server.DefaultServeConfig().TCPTimeout(time.Second * 30)
+	cfg := server.DefaultServeConfig().WithTCPTimeout(time.Second * 30)
 	s2, err := server.NewServerFromFile(cfg, serverCert, serverKey, keylessCA)
 	if err != nil {
 		t.Fatal(err)

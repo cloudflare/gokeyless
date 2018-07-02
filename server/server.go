@@ -879,15 +879,11 @@ const (
 
 // DefaultServeConfig constructs a default ServeConfig with the following
 // values:
-//  - The number of ECDSA workers is min(2, runtime.NumCPU())
+//  - The number of ECDSA workers is max(2, runtime.NumCPU())
 //  - The number of other workers is 2
 //  - The number of background workers is 1
 //  - The TCP connection timeout is 30 seconds
 //  - The Unix connection timeout is 1 hour
-//
-// Note that the default ServeConfig does not specify an address for listening
-// for TCP or Unix connections - at least one must be specified before using the
-// ServeConfig.
 func DefaultServeConfig() *ServeConfig {
 	necdsa := runtime.NumCPU()
 	if runtime.NumCPU() < 2 {
@@ -902,46 +898,73 @@ func DefaultServeConfig() *ServeConfig {
 	}
 }
 
-// ECDSAWorkers specifies the number of ECDSA worker goroutines to use.
-func (s *ServeConfig) ECDSAWorkers(n int) *ServeConfig {
+// WithECDSAWorkers specifies the number of ECDSA worker goroutines to use.
+func (s *ServeConfig) WithECDSAWorkers(n int) *ServeConfig {
 	s.ecdsaWorkers = n
 	return s
 }
 
-// OtherWorkers specifies the number of other worker goroutines to use.
-func (s *ServeConfig) OtherWorkers(n int) *ServeConfig {
+// ECDSAWorkers returns the number of ECDSA worker goroutines.
+func (s *ServeConfig) ECDSAWorkers() int {
+	return s.ecdsaWorkers
+}
+
+// WithOtherWorkers specifies the number of other worker goroutines to use.
+func (s *ServeConfig) WithOtherWorkers(n int) *ServeConfig {
 	s.otherWorkers = n
 	return s
 }
 
-// BackgroundWorkers specifies the number of background worker goroutines to
+// OtherWorkers returns the number of other worker goroutines.
+func (s *ServeConfig) OtherWorkers() int {
+	return s.ecdsaWorkers
+}
+
+// WithBackgroundWorkers specifies the number of background worker goroutines to
 // use.
-func (s *ServeConfig) BackgroundWorkers(n int) *ServeConfig {
+func (s *ServeConfig) WithBackgroundWorkers(n int) *ServeConfig {
 	s.bgWorkers = n
 	return s
 }
 
-// TCPTimeout specifies the network connection timeout to use for TCP
+// BackgroundWorkers returns the number of background worker goroutines.
+func (s *ServeConfig) BackgroundWorkers() int {
+	return s.bgWorkers
+}
+
+// WithTCPTimeout specifies the network connection timeout to use for TCP
 // connections. This timeout is used when reading from or writing to established
 // network connections.
-func (s *ServeConfig) TCPTimeout(timeout time.Duration) *ServeConfig {
+func (s *ServeConfig) WithTCPTimeout(timeout time.Duration) *ServeConfig {
 	s.tcpTimeout = timeout
 	return s
 }
 
-// UnixTimeout specifies the network connection timeout to use for Unix
+// TCPTimeout returns the network connection timeout to use for TCP
+// connections.
+func (s *ServeConfig) TCPTimeout() time.Duration {
+	return s.tcpTimeout
+}
+
+// WithUnixTimeout specifies the network connection timeout to use for Unix
 // connections. This timeout is used when reading from or writing to established
 // network connections.
-func (s *ServeConfig) UnixTimeout(timeout time.Duration) *ServeConfig {
+func (s *ServeConfig) WithUnixTimeout(timeout time.Duration) *ServeConfig {
 	s.unixTimeout = timeout
 	return s
 }
 
-// Utilization specifies the function to call with periodic utilization
+// UnixTimeout returns the network connection timeout to use for Unix
+// connections.
+func (s *ServeConfig) UnixTimeout() time.Duration {
+	return s.unixTimeout
+}
+
+// WithUtilization specifies the function to call with periodic utilization
 // information. On a fixed interval, the server will call f with the
 // [0,1]-percentage of the server's other / ecdsa workers that are currently
 // busy.
-func (s *ServeConfig) Utilization(f func(other, ecdsa float64)) *ServeConfig {
+func (s *ServeConfig) WithUtilization(f func(other, ecdsa float64)) *ServeConfig {
 	s.utilization = f
 	return s
 }
