@@ -160,7 +160,8 @@ func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, error) 
 		return priv, nil
 	}
 
-	return nil, fmt.Errorf("keyless: no key with SKI %s", ski)
+	log.Infof("no key with SKI: %s", ski)
+	return nil, nil
 }
 
 // Server is a Keyless Server capable of performing opaque key operations.
