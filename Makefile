@@ -56,6 +56,7 @@ FPM = fpm -C $(DESTDIR) \
 $(DEB_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	@$(FPM) \
 	-t deb \
+	-d libltdl7 \
 	--before-install pkg/debian/before-install.sh \
 	--before-remove pkg/debian/before-remove.sh \
 	--after-install pkg/debian/after-install.sh \
@@ -67,6 +68,7 @@ $(DEB_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 $(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	@$(FPM) \
 	-t rpm \
+	-d libtool-ltdl \
 	--rpm-os linux \
 	--before-install pkg/centos/before-install.sh \
 	--before-remove pkg/centos/before-remove.sh \
