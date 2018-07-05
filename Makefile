@@ -93,12 +93,12 @@ lint:
 
 .PHONY: test
 test:
-	go test -v -cover -race `go list ./... | grep -v /vendor/`
-	go test -v -cover -race ./tests -args -softhsm2
+	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -v -cover -race ./tests -args -softhsm2
 
 .PHONY: test-nohsm
 test-nohsm:
-	go test -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
 
 .PHONY: benchmark-softhsm
 benchmark-softhsm:
