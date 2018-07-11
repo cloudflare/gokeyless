@@ -35,7 +35,7 @@ WORKDIR=/etc/keyless
 USER=keyless
 GROUP=keyless
 
-args="-pid-file=${pidfile}"
+args="--pid-file=${pidfile}"
 
 trace() {
   logger -t "/etc/init.d/gokeyless" "$@"

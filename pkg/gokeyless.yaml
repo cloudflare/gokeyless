@@ -27,5 +27,6 @@ cloudflare_ca_cert: /etc/keyless/keyless_cacert.pem
 port: 2407
 metrics_port: 2406
 
-# Optionally write the PID to a file.
+# Optionally write the PID to a file (note that sysv-based systems will
+# ignore this value and always use /var/run/gokeyless.pid).
 pid_file:
