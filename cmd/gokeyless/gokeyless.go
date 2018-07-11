@@ -122,6 +122,7 @@ func initConfig() error {
 	pflag.Parse()
 	viper.BindPFlags(pflag.CommandLine)
 	viper.AutomaticEnv()
+	viper.SetEnvPrefix("KEYLESS")
 
 	viper.SetConfigType("yaml")
 	if configFile != "" {
