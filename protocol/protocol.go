@@ -101,6 +101,22 @@ const (
 	OpError Op = 0xFF
 )
 
+// Type returns the type of the given Op.
+func (op Op) Type() string {
+	switch op {
+	case OpRSADecrypt, OpRSASignMD5SHA1, OpRSASignSHA1, OpRSASignSHA224, OpRSASignSHA256, OpRSASignSHA384, OpRSASignSHA512, OpRSAPSSSignSHA256, OpRSAPSSSignSHA384, OpRSAPSSSignSHA512:
+		return "rsa"
+	case OpECDSASignMD5SHA1, OpECDSASignSHA1, OpECDSASignSHA224, OpECDSASignSHA256, OpECDSASignSHA384, OpECDSASignSHA512:
+		return "ecdsa"
+	case OpRPC:
+		return "rpc"
+	case OpSeal, OpUnseal, OpPing, OpPong, OpResponse, OpError:
+		return "other"
+	default:
+		return "unknown"
+	}
+}
+
 // Error defines a 1-byte error payload.
 type Error byte
 

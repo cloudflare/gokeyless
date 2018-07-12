@@ -21,25 +21,23 @@ type statistics struct {
 }
 
 var (
-	// 1 microsecond as a fraction of 1 second
-	us = 1e-6
-	// buckets starting at 1 microsecond and doubling until reaching a maximum of
-	// ~8 seconds
-	durationBuckets = prometheus.ExponentialBuckets(us, 2.0, 24)
+	// buckets starting at 100 microseconds and doubling until reaching a
+	// maximum of ~3.3 seconds
+	durationBuckets = prometheus.ExponentialBuckets(1e-4, 2.0, 15)
 )
 
 func newStatistics() *statistics {
 	return &statistics{
 		requestExecDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "keyless_request_exec_duration_per_opcode",
-			Help:    "Time to execute a request not including time in queues, broken down by opcode and error code.",
+			Help:    "Time to execute a request not including time in queues, broken down by type and error code.",
 			Buckets: durationBuckets,
-		}, []string{"opcode", "error"}),
+		}, []string{"type", "error"}),
 		requestTotalDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "keyless_request_total_duration_per_opcode",
-			Help:    "Total time to satisfy a request including time in queues, broken down by opcode and error code.",
+			Help:    "Total time to satisfy a request including time in queues, broken down by type and error code.",
 			Buckets: durationBuckets,
-		}, []string{"opcode", "error"}),
+		}, []string{"type", "error"}),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "keyless_requests",
 			Help: "Total number of requests by opcode.",
@@ -87,11 +85,11 @@ func (stats *statistics) logKeyLoadDuration(loadBegin time.Time) {
 // logRequestExecDuration logs the time taken to execute an operation (not
 // including queueing).
 func (stats *statistics) logRequestExecDuration(opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
-	stats.requestExecDuration.WithLabelValues(opcode.String(), err.String()).Observe(time.Since(requestBegin).Seconds())
+	stats.requestExecDuration.WithLabelValues(opcode.Type(), err.String()).Observe(time.Since(requestBegin).Seconds())
 }
 
 func (stats *statistics) logRequestTotalDuration(opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
-	stats.requestTotalDuration.WithLabelValues(opcode.String(), err.String()).Observe(time.Since(requestBegin).Seconds())
+	stats.requestTotalDuration.WithLabelValues(opcode.Type(), err.String()).Observe(time.Since(requestBegin).Seconds())
 }
 
 func (stats *statistics) logEnqueueECDSARequest() { stats.queuedECDSARequests.Inc() }
