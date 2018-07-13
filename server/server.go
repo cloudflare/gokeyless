@@ -918,7 +918,7 @@ func (s *ServeConfig) WithOtherWorkers(n int) *ServeConfig {
 
 // OtherWorkers returns the number of other worker goroutines.
 func (s *ServeConfig) OtherWorkers() int {
-	return s.ecdsaWorkers
+	return s.otherWorkers
 }
 
 // WithBackgroundWorkers specifies the number of background worker goroutines to
