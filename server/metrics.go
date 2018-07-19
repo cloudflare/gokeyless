@@ -42,10 +42,6 @@ func newStatistics() *statistics {
 			Name: "keyless_requests",
 			Help: "Total number of requests by opcode.",
 		}, []string{"opcode"}),
-		requestsInvalid: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "keyless_requests_invalid",
-			Help: "Number of invalid requests by opcode.",
-		}, []string{"opcode"}),
 		keyLoadDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "keyless_key_load_duration",
 			Help:    "Time to load a requested key.",
@@ -68,10 +64,6 @@ func newStatistics() *statistics {
 
 func (stats *statistics) logRequest(opcode protocol.Op) {
 	stats.requests.WithLabelValues(opcode.String()).Inc()
-}
-
-func (stats *statistics) logInvalid(opcode protocol.Op) {
-	stats.requestsInvalid.WithLabelValues(opcode.String()).Inc()
 }
 
 func (stats *statistics) logConnFailure() {

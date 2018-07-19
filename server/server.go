@@ -297,11 +297,6 @@ func (s *Server) makePongResponse(req request, payload []byte, requestBegin time
 
 func (s *Server) makeErrResponse(req request, err protocol.Error, requestBegin time.Time) response {
 	s.stats.logRequestExecDuration(req.pkt.Opcode, requestBegin, err)
-
-	// This metric can now be derived from the above, and can be removed once
-	// dashboards are updated to use it.
-	s.stats.logInvalid(req.pkt.Opcode)
-
 	return response{id: req.pkt.ID, op: protocol.MakeErrorOp(err), reqOpcode: req.pkt.Opcode, err: err, reqBegin: req.reqBegin}
 }
 
