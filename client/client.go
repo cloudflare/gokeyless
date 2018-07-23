@@ -207,7 +207,6 @@ func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
 		return &Decrypter{priv}, nil
 	}
 	return &priv, nil
-
 }
 
 // NewRemoteSignerTemplate returns a remote keyserver
