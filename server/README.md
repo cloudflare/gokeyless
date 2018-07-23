@@ -26,8 +26,8 @@ A job is defined in the `Job` type:
 // A Job represents a unit of work to be done by a worker in the pool.
 type Job struct { ... }
 
-// NewJob creates a new Job. job will be provided as the input to a worker's Do
-// method, and once the Do method returns, its return value will be passed as
+// NewJob creates a new Job. The job will be provided as the input to a worker's
+// Do method, and once the Do method returns, its return value will be passed as
 // the argument to commit.
 func NewJob(job interface{}, commit func(result interface{})) Job
 ```
