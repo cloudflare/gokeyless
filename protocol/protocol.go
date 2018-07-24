@@ -18,6 +18,7 @@ import (
 	"net"
 
 	"github.com/cloudflare/cfssl/helpers"
+	"github.com/cloudflare/cfssl/helpers/derhelpers"
 )
 
 //go:generate stringer -type=Tag,Op -output=protocol_string.go
@@ -83,6 +84,9 @@ const (
 	// OpECDSASignSHA512 requests an ECDSA signature on an SHA512 hash payload.
 	OpECDSASignSHA512 Op = 0x17
 
+	// OpEd25519Sign requests an Ed25519 signature on an arbitrary-length payload.
+	OpEd25519Sign Op = 0x18
+
 	// OpSeal asks to encrypt a blob (like a Session Ticket)
 	OpSeal Op = 0x21
 	// OpUnseal asks to decrypt a blob encrypted by OpSeal
@@ -112,6 +116,8 @@ func (op Op) Type() string {
 		return "rpc"
 	case OpSeal, OpUnseal, OpPing, OpPong, OpResponse, OpError:
 		return "other"
+	case OpEd25519Sign:
+		return "ed25519"
 	default:
 		return "unknown"
 	}
@@ -205,7 +211,10 @@ func (ski SKI) Valid() bool {
 func GetSKI(pub crypto.PublicKey) (SKI, error) {
 	encodedPub, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
-		return nilSKI, err
+		encodedPub, err = derhelpers.MarshalEd25519PublicKey(pub)
+		if err != nil {
+			return nilSKI, err
+		}
 	}
 
 	subPKI := new(struct {

@@ -14,13 +14,7 @@
 
 package tls
 
-import (
-	"crypto"
-	"crypto/dsa"
-	"crypto/ecdsa"
-	"crypto/rsa"
-	"fmt"
-)
+import "fmt"
 
 // DigitallySigned gives information about a signature, including the algorithm used
 // and the signature value.  Defined in RFC 5246 s4.7.
@@ -98,20 +92,5 @@ func (s SignatureAlgorithm) String() string {
 		return "ECDSA"
 	default:
 		return fmt.Sprintf("UNKNOWN(%d)", s)
-	}
-}
-
-// SignatureAlgorithmFromPubKey returns the algorithm used for this public key.
-// ECDSA, RSA, and DSA keys are supported. Other key types will return Anonymous.
-func SignatureAlgorithmFromPubKey(k crypto.PublicKey) SignatureAlgorithm {
-	switch k.(type) {
-	case *ecdsa.PublicKey:
-		return ECDSA
-	case *rsa.PublicKey:
-		return RSA
-	case *dsa.PublicKey:
-		return DSA
-	default:
-		return Anonymous
 	}
 }

@@ -30,6 +30,8 @@ import (
 	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
+
+	"golang.org/x/crypto/ed25519"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
@@ -361,6 +363,30 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
 		}
 		return w.s.makeRespondResponse(req, codec.response, requestBegin)
+
+	case protocol.OpEd25519Sign:
+		keyLoadBegin := time.Now()
+		key, err := w.s.keys.Get(&pkt.Operation)
+		if err != nil {
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
+			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		} else if key == nil {
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
+			return w.s.makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
+		}
+		w.s.stats.logKeyLoadDuration(keyLoadBegin)
+
+		if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
+			sig := ed25519.Sign(ed25519Key, pkt.Operation.Payload)
+			return w.s.makeRespondResponse(req, sig, requestBegin)
+		}
+
+		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
+		if err != nil {
+			log.Errorf("Worker %v: %s: Signing error: %v", w.name, protocol.ErrCrypto, err)
+			return w.s.makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+		}
+		return w.s.makeRespondResponse(req, sig, requestBegin)
 
 	case protocol.OpRSADecrypt:
 		keyLoadBegin := time.Now()

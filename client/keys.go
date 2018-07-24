@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"golang.org/x/crypto/ed25519"
 )
 
 var (
@@ -69,6 +70,8 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 		} else {
 			return protocol.OpError
 		}
+	case ed25519.PublicKey:
+		return protocol.OpEd25519Sign
 	default:
 		return protocol.OpError
 	}
@@ -144,7 +147,9 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 
 // Sign implements the crypto.Signer operation for the given key.
 func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
-	if len(msg) != opts.HashFunc().Size() {
+	// If opts specifies a hash function, then the message is expected to be the
+	// length of the output of that hash function.
+	if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
 		return nil, errors.New("input must be hashed message")
 	}
 

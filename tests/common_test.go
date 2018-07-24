@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/internal/test/params"
@@ -17,26 +18,29 @@ import (
 )
 
 const (
-	serverCert   = "testdata/server.pem"
-	serverKey    = "testdata/server-key.pem"
-	keylessCA    = "testdata/ca.pem"
-	serverAddr   = "localhost:3407"
-	rsaPrivKey   = "testdata/rsa.key"
-	ecdsaPrivKey = "testdata/ecdsa.key"
+	serverCert     = "testdata/server.pem"
+	serverKey      = "testdata/server-key.pem"
+	keylessCA      = "testdata/ca.pem"
+	serverAddr     = "localhost:3407"
+	rsaPrivKey     = "testdata/rsa.key"
+	ecdsaPrivKey   = "testdata/ecdsa.key"
+	ed25519PrivKey = "testdata/ed25519.key"
 
-	clientCert  = "testdata/client.pem"
-	clientKey   = "testdata/client-key.pem"
-	keyserverCA = "testdata/ca.pem"
-	rsaPubKey   = "testdata/rsa.pubkey"
-	ecdsaPubKey = "testdata/ecdsa.pubkey"
+	clientCert    = "testdata/client.pem"
+	clientKey     = "testdata/client-key.pem"
+	keyserverCA   = "testdata/ca.pem"
+	rsaPubKey     = "testdata/rsa.pubkey"
+	ecdsaPubKey   = "testdata/ecdsa.pubkey"
+	ed25519PubKey = "testdata/ed25519.pubkey"
 )
 
 var (
-	s        *server.Server
-	c        *client.Client
-	rsaKey   *client.Decrypter
-	ecdsaKey *client.PrivateKey
-	remote   client.Remote
+	s          *server.Server
+	c          *client.Client
+	rsaKey     *client.Decrypter
+	ecdsaKey   *client.PrivateKey
+	ed25519Key *client.PrivateKey
+	remote     client.Remote
 )
 
 var testSoftHSM bool
@@ -83,7 +87,10 @@ func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 	p, _ := pem.Decode(pemBytes)
 	pub, err := x509.ParsePKIXPublicKey(p.Bytes)
 	if err != nil {
-		return nil, err
+		pub, err = derhelpers.ParseEd25519PublicKey(p.Bytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	s, err := c.NewRemoteSignerByPublicKey("", pub)
 	if err != nil {
@@ -167,5 +174,15 @@ func init() {
 	ecdsaKey, ok = privKey.(*client.PrivateKey)
 	if !ok {
 		log.Fatal("bad ECDSA key registration")
+	}
+
+	privKey, err = NewRemoteSignerByPubKeyFile(ed25519PubKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ed25519Key, ok = privKey.(*client.PrivateKey)
+	if !ok {
+		log.Fatal("bad Ed25519 key registration")
 	}
 }
