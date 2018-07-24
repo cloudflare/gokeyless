@@ -190,6 +190,9 @@ var nilSKI SKI
 
 // String returns a hex encoded SKI string.
 func (ski SKI) String() string {
+	if !ski.Valid() {
+		return "" // more logging friendly than all 0s
+	}
 	return hex.EncodeToString(ski[:])
 }
 
