@@ -31,6 +31,10 @@
 
 [[constraint]]
   branch = "master"
+  name = "github.com/cloudflare/backoff"
+
+[[constraint]]
+  branch = "master"
   name = "github.com/cloudflare/go-metrics"
 
 [[constraint]]
