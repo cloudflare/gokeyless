@@ -13,7 +13,6 @@ type statistics struct {
 	requestExecDuration  *prometheus.HistogramVec
 	requestTotalDuration *prometheus.HistogramVec
 	requests             *prometheus.CounterVec
-	requestsInvalid      *prometheus.CounterVec
 	keyLoadDuration      prometheus.Histogram
 	connFailures         prometheus.Counter
 	queuedECDSARequests  prometheus.Gauge
@@ -107,7 +106,6 @@ func (s *Server) RegisterMetrics() {
 		s.stats.requestExecDuration,
 		s.stats.requestTotalDuration,
 		s.stats.requests,
-		s.stats.requestsInvalid,
 		s.stats.keyLoadDuration,
 		s.stats.connFailures,
 		s.stats.queuedECDSARequests,
