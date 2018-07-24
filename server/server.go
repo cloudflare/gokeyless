@@ -13,7 +13,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/rpc"
@@ -22,7 +21,6 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -32,7 +30,6 @@ import (
 	"github.com/cloudflare/gokeyless/server/internal/client"
 	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
-	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
@@ -274,6 +271,7 @@ type request struct {
 	pkt *protocol.Packet
 	// time just after the request was deserialized from the connection
 	reqBegin time.Time
+	connName string
 }
 
 type response struct {
@@ -316,7 +314,14 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	req := job.(request)
 	pkt := req.pkt
 
-	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, &pkt.Operation)
+	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
+		req.connName,
+		w.name,
+		pkt.Operation.Opcode,
+		pkt.Header.ID,
+		pkt.Operation.SNI,
+		pkt.Operation.ServerIP,
+		pkt.Operation.SKI)
 
 	requestBegin := time.Now()
 	var opts crypto.SignerOpts
@@ -469,7 +474,14 @@ func (w *ecdsaWorker) Do(job interface{}) interface{} {
 	req := job.(request)
 	pkt := req.pkt
 
-	log.Debugf("Worker %v: version:%d.%d id:%d body:%s", w.name, pkt.MajorVers, pkt.MinorVers, pkt.ID, &pkt.Operation)
+	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
+		req.connName,
+		w.name,
+		pkt.Operation.Opcode,
+		pkt.Header.ID,
+		pkt.Operation.SNI,
+		pkt.Operation.ServerIP,
+		pkt.Operation.SKI)
 
 	requestBegin := time.Now()
 	var opts crypto.SignerOpts
@@ -537,149 +549,6 @@ func (w *randGenWorker) Do(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-// conn implements the client.Conn interface. One is created to handle each
-// connection from clients over the network. See the documentation in the client
-// package for details.
-type conn struct {
-	conn net.Conn
-	// name used to identify this client in logs
-	name                 string
-	timeout              time.Duration
-	ecdsaPool, otherPool *worker.Pool
-	// used by the LogConnErr method
-	logErr sync.Once
-	s      *Server
-
-	closed uint32 // set to 1 when the conn is closed.
-}
-
-func newConn(s *Server, name string, c net.Conn, timeout time.Duration, ecdsa, other *worker.Pool) *conn {
-	return &conn{conn: c, name: name, timeout: timeout, ecdsaPool: ecdsa, otherPool: other, s: s, closed: 0}
-}
-
-func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
-	err := c.conn.SetReadDeadline(time.Now().Add(c.timeout))
-	if err != nil {
-		// TODO: Is it possible for the client closing this half of the connection
-		// to cause SetReadDeadline to return io.EOF? If so, we may want to do the
-		// same logic as the other error handling block in this function.
-		c.LogConnErr(err)
-		c.conn.Close()
-		atomic.StoreUint32(&c.closed, 1)
-		return nil, nil, false
-	}
-
-	pkt := new(protocol.Packet)
-	_, err = pkt.ReadFrom(c.conn)
-	if err != nil {
-		if err == io.EOF {
-			// We can't rule out the possibility that the client just closed the
-			// writing half of their connection (the reading half of ours), but still
-			// wants to receive responses. Thus, we don't kill the connection.
-			//
-			// We also don't call c.Log because the writer goroutine could, in the
-			// future, encounter an error that we legitimately want logged. Even if no
-			// "real" error is encountered, when the other half of the connection is
-			// closed, the writer goroutine will encounter EOF, and will log it, so
-			// even if the connection is closed correctly, it will still get logged.
-			log.Debugf("connection %v: reading half closed by client", c.name)
-		} else {
-			c.LogConnErr(err)
-			c.conn.Close()
-		}
-		atomic.StoreUint32(&c.closed, 1)
-		return nil, nil, false
-	}
-
-	c.s.stats.logRequest(pkt.Opcode)
-	req := request{
-		pkt:      pkt,
-		reqBegin: time.Now(),
-	}
-
-	switch pkt.Operation.Opcode {
-	case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
-		protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
-		protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
-		c.s.stats.logEnqueueECDSARequest()
-		return req, c.ecdsaPool, true
-	default:
-		c.s.stats.logEnqueueOtherRequest()
-		return req, c.otherPool, true
-	}
-}
-
-func (c *conn) SubmitResult(result interface{}) bool {
-	resp := result.(response)
-	pkt := protocol.Packet{
-		Header: protocol.Header{
-			MajorVers: 0x01,
-			MinorVers: 0x00,
-			Length:    resp.op.Bytes(),
-			ID:        resp.id,
-		},
-		Operation: resp.op,
-	}
-
-	buf, err := pkt.MarshalBinary()
-	if err != nil {
-		// According to MarshalBinary's documentation, it will never return a
-		// non-nil error.
-		panic(fmt.Sprintf("unexpected internal error: %v", err))
-	}
-
-	c.s.stats.logRequestTotalDuration(resp.reqOpcode, resp.reqBegin, resp.err)
-
-	_, err = c.conn.Write(buf)
-	if err != nil {
-		c.LogConnErr(err)
-		c.conn.Close()
-		atomic.StoreUint32(&c.closed, 1)
-		return false
-	}
-	return true
-}
-
-func (c *conn) IsAlive() bool {
-	return atomic.LoadUint32(&c.closed) == 0
-}
-
-func (c *conn) Destroy() {
-	c.LogConnErr(nil)
-	c.conn.Close()
-	atomic.StoreUint32(&c.closed, 1)
-}
-
-// Log an error with the connection (reading, writing, setting a deadline, etc).
-// Any error logged here is a fatal one that will cause us to terminate the
-// connection and clean up the client.
-func (c *conn) LogConnErr(err error) {
-	// Use a sync.Once so that only the first goroutine to encounter an error gets
-	// to log it. This avoids the circumstance where a goroutine encounters an
-	// error, logs it, and then closes the network connection, which causes the
-	// other goroutine to also encounter an error (due to the closed connection)
-	// and spuriously log it.
-	//
-	// We also use this to allow Destroy to block the reader or writer from
-	// logging anything at all by calling Log(nil).
-	c.logErr.Do(func() {
-		if err == nil {
-			// Destroy was called, and it called Log to ensure that the errors
-			// encountered by the reader and writer due to interacting with a closed
-			// connection are not logged.
-			log.Debugf("connection %v: server closing connection", c.name)
-			return
-		} else if err == io.EOF {
-			log.Debugf("connection %v: closed by client", c.name)
-		} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-			log.Debugf("connection %v: closing due to timeout", c.name)
-		} else {
-			c.s.stats.logConnFailure()
-			log.Errorf("connection %v: encountered error: %v", c.name, err)
-		}
-	})
 }
 
 func (s *Server) addListener(l net.Listener) {
@@ -769,7 +638,7 @@ func (s *Server) Serve(l net.Listener) error {
 
 		tconn := tls.Server(c, s.tlsConfig)
 		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
-		log.Debugf("spawning new connection: %v", c.RemoteAddr())
+		log.Debugf("connection %v: spawned", c.RemoteAddr())
 		handle := client.SpawnConn(conn)
 
 		mapMtx.Lock()
@@ -779,7 +648,7 @@ func (s *Server) Serve(l net.Listener) error {
 		wg.Add(1)
 		go func() {
 			handle.Wait()
-			log.Debugf("connection %v removed", c.RemoteAddr())
+			log.Debugf("connection %v: removed", c.RemoteAddr())
 			mapMtx.Lock()
 			delete(conns, handle)
 			mapMtx.Unlock()
