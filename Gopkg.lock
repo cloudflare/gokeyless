@@ -14,6 +14,12 @@
   revision = "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/cloudflare/backoff"
+  packages = ["."]
+  revision = "647f3cdfc87a18586e279c97afd6526d01b0d063"
+
+[[projects]]
   name = "github.com/cloudflare/cfssl"
   packages = [
     "crypto/pkcs7",
@@ -21,8 +27,7 @@
     "errors",
     "helpers",
     "helpers/derhelpers",
-    "log",
-    "transport/core"
+    "log"
   ]
   revision = "27b05afbb5132883b0942e87e3dd53d194aaa2f5"
   version = "1.3.0"
@@ -265,6 +270,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6ec77651c970ab6bf7eeae8cfafee8f7a71575a0df9b0104a10933a2296774f2"
+  inputs-digest = "bfb3f5bf76f7df76c1e6f729713841b25fba5c55af81a5abbad5faeb4acda3bc"
   solver-name = "gps-cdcl"
   solver-version = 1

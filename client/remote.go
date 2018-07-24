@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudflare/backoff"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/cfssl/transport/core"
 	"github.com/cloudflare/gokeyless/conn"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
@@ -93,12 +93,12 @@ func (conn *Conn) KeepAlive() {
 
 // healthchecker is a recurrent timer function that tests the connections
 func healthchecker(c *Conn) {
-	backoff := core.NewWithoutJitter(1*time.Hour, 1*time.Second)
+	b := backoff.NewWithoutJitter(1*time.Hour, 1*time.Second)
 	// automatic reset timer to 1*second,  if backoff is greater than 20 minutes.
-	backoff.SetDecay(20 * time.Minute)
+	b.SetDecay(20 * time.Minute)
 
 	for {
-		time.Sleep(backoff.Duration())
+		time.Sleep(b.Duration())
 
 		err := c.Conn.Ping(nil)
 		if err != nil {

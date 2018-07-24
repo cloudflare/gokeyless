@@ -1,5 +1,3 @@
-package core
-
 // Package backoff contains an implementation of an intelligent backoff
 // strategy. It is based on the approach in the AWS architecture blog
 // article titled "Exponential Backoff And Jitter", which is found at
@@ -15,6 +13,7 @@ package core
 // The `New` function will attempt to use the system's cryptographic
 // random number generator to seed a Go math/rand random number
 // source. If this fails, the package will panic on startup.
+package backoff
 
 import (
 	"crypto/rand"
