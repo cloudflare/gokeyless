@@ -20,6 +20,7 @@
   revision = "647f3cdfc87a18586e279c97afd6526d01b0d063"
 
 [[projects]]
+  branch = "master"
   name = "github.com/cloudflare/cfssl"
   packages = [
     "crypto/pkcs7",
@@ -29,8 +30,7 @@
     "helpers/derhelpers",
     "log"
   ]
-  revision = "27b05afbb5132883b0942e87e3dd53d194aaa2f5"
-  version = "1.3.0"
+  revision = "74781550e7f0084b1d7929e2e91a261ccf41b63c"
 
 [[projects]]
   branch = "master"
@@ -51,7 +51,6 @@
   version = "v1.0.0"
 
 [[projects]]
-  branch = "master"
   name = "github.com/google/certificate-transparency-go"
   packages = [
     ".",
@@ -60,7 +59,7 @@
     "x509",
     "x509/pkix"
   ]
-  revision = "79ef9a848db9cc3dcd3e34757c33fecd89ab21bd"
+  revision = "5ab67e519c93568ac3ee50fd6772a5bcf8aa460d"
 
 [[projects]]
   branch = "master"
@@ -217,7 +216,7 @@
     "pkcs12",
     "pkcs12/internal/rc2"
   ]
-  revision = "650f4a345ab4e5b245a3034b110ebc7299e68186"
+  revision = "c126467f60eb25f8f27e5a981f32a87e3965053f"
 
 [[projects]]
   branch = "master"
@@ -270,6 +269,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bfb3f5bf76f7df76c1e6f729713841b25fba5c55af81a5abbad5faeb4acda3bc"
+  inputs-digest = "d7d440fc46aebad7dcde6b00c6c22f7df73b91123ccec63b67ebc08fe32431e9"
   solver-name = "gps-cdcl"
   solver-version = 1
