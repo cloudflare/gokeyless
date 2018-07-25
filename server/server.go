@@ -134,6 +134,16 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 	return nil
 }
 
+// Remove removes a key from the server's internal state.
+func (keys *DefaultKeystore) Remove(ski protocol.SKI) {
+	keys.mtx.Lock()
+	defer keys.mtx.Unlock()
+
+	delete(keys.skis, ski)
+
+	log.Debugf("remove signer with SKI: %v", ski)
+}
+
 // DefaultLoadKey attempts to load a private key from PEM or DER.
 func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
 	priv, err = helpers.ParsePrivateKeyPEM(in)
