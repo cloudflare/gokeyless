@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net"
+	"net/rpc"
 	"sync"
 	"testing"
 	"time"
@@ -314,7 +316,7 @@ func TestConcurrency(t *testing.T) {
 	}
 }
 
-func TestRPC(t *testing.T) {
+func TestKeylessDummyRPC(t *testing.T) {
 	conn, err := remote.Dial(c)
 	if err != nil {
 		t.Fatal(err)
@@ -336,4 +338,86 @@ func TestRPC(t *testing.T) {
 	if err == nil || err.Error() != "remote rpc error" {
 		t.Fatal("recieved wrong error")
 	}
+}
+
+func benchmarkDummyRPC(b *testing.B, requester *rpc.Client) {
+	resp := "{"
+	if err := requester.Call("DummyRPC.Append", "Hello", &resp); err != nil {
+		b.Fatal(err)
+	}
+
+	// The barrier is used to ensure that goroutines only start running once we
+	// release them.
+	var barrier, wg sync.WaitGroup
+	barrier.Add(1)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		go func() {
+			wg.Add(1)
+			barrier.Wait()
+			requester.Call("DummyRPC.Append", "Hello", &resp)
+			wg.Done()
+		}()
+	}
+
+	b.ResetTimer()
+	barrier.Done()
+	wg.Wait()
+}
+
+func BenchmarkKeylessDummyRPC(b *testing.B) {
+	// Set up RPC client.
+	conn, err := remote.Dial(c)
+	if err != nil {
+		b.Fatal(err)
+	}
+	requester := conn.RPC()
+	defer func() {
+		requester.Close()
+		conn.Close()
+	}()
+
+	benchmarkDummyRPC(b, requester)
+}
+
+func BenchmarkDummyRPC(b *testing.B) {
+	// Register the dummy RPC.
+	dispatcher := rpc.NewServer()
+	err := dispatcher.Register(&DummyRPC{})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Set up a TCP socket for the RPC.
+	l, err := net.Listen("tcp", ":1234")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer l.Close()
+
+	// Listen for and serve a single connection.
+	var serr error
+	sch := make(chan net.Conn, 1)
+	go func() {
+		sconn, err := l.Accept()
+		if err != nil {
+			serr = err
+			sch <- nil
+			return
+		}
+
+		dispatcher.ServeConn(sconn)
+		sch <- sconn
+	}()
+
+	// Dial the RPC.
+	requester, err := rpc.Dial("tcp", "localhost:1234")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer requester.Close()
+
+	benchmarkDummyRPC(b, requester)
 }
