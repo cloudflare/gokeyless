@@ -334,14 +334,20 @@ func TestKeylessDummyRPC(t *testing.T) {
 		t.Fatal("recieved wrong output")
 	}
 
+	if err = client.Call("DummyRPC.Append", "What A Wonderful", &out); err != nil {
+		t.Fatal(err)
+	} else if out != "What A Wonderful World" {
+		t.Fatal("recieved wrong output")
+	}
+
 	err = client.Call("DummyRPC.Error", "Hello", &out)
 	if err == nil || err.Error() != "remote rpc error" {
-		t.Fatal("recieved wrong error")
+		t.Fatal("recieved wrong error", err)
 	}
 }
 
 func benchmarkDummyRPC(b *testing.B, requester *rpc.Client) {
-	resp := "{"
+	resp := ""
 	if err := requester.Call("DummyRPC.Append", "Hello", &resp); err != nil {
 		b.Fatal(err)
 	}
@@ -398,12 +404,10 @@ func BenchmarkDummyRPC(b *testing.B) {
 	defer l.Close()
 
 	// Listen for and serve a single connection.
-	var serr error
 	sch := make(chan net.Conn, 1)
 	go func() {
 		sconn, err := l.Accept()
 		if err != nil {
-			serr = err
 			sch <- nil
 			return
 		}

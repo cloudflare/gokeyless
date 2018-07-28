@@ -307,35 +307,52 @@ func (c *Conn) Ping(data []byte) error {
 // *rpc.Client will cleanup any spawned goroutines, but will not close the
 // underlying connection.
 func (c *Conn) RPC() *rpc.Client {
-	pr, pw := io.Pipe()
-	codec := &clientCodec{c, pr, pw, nil}
-
-	return rpc.NewClientWithCodec(codec)
+	return rpc.NewClientWithCodec(newClientCodec(c))
 }
 
 // clientCodec implements net/rpc.ClientCodec over a connection to a gokeyless
 // server.
 type clientCodec struct {
-	conn *Conn
+	conn     *Conn
+	in       *io.PipeWriter
+	out      bytes.Buffer
+	request  *gob.Encoder
+	response *gob.Decoder
 
-	pr  *io.PipeReader
-	pw  *io.PipeWriter
-	dec *gob.Decoder
+	mtx sync.Mutex
+}
+
+func newClientCodec(c *Conn) *clientCodec {
+	pr, pw := io.Pipe()
+	codec := &clientCodec{
+		conn: c,
+		in:   pw,
+	}
+	codec.response = gob.NewDecoder(pr)
+	codec.request = gob.NewEncoder(&codec.out)
+	return codec
 }
 
 func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
-	buff := &bytes.Buffer{}
-	enc := gob.NewEncoder(buff)
-
-	if err := enc.Encode(req); err != nil {
+	cc.mtx.Lock()
+	defer cc.mtx.Unlock()
+	if err := cc.request.Encode(req); err != nil {
 		return err
-	} else if err := enc.Encode(body); err != nil {
+	} else if err := cc.request.Encode(body); err != nil {
 		return err
 	}
 
+	// NOTE: WriteRequest blocks until cc.conn.DoOperation() completes, so the
+	// output buffer only ever contains one encoded RPC payload at any time.
+	// Thus, the payload is the entire contents of the output buffer; once
+	// WriteRequests finishes, we need to clear the buffer in preperation for
+	// the next call.
+	payload := cc.out.Bytes()
+	defer cc.out.Reset()
+
 	result, err := cc.conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpRPC,
-		Payload: buff.Bytes(),
+		Payload: payload,
 	})
 	if err != nil {
 		return err
@@ -343,7 +360,7 @@ func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
 		return result.GetError()
 	} else if result.Opcode != protocol.OpResponse {
 		return fmt.Errorf("wrong response opcode: %v", result.Opcode)
-	} else if _, err = cc.pw.Write(result.Payload); err != nil {
+	} else if _, err = cc.in.Write(result.Payload); err != nil {
 		return err
 	}
 
@@ -351,16 +368,13 @@ func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
 }
 
 func (cc *clientCodec) ReadResponseHeader(res *rpc.Response) error {
-	// gob decoders are stateful but we encode statelessly, so we need to reset
-	// the decoder after every full read.
-	cc.dec = gob.NewDecoder(cc.pr)
-	return cc.dec.Decode(res)
+	return cc.response.Decode(res)
 }
 
 func (cc *clientCodec) ReadResponseBody(body interface{}) error {
-	return cc.dec.Decode(body)
+	return cc.response.Decode(body)
 }
 
 func (cc *clientCodec) Close() error {
-	return cc.pr.Close()
+	return cc.in.Close()
 }

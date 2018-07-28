@@ -274,6 +274,8 @@ type request struct {
 	// time just after the request was deserialized from the connection
 	reqBegin time.Time
 	connName string
+	// reference to the RPC server codec of the associated connection
+	codec *serverCodec
 }
 
 type response struct {
@@ -355,14 +357,14 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		return w.s.makeRespondResponse(req, res, requestBegin)
 
 	case protocol.OpRPC:
-		codec := newServerCodec(pkt.Payload)
-
-		err := w.s.dispatcher.ServeRequest(codec)
+		req.codec.setRequestPayload(pkt.Payload)
+		err := w.s.dispatcher.ServeRequest(req.codec)
 		if err != nil {
 			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
 			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
 		}
-		return w.s.makeRespondResponse(req, codec.response, requestBegin)
+		payload := req.codec.getResponsePayload()
+		return w.s.makeRespondResponse(req, payload, requestBegin)
 
 	case protocol.OpEd25519Sign:
 		keyLoadBegin := time.Now()
@@ -861,15 +863,32 @@ func (s *ServeConfig) WithUtilization(f func(other, ecdsa float64)) *ServeConfig
 }
 
 // serverCodec implements net/rpc.ServerCodec over the payload of a gokeyless
-// operation. It can only be used one time.
+// operation.
 type serverCodec struct {
+	in, out  bytes.Buffer
 	request  *gob.Decoder
-	response []byte
+	response *gob.Encoder
+	mtx      sync.Mutex
 }
 
-func newServerCodec(payload []byte) *serverCodec {
-	dec := gob.NewDecoder(bytes.NewBuffer(payload))
-	return &serverCodec{request: dec}
+func newServerCodec() *serverCodec {
+	codec := new(serverCodec)
+	codec.request = gob.NewDecoder(&codec.in)
+	codec.response = gob.NewEncoder(&codec.out)
+	return codec
+}
+
+// setRequestPayload writes the payload to the decoder buffer.
+func (sc *serverCodec) setRequestPayload(payload []byte) {
+	sc.in.Write(payload)
+}
+
+// getResponsePayload reads the payload from the encoder buffer and returns it.
+// It is only safe to use this function when synchronously serving a single
+// request, e.g. via rpc.ServeRequest().
+func (sc *serverCodec) getResponsePayload() []byte {
+	defer sc.out.Reset()
+	return sc.out.Bytes()
 }
 
 func (sc *serverCodec) ReadRequestHeader(req *rpc.Request) error {
@@ -881,19 +900,15 @@ func (sc *serverCodec) ReadRequestBody(body interface{}) error {
 }
 
 func (sc *serverCodec) WriteResponse(res *rpc.Response, body interface{}) error {
-	buff := &bytes.Buffer{}
-	enc := gob.NewEncoder(buff)
-
-	if err := enc.Encode(res); err != nil {
-		return err
-	} else if err := enc.Encode(body); err != nil {
+	sc.mtx.Lock()
+	defer sc.mtx.Unlock()
+	err := sc.response.Encode(res)
+	if err != nil {
 		return err
 	}
-
-	sc.response = buff.Bytes()
-	return nil
+	return sc.response.Encode(body)
 }
 
 func (sc *serverCodec) Close() error {
-	return errors.New("an rpc server codec cannot be closed")
+	return errors.New("nothing to close")
 }

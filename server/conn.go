@@ -29,6 +29,10 @@ type conn struct {
 	closed uint32 // set to 1 when the conn is closed.
 
 	stats *connStats
+
+	// An RPC server codec is created for each connection. This is passed by
+	// reference to the worker handling a job.
+	codec *serverCodec
 }
 
 type connEvent struct {
@@ -75,6 +79,7 @@ func newConn(s *Server, name string, c net.Conn, timeout time.Duration, ecdsa, o
 		stats: &connStats{
 			spawnTime: time.Now(),
 		},
+		codec: newServerCodec(),
 	}
 }
 
@@ -117,6 +122,7 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 		pkt:      pkt,
 		reqBegin: time.Now(),
 		connName: c.name,
+		codec:    c.codec,
 	}
 
 	c.stats.lock.Lock()
