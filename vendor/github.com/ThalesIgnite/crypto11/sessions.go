@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	idleTimeout       = 30 * time.Second
+	idleTimeout       = 0 * time.Second // disable closing of idle sessions, see https://github.com/ThalesIgnite/crypto11/issues/9
 	newSessionTimeout = 15 * time.Second
 )
 
