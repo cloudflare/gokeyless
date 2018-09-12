@@ -21,7 +21,7 @@
 
 // Package crypto11 enables access to cryptographic keys from PKCS#11 using Go crypto API.
 //
-// For simple use:
+// Simple use
 //
 // 1. Either write a configuration file (see ConfigureFromFile) or
 // define a configuration in your application (see PKCS11Config and
@@ -40,7 +40,7 @@
 // or to *PKCS11PrivateKeyDSA, *PKCS11PrivateKeyECDSA or
 // *PKCS11PrivateKeyRSA.
 //
-// Sessions and concurrency:
+// Sessions and concurrency
 //
 // Note that PKCS#11 session handles must not be used concurrently
 // from multiple threads. Consumers of the Signer interface know
@@ -63,6 +63,13 @@
 // welcome.
 //
 // See also https://golang.org/pkg/crypto/
+//
+// Limitations
+//
+// The PKCS1v15DecryptOptions SessionKeyLen field is not implemented
+// and an error is returned if it is nonzero.
+// The reason for this is that it is not possible for crypto11 to guarantee the constant-time behavior in the specification.
+// See https://github.com/thalesignite/crypto11/issues/5 for further discussion.
 package crypto11
 
 import (
@@ -72,8 +79,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
-	pkcs11 "github.com/miekg/pkcs11"
+	"github.com/miekg/pkcs11"
 )
 
 const (
@@ -126,15 +134,27 @@ type PKCS11PrivateKey struct {
 // errors.
 
 /* Nasty globals */
-var libHandle *pkcs11.Ctx
-var session *PKCS11Session
-var defaultSlot uint
-var maxSessions int
+var instance = &libCtx{
+	cfg: &PKCS11Config{
+		MaxSessions: DefaultMaxSessions,
+		IdleTimeout: 0,
+		PoolWaitTimeout: 0,
+	},
+}
+
+// Represent library pkcs11 context and token configuration
+type libCtx struct {
+	ctx *pkcs11.Ctx
+	cfg *PKCS11Config
+
+	token *pkcs11.TokenInfo
+	slot  uint
+}
 
 // Find a token given its serial number
 func findToken(slots []uint, serial string, label string) (uint, *pkcs11.TokenInfo, error) {
 	for _, slot := range slots {
-		tokenInfo, err := libHandle.GetTokenInfo(slot)
+		tokenInfo, err := instance.ctx.GetTokenInfo(slot)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -169,6 +189,12 @@ type PKCS11Config struct {
 
 	// Maximum number of concurrent sessions to open
 	MaxSessions int
+
+	// Session idle timeout to be evicted from the pool
+	IdleTimeout time.Duration
+
+	// Maximum time allowed to wait a sessions pool for a session
+	PoolWaitTimeout time.Duration
 }
 
 // Configure configures PKCS#11 from a PKCS11Config.
@@ -189,65 +215,61 @@ type PKCS11Config struct {
 func Configure(config *PKCS11Config) (*pkcs11.Ctx, error) {
 	var err error
 	var slots []uint
-	var flags uint
 
 	if config == nil {
-		if libHandle != nil {
-			return libHandle, nil
+		if instance.ctx != nil {
+			return instance.ctx, nil
 		}
 		return nil, ErrNotConfigured
 	}
-	if libHandle != nil {
+	if instance.ctx != nil {
 		log.Printf("PKCS#11 library already configured")
-		return libHandle, nil
+		return instance.ctx, nil
 	}
-	libHandle = pkcs11.New(config.Path)
-	if libHandle == nil {
+
+	if config.MaxSessions == 0 {
+		config.MaxSessions = DefaultMaxSessions
+	}
+	instance.cfg = config
+	instance.ctx = pkcs11.New(config.Path)
+	if instance.ctx == nil {
 		log.Printf("Could not open PKCS#11 library: %s", config.Path)
 		return nil, ErrCannotOpenPKCS11
 	}
-	if err = libHandle.Initialize(); err != nil {
+	if err = instance.ctx.Initialize(); err != nil {
 		log.Printf("Failed to initialize PKCS#11 library: %s", err.Error())
 		return nil, err
 	}
-	if slots, err = libHandle.GetSlotList(true); err != nil {
+	if slots, err = instance.ctx.GetSlotList(true); err != nil {
 		log.Printf("Failed to list PKCS#11 Slots: %s", err.Error())
 		return nil, err
 	}
-	slot, token, err := findToken(slots, config.TokenSerial, config.TokenLabel)
+
+	instance.slot, instance.token, err = findToken(slots, config.TokenSerial, config.TokenLabel)
 	if err != nil {
 		log.Printf("Failed to find Token in any Slot: %s", err.Error())
 		return nil, err
 	}
-	defaultSlot = slot
-	flags = token.Flags
 
-	maxSessions = config.MaxSessions
-	if maxSessions == 0 {
-		maxSessions = DefaultMaxSessions
-	}
-	if token.MaxRwSessionCount > 0 && uint(maxSessions) > token.MaxRwSessionCount {
-		return nil, fmt.Errorf("crypto11: provided max sessions value (%d) exceeds max value the token supports (%d)", maxSessions, token.MaxRwSessionCount)
+	if instance.token.MaxRwSessionCount > 0 && uint(instance.cfg.MaxSessions) > instance.token.MaxRwSessionCount {
+		return nil, fmt.Errorf("crypto11: provided max sessions value (%d) exceeds max value the token supports (%d)", instance.cfg.MaxSessions, instance.token.MaxRwSessionCount)
 	}
 
-	if err = setupSessions(defaultSlot); err != nil {
+	if err := setupSessions(instance, instance.slot); err != nil {
 		return nil, err
 	}
-	if err = withSession(defaultSlot, func(session *PKCS11Session) error {
-		if flags&pkcs11.CKF_LOGIN_REQUIRED != 0 {
-			err = libHandle.Login(session.Handle, pkcs11.CKU_USER, config.Pin)
-			if err != nil {
-				log.Printf("Failed to login into PKCS#11 Token: %s", err.Error())
+
+	// login required if a pool evict idle sessions (handled by the pool) or
+	// for the first connection in the pool (handled here)
+	if instance.cfg.IdleTimeout == 0 {
+		if instance.token.Flags&pkcs11.CKF_LOGIN_REQUIRED != 0 && instance.cfg.Pin != "" {
+			if err = withSession(instance.slot, loginToken); err != nil {
+				return nil, err
 			}
-		} else {
-			err = nil
 		}
-		return err
-	}); err != nil {
-		log.Printf("Failed to open PKCS#11 Session: %s", err.Error())
-		return nil, err
 	}
-	return libHandle, nil
+
+	return instance.ctx, nil
 }
 
 // ConfigureFromFile configures PKCS#11 from a name configuration file.
@@ -273,6 +295,37 @@ func ConfigureFromFile(configLocation string) (*pkcs11.Ctx, error) {
 		return nil, err
 	}
 	return Configure(config)
+}
+
+// Close releases all sessions and uninitializes library default handle.
+// Once library handle is released, library may be configured once again.
+func Close() error {
+	ctx := instance.ctx
+	if ctx != nil {
+		slots, err := ctx.GetSlotList(true)
+		if err != nil {
+			return err
+		}
+
+		for _, slot := range slots {
+			if err := pool.closeSessions(slot); err != nil && err != errPoolNotFound {
+				return err
+			}
+			// if something by passed cache
+			if err := ctx.CloseAllSessions(slot); err != nil {
+				return err
+			}
+		}
+
+		if err := ctx.Finalize(); err != nil {
+			return err
+		}
+
+		ctx.Destroy()
+		instance.ctx = nil
+	}
+
+	return nil
 }
 
 func init() {

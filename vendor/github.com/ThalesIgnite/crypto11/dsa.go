@@ -43,7 +43,7 @@ func exportDSAPublicKey(session *PKCS11Session, pubHandle pkcs11.ObjectHandle) (
 		pkcs11.NewAttribute(pkcs11.CKA_BASE, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_VALUE, nil),
 	}
-	exported, err := libHandle.GetAttributeValue(session.Handle, pubHandle, template)
+	exported, err := session.Ctx.GetAttributeValue(session.Handle, pubHandle, template)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func exportDSAPublicKey(session *PKCS11Session, pubHandle pkcs11.ObjectHandle) (
 //
 // The key will have a random label and ID.
 func GenerateDSAKeyPair(params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
-	return GenerateDSAKeyPairOnSlot(defaultSlot, nil, nil, params)
+	return GenerateDSAKeyPairOnSlot(instance.slot, nil, nil, params)
 }
 
 // GenerateDSAKeyPairOnSlot creates a DSA private key on a specified slot
@@ -76,7 +76,7 @@ func GenerateDSAKeyPair(params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
 func GenerateDSAKeyPairOnSlot(slot uint, id []byte, label []byte, params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
 	var k *PKCS11PrivateKeyDSA
 	var err error
-	if err = setupSessions(slot); err != nil {
+	if err = ensureSessions(instance, slot); err != nil {
 		return nil, err
 	}
 	err = withSession(slot, func(session *PKCS11Session) error {
@@ -93,9 +93,6 @@ func GenerateDSAKeyPairOnSession(session *PKCS11Session, slot uint, id []byte, l
 	var err error
 	var pub crypto.PublicKey
 
-	if libHandle == nil {
-		return nil, ErrNotConfigured
-	}
 	if label == nil {
 		if label, err = generateKeyLabel(); err != nil {
 			return nil, err
@@ -129,7 +126,7 @@ func GenerateDSAKeyPairOnSession(session *PKCS11Session, slot uint, id []byte, l
 		pkcs11.NewAttribute(pkcs11.CKA_ID, id),
 	}
 	mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_DSA_KEY_PAIR_GEN, nil)}
-	pubHandle, privHandle, err := libHandle.GenerateKeyPair(session.Handle,
+	pubHandle, privHandle, err := session.Ctx.GenerateKeyPair(session.Handle,
 		mech,
 		publicKeyTemplate,
 		privateKeyTemplate)

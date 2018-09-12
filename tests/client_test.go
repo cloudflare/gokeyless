@@ -105,6 +105,8 @@ func checkSignature(pub crypto.PublicKey, h crypto.Hash, pss bool) func(res func
 			if !ed25519.Verify(ed25519Pub, testEd25519Msg, sig) {
 				return errors.New("failed to verify")
 			}
+		} else {
+			return fmt.Errorf("unknown public key type %v", pub)
 		}
 		return nil
 	}
@@ -115,26 +117,33 @@ func TestSign(t *testing.T) {
 		t.SkipNow()
 	}
 
-	f := functest.New((*client.PrivateKey).Sign)
-	f.Test(t,
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA1, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA256, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA384, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA512, false)),
+	// Run the tests twice: once immediately, and the once more after allowing
+	// all the idle sessions to be closed.
+	for i := 0; i < 2; i++ {
+		f := functest.New((*client.PrivateKey).Sign)
+		f.Test(t,
+			f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
+				checkSignature(rsaKey.Public(), crypto.SHA1, false)),
+			f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
+				checkSignature(rsaKey.Public(), crypto.SHA256, false)),
+			f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
+				checkSignature(rsaKey.Public(), crypto.SHA384, false)),
+			f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
+				checkSignature(rsaKey.Public(), crypto.SHA512, false)),
 
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA1, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA256, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA384, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA512, false)),
-	)
+			f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
+				checkSignature(ecdsaKey.Public(), crypto.SHA1, false)),
+			f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
+				checkSignature(ecdsaKey.Public(), crypto.SHA256, false)),
+			f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
+				checkSignature(ecdsaKey.Public(), crypto.SHA384, false)),
+			f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
+				checkSignature(ecdsaKey.Public(), crypto.SHA512, false)),
+		)
+
+		// Sleep long enough for the idle sessions to be closed (timeout is 250ms).
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // testEd25519Msg is the message that would be signed to produce the

@@ -45,7 +45,7 @@ Clone, ensure deps, and build:
 
 Edit `config` to taste, and then run the test program:
 
-    go test
+    go test  -count=1
 
 Testing Guidance
 ================
@@ -145,7 +145,15 @@ The configuration looks like this:
       "Pin" : "password"
     }
 
-(At time of writing) PSS and OAEP aren't supported so expect test failures.
+(At time of writing) OAEP is only partial, so expect test skips.
+
+Limitations
+===========
+
+ * The [PKCS1v15DecryptOptions SessionKeyLen](https://golang.org/pkg/crypto/rsa/#PKCS1v15DecryptOptions) field
+is not implemented and an error is returned if it is nonzero.
+The reason for this is that it is not possible for crypto11 to guarantee the constant-time behavior in the specification.
+See [issue #5](https://github.com/ThalesIgnite/crypto11/issues/5) for further discussion.
 
 Wishlist
 ========

@@ -8,12 +8,17 @@ package rfc7512
 import (
 	"crypto"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ThalesIgnite/crypto11"
+	"github.com/cloudflare/cfssl/log"
+	"github.com/miekg/pkcs11"
 )
 
 // PKCS11URI contains the information for accessing a PKCS #11 storage object,
@@ -45,7 +50,10 @@ type PKCS11URI struct {
 	ModulePath string // module-path
 
 	// Vendor specific query attributes:
-	MaxSessions int // max-sessions
+	MaxSessions int           // max-sessions
+	IdleTimeout time.Duration // idle-timeout
+
+	raw string
 }
 
 // ParsePKCS11URI decodes a PKCS #11 URI and returns it as a PKCS11URI object.
@@ -76,13 +84,19 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
 	qAttr := aChar + "+=" + qChar + "+"
 	qClause := "(" + qAttr + "&)*(" + qAttr + ")"
-	r, _ := regexp.Compile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
-
-	if !r.MatchString(uri) {
-		return nil, fmt.Errorf("PKCS#11 URI is malformed: %s", uri)
+	r, err := regexp.Compile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
+	if err != nil {
+		return nil, err
 	}
 
-	var pk11uri PKCS11URI
+	if !r.MatchString(uri) {
+		return nil, fmt.Errorf("uri %q is malformed", uri)
+	}
+
+	pk11uri := PKCS11URI{
+		raw: uri,
+	}
+
 	var pAttrs []string
 	var qAttrs []string
 	var parts []string
@@ -102,9 +116,12 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		parts[0] = strings.Trim(parts[0], " \n\t\r")
 		if len(parts) == 2 {
 			parts[1] = strings.Trim(parts[1], " \n\t\r")
-			value, _ = url.QueryUnescape(parts[1])
+			value, err = url.QueryUnescape(parts[1])
+			if err != nil {
+				return nil, err
+			}
 		} else {
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
+			return nil, fmt.Errorf("uri %q contains an unrecognized query attribute: %s", pk11uri.raw, parts[0])
 		}
 		switch parts[0] {
 		case "token":
@@ -135,10 +152,13 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 			pk11uri.SlotDesc = value
 		case "slot-id":
 			// TODO the bit size is not clarified.
-			id, _ := strconv.ParseUint(value, 10, 32)
+			id, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				return nil, err
+			}
 			pk11uri.SlotID = uint(id)
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
+			return nil, fmt.Errorf("uri %q contains an unrecognized query attribute: %s", pk11uri.raw, parts[0])
 		}
 	}
 
@@ -148,9 +168,12 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		parts[0] = strings.Trim(parts[0], " \n\t\r")
 		if len(parts) == 2 {
 			parts[1] = strings.Trim(parts[1], " \n\t\r")
-			value, _ = url.QueryUnescape(parts[1])
+			value, err = url.QueryUnescape(parts[1])
+			if err != nil {
+				return nil, err
+			}
 		} else {
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
+			return nil, fmt.Errorf("uri %q contains an unrecognized query attribute: %s", pk11uri.raw, parts[0])
 		}
 		switch parts[0] {
 		case "pin-source":
@@ -162,14 +185,27 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		case "module-path":
 			pk11uri.ModulePath = value
 		case "max-sessions":
-			maxSessions, _ := strconv.ParseUint(value, 10, 32)
+			maxSessions, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				return nil, err
+			}
 			pk11uri.MaxSessions = int(maxSessions)
+		case "idle-timeout":
+			d, err := time.ParseDuration(value)
+			if err != nil {
+				return nil, err
+			}
+			pk11uri.IdleTimeout = d
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
+			return nil, fmt.Errorf("uri %q contains an unrecognized query attribute: %s", pk11uri.raw, parts[0])
 		}
 	}
 
 	return &pk11uri, nil
+}
+
+func (pk11uri *PKCS11URI) String() string {
+	return pk11uri.raw
 }
 
 // LoadPKCS11Signer attempts to load a Signer given a PKCS11URI object that
@@ -188,11 +224,13 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 // or the specified object.
 func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 	config := &crypto11.PKCS11Config{
-		Path:        pk11uri.ModulePath,
-		TokenSerial: pk11uri.Serial,
-		TokenLabel:  pk11uri.Token,
-		Pin:         pk11uri.PinValue,
-		MaxSessions: pk11uri.MaxSessions,
+		Path:            pk11uri.ModulePath,
+		TokenSerial:     pk11uri.Serial,
+		TokenLabel:      pk11uri.Token,
+		Pin:             pk11uri.PinValue,
+		MaxSessions:     pk11uri.MaxSessions,
+		IdleTimeout:     pk11uri.IdleTimeout,
+		PoolWaitTimeout: 10 * time.Second,
 	}
 
 	_, err := crypto11.Configure(config)
@@ -200,10 +238,91 @@ func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 		return nil, err
 	}
 
+	signer, err := initSigner(pk11uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return &privateKey{
+		uri:          pk11uri,
+		signer:       signer,
+		lastInitTime: time.Now(),
+	}, nil
+}
+
+func initSigner(pk11uri *PKCS11URI) (crypto.Signer, error) {
 	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotID, pk11uri.ID, pk11uri.Object)
 	if err != nil {
 		return nil, err
 	}
 
-	return key.(crypto.Signer), nil
+	switch v := key.(type) {
+	case *crypto11.PKCS11PrivateKeyECDSA:
+		if err := testSign(v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	case *crypto11.PKCS11PrivateKeyRSA:
+		if err := testSign(v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	default:
+		return nil, fmt.Errorf("uri %q uses an unsupported key type", pk11uri.String())
+	}
+}
+
+func testSign(signer crypto.Signer) error {
+	_, err := signer.Sign(nil, make([]byte, 32), crypto.SHA256)
+	return err
+}
+
+type privateKey struct {
+	uri          *PKCS11URI
+	signer       crypto.Signer
+	lastInitTime time.Time // last time the signer was initialized
+	lock         sync.RWMutex
+}
+
+func (pk *privateKey) Public() crypto.PublicKey {
+	pk.lock.RLock()
+	defer pk.lock.RUnlock()
+	return pk.signer.Public()
+}
+
+func (pk *privateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	pk.lock.RLock()
+	lastInitTime := pk.lastInitTime
+	sig, err := pk.signer.Sign(rand, digest, opts)
+	pk.lock.RUnlock()
+
+	if err == nil {
+		return sig, nil
+	}
+
+	// Idle sessions are closed out by the connection pool, and if that happens
+	// our object handles will be invalidated. We attempt to gracefully recover
+	// by re-initializing the signer from a single goroutine.
+	perr, ok := err.(pkcs11.Error)
+	if !ok || perr != pkcs11.CKR_OBJECT_HANDLE_INVALID {
+		return nil, err
+	} else if time.Since(lastInitTime) < 100*time.Millisecond { // arbitrary threshold
+		return nil, err
+	}
+
+	log.Debugf("re-initializing uri %q after encountering %v", pk.uri, err)
+
+	pk.lock.Lock()
+	if pk.lastInitTime == lastInitTime { // check again now that we have the lock
+		signer, err := initSigner(pk.uri)
+		if err != nil {
+			pk.lock.Unlock()
+			return nil, err
+		}
+		pk.signer = signer
+		pk.lastInitTime = time.Now()
+	}
+	pk.lock.Unlock()
+
+	return pk.signer.Sign(rand, digest, opts)
 }

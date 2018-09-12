@@ -79,10 +79,10 @@ func dsaGeneric(slot uint, key pkcs11.ObjectHandle, mechanism uint, digest []byt
 	var sig dsaSignature
 	mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(mechanism, nil)}
 	err = withSession(slot, func(session *PKCS11Session) error {
-		if err = libHandle.SignInit(session.Handle, mech, key); err != nil {
+		if err = instance.ctx.SignInit(session.Handle, mech, key); err != nil {
 			return err
 		}
-		sigBytes, err = libHandle.Sign(session.Handle, digest)
+		sigBytes, err = instance.ctx.Sign(session.Handle, digest)
 		return err
 	})
 	if err != nil {

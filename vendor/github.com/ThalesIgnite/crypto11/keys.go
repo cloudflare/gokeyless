@@ -36,7 +36,7 @@ func (object *PKCS11Object) Identify() (id []byte, label []byte, err error) {
 		pkcs11.NewAttribute(pkcs11.CKA_LABEL, nil),
 	}
 	if err = withSession(object.Slot, func(session *PKCS11Session) error {
-		a, err = libHandle.GetAttributeValue(session.Handle, object.Handle, a)
+		a, err = instance.ctx.GetAttributeValue(session.Handle, object.Handle, a)
 		return err
 	}); err != nil {
 		return nil, nil, err
@@ -49,7 +49,7 @@ func (object *PKCS11Object) Identify() (id []byte, label []byte, err error) {
 func findKey(session *PKCS11Session, id []byte, label []byte, keyclass uint, keytype uint) (pkcs11.ObjectHandle, error) {
 	var err error
 	var handles []pkcs11.ObjectHandle
-	template := []*pkcs11.Attribute{}
+	var template []*pkcs11.Attribute
 	if keyclass != ^uint(0) {
 		template = append(template, pkcs11.NewAttribute(pkcs11.CKA_CLASS, keyclass))
 	}
@@ -62,11 +62,11 @@ func findKey(session *PKCS11Session, id []byte, label []byte, keyclass uint, key
 	if label != nil {
 		template = append(template, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
 	}
-	if err = libHandle.FindObjectsInit(session.Handle, template); err != nil {
+	if err = session.Ctx.FindObjectsInit(session.Handle, template); err != nil {
 		return 0, err
 	}
-	defer libHandle.FindObjectsFinal(session.Handle)
-	if handles, _, err = libHandle.FindObjects(session.Handle, 1); err != nil {
+	defer session.Ctx.FindObjectsFinal(session.Handle)
+	if handles, _, err = session.Ctx.FindObjects(session.Handle, 1); err != nil {
 		return 0, err
 	}
 	if len(handles) == 0 {
@@ -79,7 +79,7 @@ func findKey(session *PKCS11Session, id []byte, label []byte, keyclass uint, key
 //
 // Either (but not both) of id and label may be nil, in which case they are ignored.
 func FindKeyPair(id []byte, label []byte) (crypto.PrivateKey, error) {
-	return FindKeyPairOnSlot(defaultSlot, id, label)
+	return FindKeyPairOnSlot(instance.slot, id, label)
 }
 
 // FindKeyPairOnSlot retrieves a previously created asymmetric key, using a specified slot.
@@ -88,7 +88,7 @@ func FindKeyPair(id []byte, label []byte) (crypto.PrivateKey, error) {
 func FindKeyPairOnSlot(slot uint, id []byte, label []byte) (crypto.PrivateKey, error) {
 	var err error
 	var k crypto.PrivateKey
-	if err = setupSessions(slot); err != nil {
+	if err = ensureSessions(instance, slot); err != nil {
 		return nil, err
 	}
 	err = withSession(slot, func(session *PKCS11Session) error {
@@ -106,16 +106,13 @@ func FindKeyPairOnSession(session *PKCS11Session, slot uint, id []byte, label []
 	var privHandle, pubHandle pkcs11.ObjectHandle
 	var pub crypto.PublicKey
 
-	if libHandle == nil {
-		return nil, ErrNotConfigured
-	}
 	if privHandle, err = findKey(session, id, label, pkcs11.CKO_PRIVATE_KEY, ^uint(0)); err != nil {
 		return nil, err
 	}
 	attributes := []*pkcs11.Attribute{
 		pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, 0),
 	}
-	if attributes, err = libHandle.GetAttributeValue(session.Handle, privHandle, attributes); err != nil {
+	if attributes, err = session.Ctx.GetAttributeValue(session.Handle, privHandle, attributes); err != nil {
 		return nil, err
 	}
 	keyType := bytesToUlong(attributes[0].Value)

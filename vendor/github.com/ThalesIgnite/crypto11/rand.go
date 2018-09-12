@@ -30,11 +30,11 @@ type PKCS11RandReader struct {
 // This implements the Reader interface for PKCS11RandReader.
 func (reader PKCS11RandReader) Read(data []byte) (n int, err error) {
 	var result []byte
-	if libHandle == nil {
+	if instance.ctx == nil {
 		return 0, ErrNotConfigured
 	}
-	if err = withSession(defaultSlot, func(session *PKCS11Session) error {
-		result, err = libHandle.GenerateRandom(session.Handle, len(data))
+	if err = withSession(instance.slot, func(session *PKCS11Session) error {
+		result, err = instance.ctx.GenerateRandom(session.Handle, len(data))
 		return err
 	}); err != nil {
 		return 0, err
