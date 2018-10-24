@@ -24,6 +24,11 @@
 #   go-tests = true
 #   unused-packages = true
 
+required = [
+  "golang.org/x/lint/golint",
+  "golang.org/x/tools/cmd/goimports",
+]
+
 [[constraint]]
   name = "github.com/cloudflare/cfssl"
   branch = "master"

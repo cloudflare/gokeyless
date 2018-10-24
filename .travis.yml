@@ -11,15 +11,20 @@ matrix:
     - go: master
 
 install:
-  - go get golang.org/x/tools/cmd/goimports
-  - go get -u github.com/golang/lint/golint
+  - go install ./vendor/golang.org/x/tools/cmd/goimports
+  - go install ./vendor/golang.org/x/lint/golint
 
 script:
-  - go get -t $(go list ./... | grep -v /vendor/)
   - make vet lint test-nohsm
 
 notifications:
   email:
     recipients:
       - cbroglie@cloudflare.com
-      - kyle@cloudflare.com
+      - gabriel@cloudflare.com
+      - leland@cloudflare.com
+      - mihir@cloudflare.com
+      - mitul@cloudflare.com
+      - nicky@cloudflare.com
+    on_success: never
+    on_failure: change
