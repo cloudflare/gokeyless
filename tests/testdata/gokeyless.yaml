@@ -1,0 +1,14 @@
+loglevel: 0
+hostname: bank.com
+zone_id:
+origin_ca_api_key:
+private_key-stores:
+ - dir: .
+auth_cert: server.pem
+auth_key: server-key.pem
+cloudflare_ca_cert: ca.pem
+port: 2407
+pid_file:
+delegated_cert: delegate.pem
+delegated_privkey: delegate.key
+delegated_ttl: 86400

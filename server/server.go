@@ -178,6 +178,8 @@ type Server struct {
 	sealer Sealer
 	// dispatcher is an RPC server that exposes arbitrary APIs to the client.
 	dispatcher *rpc.Server
+	// limitedDispatcher is an RPC server for APIs less trusted clients can be trusted with
+	limitedDispatcher *rpc.Server
 
 	listeners []net.Listener
 	wp        *workerPool
@@ -201,9 +203,10 @@ func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPo
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 			},
 		},
-		keys:       NewDefaultKeystore(),
-		stats:      newStatistics(),
-		dispatcher: rpc.NewServer(),
+		keys:              NewDefaultKeystore(),
+		stats:             newStatistics(),
+		dispatcher:        rpc.NewServer(),
+		limitedDispatcher: rpc.NewServer(),
 	}
 }
 
@@ -257,6 +260,11 @@ func (s *Server) SetSealer(sealer Sealer) {
 // for information on what kinds of recievers can be registered.
 func (s *Server) RegisterRPC(rcvr interface{}) error {
 	return s.dispatcher.Register(rcvr)
+}
+
+// RegisterLimitedRPC makes RPCs availible for limited clients.
+func (s *Server) RegisterLimitedRPC(rcvr interface{}) error {
+	return s.limitedDispatcher.Register(rcvr)
 }
 
 // GetCert is a function that returns a certificate given a request.
@@ -428,6 +436,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		}
 
 		return w.s.makeRespondResponse(req, ptxt, requestBegin)
+
 	case protocol.OpRSASignMD5SHA1:
 		opts = crypto.MD5SHA1
 	case protocol.OpRSASignSHA1:
@@ -476,6 +485,44 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	}
 
 	return w.s.makeRespondResponse(req, sig, requestBegin)
+}
+
+type limitedWorker struct {
+	s    *Server
+	name string
+}
+
+func newLimitedWorker(s *Server, name string) *limitedWorker {
+	return &limitedWorker{s: s, name: name}
+}
+
+func (w *limitedWorker) Do(job interface{}) interface{} {
+	req := job.(request)
+	pkt := req.pkt
+	requestBegin := time.Now()
+	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
+		req.connName,
+		w.name,
+		pkt.Operation.Opcode,
+		pkt.Header.ID,
+		pkt.Operation.SNI,
+		pkt.Operation.ServerIP,
+		pkt.Operation.SKI)
+	switch pkt.Operation.Opcode {
+	case protocol.OpPing:
+		return w.s.makePongResponse(req, pkt.Operation.Payload, requestBegin)
+	case protocol.OpRPC:
+		codec := newServerCodec(pkt.Payload)
+
+		err := w.s.limitedDispatcher.ServeRequest(codec)
+		if err != nil {
+			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
+			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		}
+		return w.s.makeRespondResponse(req, codec.response, requestBegin)
+	default:
+		return w.s.makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
+	}
 }
 
 const randBufferLen = 1024
@@ -662,8 +709,15 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 
-		tconn := tls.Server(c, s.tlsConfig)
-		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
+		tconn := tls.Server(c, s.tlsConfig) //If limited use just limited workers
+		var conn *conn
+		if s.config.isLimited(tconn) {
+			log.Debug("Connection is limited")
+			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
+		} else {
+			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
+		}
+
 		log.Debugf("connection %v: spawned", c.RemoteAddr())
 		handle := client.SpawnConn(conn)
 
@@ -758,9 +812,11 @@ func (s *Server) Close() {
 // worker goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
 	ecdsaWorkers, otherWorkers int
+	limitedWorkers             int
 	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
+	isLimited                  func(conn *tls.Conn) bool
 }
 
 const (
@@ -775,17 +831,20 @@ const (
 //  - The number of background workers is 1
 //  - The TCP connection timeout is 30 seconds
 //  - The Unix connection timeout is 1 hour
+//  - All connections have full power
 func DefaultServeConfig() *ServeConfig {
 	necdsa := runtime.NumCPU()
 	if runtime.NumCPU() < 2 {
 		necdsa = 2
 	}
 	return &ServeConfig{
-		ecdsaWorkers: necdsa,
-		otherWorkers: 2,
-		bgWorkers:    1,
-		tcpTimeout:   defaultTCPTimeout,
-		unixTimeout:  defaultUnixTimeout,
+		ecdsaWorkers:   necdsa,
+		otherWorkers:   2,
+		limitedWorkers: 0,
+		bgWorkers:      1,
+		tcpTimeout:     defaultTCPTimeout,
+		unixTimeout:    defaultUnixTimeout,
+		isLimited:      func(conn *tls.Conn) bool { return false },
 	}
 }
 
@@ -823,6 +882,18 @@ func (s *ServeConfig) BackgroundWorkers() int {
 	return s.bgWorkers
 }
 
+// WithLimitedWorkers specifies the number of limited worker goroutines to
+// use.
+func (s *ServeConfig) WithLimitedWorkers(n int) *ServeConfig {
+	s.limitedWorkers = n
+	return s
+}
+
+// LimitedWorkers returns the number of limited worker goroutines.
+func (s *ServeConfig) LimitedWorkers() int {
+	return s.limitedWorkers
+}
+
 // WithTCPTimeout specifies the network connection timeout to use for TCP
 // connections. This timeout is used when reading from or writing to established
 // network connections.
@@ -857,6 +928,14 @@ func (s *ServeConfig) UnixTimeout() time.Duration {
 // busy.
 func (s *ServeConfig) WithUtilization(f func(other, ecdsa float64)) *ServeConfig {
 	s.utilization = f
+	return s
+}
+
+// WithIsLimited specifies the function f to call to determine if a connection is limited.
+// f is called on each new connection, and if f returns true the connection will only serve
+// OpPing and OpRPC requests, and only RPCs registered with RegisterLimitedRPC
+func (s *ServeConfig) WithIsLimited(f func(conn *tls.Conn) bool) *ServeConfig {
+	s.isLimited = f
 	return s
 }
 

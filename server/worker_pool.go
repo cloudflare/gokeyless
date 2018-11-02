@@ -11,8 +11,9 @@ import (
 )
 
 type workerPool struct {
-	ECDSA *worker.Pool
-	Other *worker.Pool
+	ECDSA   *worker.Pool
+	Other   *worker.Pool
+	Limited *worker.Pool
 
 	bg     *worker.BackgroundPool
 	utilCh chan struct{}
@@ -22,6 +23,7 @@ type workerPool struct {
 func newWorkerPool(s *Server) *workerPool {
 	var others []worker.Worker
 	var ecdsas []worker.Worker
+	var limiteds []worker.Worker
 	var background []worker.BackgroundWorker
 	rbuf := buf_ecdsa.NewSyncRandBuffer(randBufferLen, elliptic.P256())
 	for i := 0; i < s.config.otherWorkers; i++ {
@@ -30,15 +32,19 @@ func newWorkerPool(s *Server) *workerPool {
 	for i := 0; i < s.config.ecdsaWorkers; i++ {
 		ecdsas = append(ecdsas, newECDSAWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
 	}
+	for i := 0; i < s.config.limitedWorkers; i++ {
+		limiteds = append(limiteds, newLimitedWorker(s, fmt.Sprintf("limited-%v", i)))
+	}
 	for i := 0; i < s.config.bgWorkers; i++ {
 		background = append(background, newRandGenWorker(rbuf))
 	}
 
 	wp := &workerPool{
-		ECDSA:  worker.NewPool(ecdsas...),
-		Other:  worker.NewPool(others...),
-		bg:     worker.NewBackgroundPool(background...),
-		utilCh: make(chan struct{}),
+		ECDSA:   worker.NewPool(ecdsas...),
+		Other:   worker.NewPool(others...),
+		Limited: worker.NewPool(limiteds...),
+		bg:      worker.NewBackgroundPool(background...),
+		utilCh:  make(chan struct{}),
 	}
 
 	if util := s.config.utilization; util != nil {
