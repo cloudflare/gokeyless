@@ -428,6 +428,7 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		}
 
 		return w.s.makeRespondResponse(req, ptxt, requestBegin)
+
 	case protocol.OpRSASignMD5SHA1:
 		opts = crypto.MD5SHA1
 	case protocol.OpRSASignSHA1:
@@ -476,6 +477,44 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 	}
 
 	return w.s.makeRespondResponse(req, sig, requestBegin)
+}
+
+type limitedWorker struct {
+	s    *Server
+	name string
+}
+
+func newLimitedWorker(s *Server, name string) *limitedWorker {
+	return &limitedWorker{s: s, name: name}
+}
+
+func (w *limitedWorker) Do(job interface{}) interface{} {
+	req := job.(request)
+	pkt := req.pkt
+	requestBegin := time.Now()
+	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
+		req.connName,
+		w.name,
+		pkt.Operation.Opcode,
+		pkt.Header.ID,
+		pkt.Operation.SNI,
+		pkt.Operation.ServerIP,
+		pkt.Operation.SKI)
+	switch pkt.Operation.Opcode {
+	case protocol.OpPing:
+		return w.s.makePongResponse(req, pkt.Operation.Payload, requestBegin)
+	case protocol.OpRPC:
+		codec := newServerCodec(pkt.Payload)
+
+		err := w.s.dispatcher.ServeRequest(codec)
+		if err != nil {
+			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
+			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		}
+		return w.s.makeRespondResponse(req, codec.response, requestBegin)
+	default:
+		return w.s.makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
+	}
 }
 
 const randBufferLen = 1024
@@ -662,8 +701,15 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 
-		tconn := tls.Server(c, s.tlsConfig)
-		conn := newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
+		tconn := tls.Server(c, s.tlsConfig) //If limited use just limited workers
+		var conn *conn
+		if s.config.IsLimited(tconn) {
+			log.Debug("Connection is limited")
+			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
+		} else {
+			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
+		}
+
 		log.Debugf("connection %v: spawned", c.RemoteAddr())
 		handle := client.SpawnConn(conn)
 
@@ -758,9 +804,11 @@ func (s *Server) Close() {
 // worker goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
 	ecdsaWorkers, otherWorkers int
+	limitedWorkers             int
 	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
+	IsLimited                  func(conn *tls.Conn) bool
 }
 
 const (
@@ -781,11 +829,13 @@ func DefaultServeConfig() *ServeConfig {
 		necdsa = 2
 	}
 	return &ServeConfig{
-		ecdsaWorkers: necdsa,
-		otherWorkers: 2,
-		bgWorkers:    1,
-		tcpTimeout:   defaultTCPTimeout,
-		unixTimeout:  defaultUnixTimeout,
+		ecdsaWorkers:   necdsa,
+		otherWorkers:   2,
+		limitedWorkers: 2,
+		bgWorkers:      1,
+		tcpTimeout:     defaultTCPTimeout,
+		unixTimeout:    defaultUnixTimeout,
+		IsLimited:      func(conn *tls.Conn) bool { return false },
 	}
 }
 

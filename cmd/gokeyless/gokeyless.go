@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/delegated"
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -44,7 +45,10 @@ type Config struct {
 	Port        int `yaml:"port" mapstructure:"port"`
 	MetricsPort int `yaml:"metrics_port" mapstructure:"metrics_port"`
 
-	PidFile string `yaml:"pid_file" mapstructure:"pid_file"`
+	PidFile          string        `yaml:"pid_file" mapstructure:"pid_file"`
+	DelegatedCert    string        `yaml:"delegated_cert" mapstructure:"delegated_cert"`
+	DelegatedPrivKey string        `yaml:"delegated_privkey" mapstructure:"delegated_privkey"` //TODO: support all options we do for locating the key
+	DelegatedTTL     time.Duration `yaml:"delegated_ttl" mapstructure:"delegated_ttl"`
 }
 
 // PrivateKeyStoreConfig defines a key store.
@@ -255,6 +259,15 @@ func main() {
 			fmt.Fprintf(f, "%d", os.Getpid())
 			f.Close()
 		}
+	}
+
+	if config.DelegatedCert != "" {
+		delegator, err := delegated.FromFile(config.DelegatedCert, config.DelegatedPrivKey, time.Duration(config.DelegatedTTL))
+		if err != nil {
+			log.Fatalf("error initalizing delegated credential responder %v", err)
+		}
+		log.Infof("Running the delegator")
+		s.RegisterRPC(delegator)
 	}
 
 	go func() {
