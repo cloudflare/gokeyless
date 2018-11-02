@@ -34,4 +34,3 @@ func TestParsePKCS11URI(t *testing.T) {
 		}
 	}
 }
-
