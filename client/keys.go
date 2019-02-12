@@ -86,6 +86,7 @@ type PrivateKey struct {
 	serverIP  net.IP
 	keyserver string
 	sni       string
+	certID    string
 }
 
 // Public returns the public key corresponding to the opaque private key.
@@ -116,6 +117,7 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 			ClientIP: key.clientIP,
 			ServerIP: key.serverIP,
 			SNI:      key.sni,
+			CertID:   key.certID,
 		})
 		if err != nil {
 			conn.Close()

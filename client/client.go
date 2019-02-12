@@ -187,6 +187,27 @@ func (c *Client) getRemote(server string) (Remote, error) {
 	return r, nil
 }
 
+// NewRemoteSignerWithCertID
+func NewRemoteSignerWithCertID(c *Client, keyserver string, ski protocol.SKI,
+	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (crypto.Signer, error) {
+	priv := PrivateKey{
+		public:    pub,
+		client:    c,
+		ski:       ski,
+		sni:       sni,
+		serverIP:  serverIP,
+		keyserver: keyserver,
+		certID:    certID,
+	}
+
+	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
+	// implement Decrypt.
+	if _, ok := pub.(*rsa.PublicKey); ok {
+		return &Decrypter{priv}, nil
+	}
+	return &priv, nil
+}
+
 // NewRemoteSigner returns a remote keyserver based crypto.Signer,
 // ski, sni, and serverIP are used to identified the key by the remote
 // keyserver.
@@ -215,6 +236,15 @@ func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
 // the remote Signer uses those key identification info to contact the
 // remote keyserver for keyless operations.
 func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+	ski, err := protocol.GetSKI(pub)
+	if err != nil {
+		return nil, err
+	}
+	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
+}
+
+// NewRemoteSignerTemplaceWithCertID
+func (c *Client) NewRemoteSignerTemplateWithCertID(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
