@@ -187,7 +187,9 @@ func (c *Client) getRemote(server string) (Remote, error) {
 	return r, nil
 }
 
-// NewRemoteSignerWithCertID
+// NewRemoteSignerWithCertID returns a remote keyserver based crypto.Signer
+// ski, sni, serverIP, and certID are used to identify the key by the remote
+// keyserver.
 func NewRemoteSignerWithCertID(c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (crypto.Signer, error) {
 	priv := PrivateKey{
@@ -243,7 +245,10 @@ func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey,
 	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
 }
 
-// NewRemoteSignerTemplaceWithCertID
+// NewRemoteSignerTemplateWithCertID returns a remote keyserver
+// based crypto.Signer with the public key.
+// SKI is computed from public key, and along with sni, serverIP, and
+// certID the remote signer uses these to contact the remote keyserver.
 func (c *Client) NewRemoteSignerTemplateWithCertID(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
