@@ -249,7 +249,7 @@ func (c *Client) NewRemoteSignerTemplateWithCertID(keyserver string, pub crypto.
 	if err != nil {
 		return nil, err
 	}
-	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
+	return NewRemoteSignerWithCertID(c, keyserver, ski, pub, sni, serverIP, certID)
 }
 
 // NewRemoteSignerByPublicKey returns a remote keyserver based signer
