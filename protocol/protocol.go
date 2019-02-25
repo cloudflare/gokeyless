@@ -37,6 +37,8 @@ const (
 	TagSubjectKeyIdentifier Tag = 0x04
 	// TagServerIP implies an IPv4/6 address of the proxyed TLS server.
 	TagServerIP Tag = 0x05
+	// TagCertID implies the CertID of the certificate
+	TagCertID Tag = 0x06
 	// TagOpcode implies an opcode describing operation to be performed OR operation status.
 	TagOpcode Tag = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
@@ -394,6 +396,7 @@ type Operation struct {
 	ClientIP net.IP
 	ServerIP net.IP
 	SNI      string
+	CertID   string
 }
 
 func (o *Operation) String() string {
@@ -472,6 +475,9 @@ func (o *Operation) Bytes() uint16 {
 		// TODO(joshlf): Is len([]byte(o.SNI)) guaranteed to be the same as len(o.SNI)?
 		add(tlvLen(len([]byte(o.SNI))))
 	}
+	if o.CertID != "" {
+		add(tlvLen(len([]byte(o.CertID))))
+	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -527,6 +533,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 
 	if o.SNI != "" {
 		b = append(b, tlvBytes(TagServerName, []byte(o.SNI))...)
+	}
+
+	if o.CertID != "" {
+		b = append(b, tlvBytes(TagCertID, []byte(o.CertID))...)
 	}
 
 	if len(b)+headerSize < paddedLength {
@@ -604,6 +614,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.ServerIP = ip
 		case TagServerName:
 			o.SNI = string(data)
+		case TagCertID:
+			o.CertID = string(data)
 		case TagPadding:
 			// ignore padding
 		default:
