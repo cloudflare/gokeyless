@@ -249,7 +249,7 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 		return cn, nil
 	}
 
-	config := copyTLSConfig(c.Config)
+	config := c.Config.Clone()
 	config.ServerName = s.ServerName
 	log.Debugf("Dialing %s at %s\n", s.ServerName, s.String())
 	inner, err := tls.DialWithDialer(c.Dialer, s.Network(), s.String(), config)
@@ -288,28 +288,6 @@ func (s *singleRemote) PingAll(c *Client, concurrency int) {
 	err = cn.Conn.Ping(nil)
 	if err != nil {
 		cn.Close()
-	}
-}
-
-func copyTLSConfig(c *tls.Config) *tls.Config {
-	return &tls.Config{
-		Certificates:             c.Certificates,
-		NameToCertificate:        c.NameToCertificate,
-		GetCertificate:           c.GetCertificate,
-		RootCAs:                  c.RootCAs,
-		NextProtos:               c.NextProtos,
-		ServerName:               c.ServerName,
-		ClientAuth:               c.ClientAuth,
-		ClientCAs:                c.ClientCAs,
-		InsecureSkipVerify:       c.InsecureSkipVerify,
-		CipherSuites:             c.CipherSuites,
-		PreferServerCipherSuites: c.PreferServerCipherSuites,
-		SessionTicketsDisabled:   c.SessionTicketsDisabled,
-		SessionTicketKey:         c.SessionTicketKey,
-		ClientSessionCache:       c.ClientSessionCache,
-		MinVersion:               c.MinVersion,
-		MaxVersion:               c.MaxVersion,
-		CurvePreferences:         c.CurvePreferences,
 	}
 }
 
