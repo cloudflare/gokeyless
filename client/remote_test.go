@@ -42,6 +42,11 @@ var (
 	deadRemote  Remote
 )
 
+func fixedCurrentTime() time.Time {
+	// Fixed time where certificates are still valid.
+	return time.Date(2019, time.March, 1, 0, 0, 0, 0, time.UTC)
+}
+
 // LoadKey attempts to load a private key from PEM or DER.
 func LoadKey(in []byte) (priv crypto.Signer, err error) {
 	priv, err = helpers.ParsePrivateKeyPEM(in)
@@ -60,6 +65,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.TLSConfig().Time = fixedCurrentTime
 
 	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
 	if err != nil {
@@ -88,6 +94,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	c.Config.Time = fixedCurrentTime
 	// set aggressive timeout since all tests use local connections
 	c.Dialer.Timeout = 3 * time.Second
 
@@ -178,6 +185,7 @@ func TestSlowServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s2.TLSConfig().Time = fixedCurrentTime
 
 	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {

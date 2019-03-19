@@ -97,6 +97,7 @@ func TestTLSProxy(t *testing.T) {
 	}
 
 	clientConfig := &tls.Config{
+		Time:       fixedCurrentTime,
 		ServerName: serverConfig.Certificates[0].Leaf.Subject.CommonName,
 		RootCAs:    x509.NewCertPool(),
 	}

@@ -43,6 +43,11 @@ var (
 	remote     client.Remote
 )
 
+func fixedCurrentTime() time.Time {
+	// Fixed time where certificates are still valid.
+	return time.Date(2019, time.March, 1, 0, 0, 0, 0, time.UTC)
+}
+
 var testSoftHSM bool
 
 type dummySealer struct{}
@@ -112,6 +117,7 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	s.TLSConfig().Time = fixedCurrentTime
 
 	if !testSoftHSM {
 		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
@@ -148,6 +154,7 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	c.Config.Time = fixedCurrentTime
 
 	remote, err = c.LookupServer(serverAddr)
 	if err != nil {
