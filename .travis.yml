@@ -14,6 +14,8 @@ install:
   - go install ./vendor/golang.org/x/tools/cmd/goimports
   - go install ./vendor/golang.org/x/lint/golint
 
+go_import_path: github.com/cloudflare/gokeyless
+
 script:
   - make vet lint test-nohsm
 
