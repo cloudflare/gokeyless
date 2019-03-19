@@ -45,6 +45,8 @@ type Config struct {
 	MetricsPort int `yaml:"metrics_port" mapstructure:"metrics_port"`
 
 	PidFile string `yaml:"pid_file" mapstructure:"pid_file"`
+
+	CurrentTime string `yaml:"current_time" mapstructure:"current_time"`
 }
 
 // PrivateKeyStoreConfig defines a key store.
@@ -59,6 +61,7 @@ var (
 
 	privateKeyDirs  string
 	privateKeyFiles string
+	currentTime     time.Time
 
 	configFile       string
 	manualMode       bool
@@ -101,6 +104,7 @@ func init() {
 	flagset.Int("metrics-port", 0, "Port for key server to serve /metrics")
 	viper.SetDefault("metrics_port", 2406)
 	flagset.String("pid-file", "", "File to store PID of running server")
+	flagset.String("current-time", "", "Current time used for certificate validation (for testing only)")
 	// These override the private_key_stores value from the config file.
 	flagset.StringVar(&privateKeyDirs, "private-key-dirs", "", "Comma-separated list of directories in which private keys are stored with .key extension")
 	flagset.StringVar(&privateKeyFiles, "private-key-files", "", "Comma-separated list of private key files")
@@ -147,6 +151,14 @@ func initConfig() error {
 	}
 
 	// Validate the config.
+	if config.CurrentTime != "" {
+		var err error
+		currentTime, err = time.Parse(time.RFC3339, config.CurrentTime)
+		if err != nil {
+			return fmt.Errorf("invalid time format for --current-time")
+		}
+	}
+
 	for _, store := range config.PrivateKeyStores {
 		if (store.Dir != "" && store.File == "" && store.URI == "") ||
 			(store.Dir == "" && store.File != "" && store.URI == "") ||
@@ -242,6 +254,10 @@ func main() {
 		log.Fatal("cannot start server:", err)
 	}
 
+	if !currentTime.IsZero() {
+		s.TLSConfig().Time = func() time.Time { return currentTime }
+	}
+
 	keys, err := initKeyStore()
 	if err != nil {
 		log.Fatal(err)
@@ -286,7 +302,10 @@ func initKeyStore() (server.Keystore, error) {
 
 // validCertExpiry checks if cerficiate is currently valid.
 func validCertExpiry(cert *x509.Certificate) bool {
-	now := time.Now()
+	now := currentTime
+	if currentTime.IsZero() {
+		now = time.Now()
+	}
 	if now.Before(cert.NotBefore) {
 		return false
 	}
