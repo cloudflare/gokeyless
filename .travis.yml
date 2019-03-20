@@ -17,7 +17,7 @@ install:
 go_import_path: github.com/cloudflare/gokeyless
 
 script:
-  - make vet lint test-nohsm
+  - make vet lint test-nohsm test-trust
 
 notifications:
   email:

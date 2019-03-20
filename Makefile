@@ -100,6 +100,10 @@ test:
 test-nohsm:
 	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
 
+.PHONY: test-trust
+test-trust: gokeyless
+	tests/trust-check.sh
+
 .PHONY: benchmark-softhsm
 benchmark-softhsm:
 	go test -v -race ./server -bench HSM -args -softhsm2
