@@ -48,9 +48,9 @@ func newWorkerPool(s *Server) *workerPool {
 	}
 
 	if util := s.config.utilization; util != nil {
+		wp.utilWg.Add(1)
 		go func() {
 			ticker := time.NewTicker(1 * time.Second)
-			wp.utilWg.Add(1)
 			for {
 				select {
 				case <-ticker.C:
