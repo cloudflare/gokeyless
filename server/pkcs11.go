@@ -1,4 +1,4 @@
-// +build cgo
+// +build pkcs11,cgo
 
 package server
 

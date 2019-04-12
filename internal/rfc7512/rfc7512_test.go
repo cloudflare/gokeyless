@@ -1,3 +1,5 @@
+// +build pkcs11,cgo
+
 package rfc7512
 
 import (
