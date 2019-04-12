@@ -35,7 +35,7 @@ install-config:
 	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
-	@GOOS=$(OS) GOARCH=$(ARCH) go build -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
+	@GOOS=$(OS) GOARCH=$(ARCH) go build -tags pkcs11 -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
 
 .PHONY: clean
 clean:
@@ -81,11 +81,11 @@ $(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 .PHONY: dev
 dev: gokeyless
 gokeyless: $(shell find . -type f -name '*.go')
-	go build -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
+	go build -tags pkcs11 -ldflags "-X main.version=dev" -o $@ ./cmd/gokeyless/...
 
 .PHONY: vet
 vet:
-	go vet `go list ./... | grep -v /vendor/`
+	go vet -tags pkcs11 `go list ./... | grep -v /vendor/`
 
 .PHONY: lint
 lint:
@@ -93,12 +93,12 @@ lint:
 
 .PHONY: test
 test:
-	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
-	GODEBUG=cgocheck=2 go test -v -cover -race ./tests -args -softhsm2
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race ./tests -args -softhsm2
 
 .PHONY: test-nohsm
 test-nohsm:
-	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race `go list ./... | grep -v /vendor/`
 
 .PHONY: test-trust
 test-trust: gokeyless
@@ -106,4 +106,4 @@ test-trust: gokeyless
 
 .PHONY: benchmark-softhsm
 benchmark-softhsm:
-	go test -v -race ./server -bench HSM -args -softhsm2
+	go test -tags pkcs11 -v -race ./server -bench HSM -args -softhsm2

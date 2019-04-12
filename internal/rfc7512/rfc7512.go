@@ -1,4 +1,4 @@
-// +build cgo
+// +build pkcs11,cgo
 
 // Package rfc7512 provides a parser for the PKCS #11 URI format as specified in
 // RFC 7512: The PKCS #11 URI Scheme. Additionally, it provides a wrapper around
