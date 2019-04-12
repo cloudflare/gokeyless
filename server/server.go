@@ -708,25 +708,24 @@ func (s *Server) Serve(l net.Listener) error {
 			log.Errorf("Accept error: %v; shutting down server", err)
 			return err
 		}
-
-		tconn := tls.Server(c, s.tlsConfig) //If limited use just limited workers
-		var conn *conn
-		if s.config.isLimited(tconn) {
-			log.Debug("Connection is limited")
-			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
-		} else {
-			conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
-		}
-
-		log.Debugf("connection %v: spawned", c.RemoteAddr())
-		handle := client.SpawnConn(conn)
-
-		mapMtx.Lock()
-		conns[handle] = true
-		mapMtx.Unlock()
-
 		wg.Add(1)
 		go func() {
+			tconn := tls.Server(c, s.tlsConfig) // If limited use just limited workers
+			var conn *conn
+			if s.config.isLimited(tconn) {
+				log.Debug("Connection is limited")
+				conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
+			} else {
+				conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
+			}
+
+			log.Debugf("connection %v: spawned", c.RemoteAddr())
+			handle := client.SpawnConn(conn)
+
+			mapMtx.Lock()
+			conns[handle] = true
+			mapMtx.Unlock()
+
 			handle.Wait()
 			log.Debugf("connection %v: removed", c.RemoteAddr())
 			mapMtx.Lock()
