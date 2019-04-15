@@ -688,12 +688,14 @@ func (s *Server) Serve(l net.Listener) error {
 	// handle method concurrently deletes its connection from it once the
 	// connection dies.
 	var mapMtx sync.Mutex
+	var shutdown bool
 	conns := make(map[*client.ConnHandle]bool)
 	var wg sync.WaitGroup
 
 	defer func() {
 		// Close all of the connections so that the associated goroutines quit.
 		mapMtx.Lock()
+		shutdown = true
 		for c := range conns {
 			c.Destroy()
 		}
@@ -723,6 +725,14 @@ func (s *Server) Serve(l net.Listener) error {
 			handle := client.SpawnConn(conn)
 
 			mapMtx.Lock()
+			if shutdown {
+				mapMtx.Unlock()
+				log.Debugf("connection %v: server is shutting down", c.RemoteAddr())
+				handle.Destroy()
+				handle.Wait()
+				wg.Done()
+				return
+			}
 			conns[handle] = true
 			mapMtx.Unlock()
 
