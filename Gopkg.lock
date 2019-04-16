@@ -49,6 +49,14 @@
   revision = "6a9aea36fb410b71add0d0e58438e0cfc44d3076"
 
 [[projects]]
+  digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  pruneopts = "UT"
+  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
+  version = "v1.1.1"
+
+[[projects]]
   digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
   name = "github.com/fsnotify/fsnotify"
   packages = ["."]
@@ -161,6 +169,14 @@
   version = "v1.1.0"
 
 [[projects]]
+  digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
+  name = "github.com/pmezard/go-difflib"
+  packages = ["difflib"]
+  pruneopts = "UT"
+  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
   digest = "1:c58e432f2d21c9d694e9e22eccef7c1db9b31caa6cb6db63dd2dc08bf3e9f037"
   name = "github.com/prometheus/client_golang"
@@ -245,20 +261,24 @@
   version = "v1.0.2"
 
 [[projects]]
+  digest = "1:8ff03ccc603abb0d7cce94d34b613f5f6251a9e1931eba1a3f9888a9029b055c"
+  name = "github.com/stretchr/testify"
+  packages = [
+    "assert",
+    "require",
+    "suite",
+  ]
+  pruneopts = "UT"
+  revision = "ffdc059bfe9ce6a4e144ba849dbedead332c6053"
+  version = "v1.3.0"
+
+[[projects]]
   digest = "1:cc63e0fc9ffc0cea20af20807ae8d50df2a4840ead930518a645179be770409e"
   name = "github.com/youtube/vitess"
   packages = ["go/pools"]
   pruneopts = "UT"
   revision = "66e84fadcc1a7e956e7ffcebcaaba0b04132ca1f"
   version = "v2.2"
-
-[[projects]]
-  branch = "master"
-  digest = "1:33515eb28dde71a92a85c98241b044886b82d73e85417e072ca09c97265cd73d"
-  name = "go4.org"
-  packages = ["testing/functest"]
-  pruneopts = "UT"
-  revision = "fba789b7e39ba524b9e60c45c37a50fae63a2a09"
 
 [[projects]]
   branch = "master"
@@ -379,7 +399,8 @@
     "github.com/prometheus/client_golang/prometheus",
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
-    "go4.org/testing/functest",
+    "github.com/stretchr/testify/require",
+    "github.com/stretchr/testify/suite",
     "golang.org/x/crypto/ed25519",
     "golang.org/x/lint/golint",
     "golang.org/x/tools/cmd/goimports",

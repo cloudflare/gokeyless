@@ -10,60 +10,55 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
-	"log"
 	"math/big"
 	"sync"
 	"testing"
 	"time"
 
-	"go4.org/testing/functest"
-
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ed25519"
 
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/protocol"
 )
 
-func TestConnect(t *testing.T) {
+func (s *IntegrationTestSuite) TestConnect() {
+	require := require.New(s.T())
+
 	if testing.Short() {
-		t.SkipNow()
+		s.T().SkipNow()
 	}
 
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
 	defer conn.Close()
 
-	if err := conn.Ping([]byte("Hello!")); err != nil {
-		t.Fatal(err)
-	}
+	err = conn.Ping([]byte("Hello!"))
+	require.NoError(err)
 }
 
-func TestBlacklist(t *testing.T) {
+func (s *IntegrationTestSuite) TestBlacklist() {
+	require := require.New(s.T())
+
 	// create a new client with blacklist
 	blc, err := client.NewClientFromFile(clientCert, clientKey, keyserverCA)
-	if err != nil {
-		log.Fatal(err)
-	}
+	require.NoError(err)
+	require.NotNil(blc)
+
 	blc.ClearBlacklist()
 	// add server certificate to blacklist
-	for _, cert := range s.TLSConfig().Certificates {
+	for _, cert := range s.server.TLSConfig().Certificates {
 		if cert.Leaf == nil {
-			if len(cert.Certificate) == 0 {
-				t.Fatal("invalid server certificate")
-			}
-			var err error
-			if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
-				log.Fatal(err)
-			}
+			require.False(len(cert.Certificate) == 0, "invalid server certificate")
+			leaf, err := x509.ParseCertificate(cert.Certificate[0])
+			require.NoError(err)
+			cert.Leaf = leaf
 		}
-		blc.PopulateBlacklistFromCert(cert.Leaf, 3407)
+		blc.PopulateBlacklistFromCert(cert.Leaf, s.serverPort)
 	}
 
-	if _, err := remote.Dial(blc); err == nil {
-		t.Fatal("was able to dial blacklisted server")
-	}
+	_, err = s.remote.Dial(blc)
+	require.Error(err, "was able to dial blacklisted server")
 }
 
 var ptxt = []byte("Hello!")
@@ -74,67 +69,58 @@ func hashMsg(h crypto.Hash) []byte {
 	return msgHash.Sum(nil)
 }
 
-func checkSignature(pub crypto.PublicKey, h crypto.Hash, pss bool) func(res functest.Result) error {
-	return func(res functest.Result) error {
-		if res.Panicked {
-			return fmt.Errorf("%v", res.Panic)
-		}
-		if res.Result[1] != nil {
-			return res.Result[1].(error)
-		}
-		sig := res.Result[0].([]byte)
+func checkSignature(pub crypto.PublicKey, h crypto.Hash, sig []byte) error {
+	if rsaPub, ok := pub.(*rsa.PublicKey); ok {
+		return rsa.VerifyPKCS1v15(rsaPub, h, hashMsg(h), sig)
+	}
 
-		if rsaPub, ok := pub.(*rsa.PublicKey); ok {
-			if pss {
-				pssOpts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: h}
-				if err := rsa.VerifyPSS(rsaPub, pssOpts.Hash, hashMsg(h), sig, pssOpts); err != nil {
-					return err
-				}
-			} else {
-				if err := rsa.VerifyPKCS1v15(rsaPub, h, hashMsg(h), sig); err != nil {
-					return err
-				}
-			}
-		} else if ecdsaPub, ok := pub.(*ecdsa.PublicKey); ok {
-			ecdsaSig := new(struct{ R, S *big.Int })
-			asn1.Unmarshal(sig, ecdsaSig)
-			if !ecdsa.Verify(ecdsaPub, hashMsg(h), ecdsaSig.R, ecdsaSig.S) {
-				return errors.New("failed to verify")
-			}
-		} else if ed25519Pub, ok := pub.(ed25519.PublicKey); ok {
-			if !ed25519.Verify(ed25519Pub, testEd25519Msg, sig) {
-				return errors.New("failed to verify")
-			}
+	if ecdsaPub, ok := pub.(*ecdsa.PublicKey); ok {
+		ecdsaSig := new(struct{ R, S *big.Int })
+		asn1.Unmarshal(sig, ecdsaSig)
+		if !ecdsa.Verify(ecdsaPub, hashMsg(h), ecdsaSig.R, ecdsaSig.S) {
+			return errors.New("failed to verify")
 		}
 		return nil
 	}
-}
 
-func TestSign(t *testing.T) {
-	if testing.Short() {
-		t.SkipNow()
+	if ed25519Pub, ok := pub.(ed25519.PublicKey); ok {
+		if !ed25519.Verify(ed25519Pub, testEd25519Msg, sig) {
+			return errors.New("failed to verify")
+		}
+		return nil
 	}
 
-	f := functest.New((*client.PrivateKey).Sign)
-	f.Test(t,
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA1, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA256, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA384, false)),
-		f.In(&rsaKey.PrivateKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
-			checkSignature(rsaKey.Public(), crypto.SHA512, false)),
+	return fmt.Errorf("unknown public key type: %v", pub)
+}
 
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA1), crypto.SHA1).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA1, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA256), crypto.SHA256).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA256, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA384), crypto.SHA384).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA384, false)),
-		f.In(ecdsaKey, rand.Reader, hashMsg(crypto.SHA512), crypto.SHA512).Check(
-			checkSignature(ecdsaKey.Public(), crypto.SHA512, false)),
-	)
+func (s *IntegrationTestSuite) TestSign() {
+	if testing.Short() {
+		s.T().SkipNow()
+	}
+
+	tests := []struct {
+		name string
+		s    crypto.Signer
+		h    crypto.Hash
+	}{
+		{"rsa-SHA1", s.rsaKey, crypto.SHA1},
+		{"rsa-SHA256", s.rsaKey, crypto.SHA256},
+		{"rsa-SHA384", s.rsaKey, crypto.SHA384},
+		{"rsa-SHA512", s.rsaKey, crypto.SHA512},
+		{"ecdsa-SHA1", s.ecdsaKey, crypto.SHA1},
+		{"ecdsa-SHA256", s.ecdsaKey, crypto.SHA256},
+		{"ecdsa-SHA384", s.ecdsaKey, crypto.SHA384},
+		{"ecdsa-SHA512", s.ecdsaKey, crypto.SHA512},
+	}
+	for _, test := range tests {
+		s.T().Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+
+			b, err := test.s.Sign(rand.Reader, hashMsg(test.h), test.h)
+			require.NoError(err)
+			require.NoError(checkSignature(test.s.Public(), test.h, b))
+		})
+	}
 }
 
 // testEd25519Msg is the message that would be signed to produce the
@@ -161,113 +147,92 @@ var testEd25519Msg = []byte{
 	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
 }
 
-func TestEd25519Sign(t *testing.T) {
+func (s *IntegrationTestSuite) TestEd25519Sign() {
+	require := require.New(s.T())
+
 	if testing.Short() {
-		t.SkipNow()
+		s.T().SkipNow()
 	}
 	if testSoftHSM {
 		// TODO(cjpatton) Decide if it's worth adding an Ed25519 test for
 		// SoftHSM. If so, then move this test to `TestSign()` above.
-		t.Skip("skipping test")
+		s.T().Skip("skipping test")
 	}
 
-	f := functest.New((*client.PrivateKey).Sign)
-	f.Test(t, f.In(ed25519Key, rand.Reader, testEd25519Msg, crypto.Hash(0)).Check(
-		checkSignature(ed25519Key.Public(), crypto.Hash(0), false)),
-	)
+	b, err := s.ed25519Key.Sign(rand.Reader, testEd25519Msg, crypto.Hash(0))
+	require.NoError(err)
+	require.NoError(checkSignature(s.ed25519Key.Public(), crypto.Hash(0), b))
 }
 
-func TestRSADecrypt(t *testing.T) {
+func (s *IntegrationTestSuite) TestRSADecrypt() {
+	require := require.New(s.T())
+
 	if testing.Short() {
-		t.SkipNow()
+		s.T().SkipNow()
 	}
 	if testSoftHSM {
-		t.Skip("skipping test; SoftHSM2 does not support PKCS1v15")
+		s.T().Skip("skipping test; SoftHSM2 does not support PKCS1v15")
 	}
 
-	var pub *rsa.PublicKey
-	var ok bool
-	if pub, ok = rsaKey.Public().(*rsa.PublicKey); !ok {
-		t.Fatal("couldn't use public key as RSA key")
-	}
+	pub, ok := s.rsaKey.Public().(*rsa.PublicKey)
+	require.True(ok, "couldn't use public key as RSA key")
 
-	var err error
-	var c, m []byte
-	if c, err = rsa.EncryptPKCS1v15(rand.Reader, pub, ptxt); err != nil {
-		t.Fatal(err)
-	}
+	c, err := rsa.EncryptPKCS1v15(rand.Reader, pub, ptxt)
+	require.NoError(err)
 
-	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Compare(ptxt, m) != 0 {
-		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
-		t.Fatal("rsa decrypt failed")
-	}
+	m, err := s.rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{})
+	require.NoError(err)
+	require.Equal(0, bytes.Compare(ptxt, m), fmt.Sprintf("rsa decrypt failed m: %dB\tptxt: %dB", len(m), len(ptxt)))
 
-	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)}); err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Compare(ptxt, m) != 0 {
-		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
-		t.Fatal("rsa decrypt failed")
-	}
+	m, err = s.rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)})
+	require.NoError(err)
+	require.Equal(0, bytes.Compare(ptxt, m), fmt.Sprintf("rsa decrypt failed m: %dB\tptxt: %dB", len(m), len(ptxt)))
 
-	if m, err = rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1}); err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Compare(ptxt, m) == 0 {
-		t.Logf("m: %dB\tptxt: %dB", len(m), len(ptxt))
-		t.Fatal("rsa decrypt succeeded despite incorrect SessionKeyLen")
-	}
+	m, err = s.rsaKey.Decrypt(rand.Reader, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1})
+	require.NoError(err)
+	require.NotEqual(0, bytes.Compare(ptxt, m), fmt.Sprintf("rsa decrypt succeeded despite incorrect SessionKeyLen m: %dB\tptxt: %dB", len(m), len(ptxt)))
 }
 
-func TestSeal(t *testing.T) {
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+func (s *IntegrationTestSuite) TestSeal() {
+	require := require.New(s.T())
+
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
 	defer conn.Close()
 
 	r := make([]byte, 20)
-	if _, err := rand.Read(r); err != nil {
-		t.Fatal(err)
-	}
+	_, err = rand.Read(r)
+	require.NoError(err)
 
 	resp, err := conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpSeal,
 		Payload: r,
 	})
-	if err != nil || resp.Opcode == protocol.OpError {
-		t.Fatal(err, resp.GetError())
-	} else if !bytes.Equal([]byte("OpSeal "), resp.Payload[:len("OpSeal ")]) {
-		t.Fatal("payload type mismatch")
-	} else if !bytes.Equal(r, resp.Payload[len("OpSeal "):]) {
-		t.Fatal("payload value mismatch")
-	}
+	require.NoError(err)
+	require.NotEqual(protocol.OpError, resp.Opcode, resp.GetError())
+	require.True(bytes.Equal([]byte("OpSeal "), resp.Payload[:len("OpSeal ")]), "payload type mismatch")
+	require.True(bytes.Equal(r, resp.Payload[len("OpSeal "):]), "payload value mismatch")
 
 	resp, err = conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpUnseal,
 		Payload: r,
 	})
-	if err != nil || resp.Opcode == protocol.OpError {
-		t.Fatal(err, resp.GetError())
-	} else if !bytes.Equal([]byte("OpUnseal "), resp.Payload[:len("OpUnseal ")]) {
-		t.Fatal("payload type mismatch")
-	} else if !bytes.Equal(r, resp.Payload[len("OpUnseal "):]) {
-		t.Fatal("payload value mismatch")
-	}
+	require.NoError(err)
+	require.NotEqual(protocol.OpError, resp.Opcode, resp.GetError())
+	require.True(bytes.Equal([]byte("OpUnseal "), resp.Payload[:len("OpUnseal ")]), "payload type mismatch")
+	require.True(bytes.Equal(r, resp.Payload[len("OpUnseal "):]), "payload value mismatch")
 }
 
-func TestConcurrency(t *testing.T) {
+func (s *IntegrationTestSuite) TestConcurrency() {
+	require := require.New(s.T())
+
 	if testing.Short() {
-		t.SkipNow()
+		s.T().SkipNow()
 	}
 
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
+	defer conn.Close()
 
 	var err1, err2 error
 	var wg sync.WaitGroup
@@ -309,31 +274,30 @@ func TestConcurrency(t *testing.T) {
 	}()
 
 	wg.Wait()
-	if err1 != nil || err2 != nil {
-		t.Fatalf("err1=%v, err2=%v", err1, err2)
-	}
+	require.NoError(err1)
+	require.NoError(err2)
 }
 
-func TestRPC(t *testing.T) {
-	conn, err := remote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+func (s *IntegrationTestSuite) TestRPC() {
+	require := require.New(s.T())
+
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
+	defer conn.Close()
+
 	client := conn.RPC()
 	defer func() {
 		client.Close()
 		conn.Close()
 	}()
 
-	out := ""
-	if err = client.Call("DummyRPC.Append", "Hello", &out); err != nil {
-		t.Fatal(err)
-	} else if out != "Hello World" {
-		t.Fatal("recieved wrong output")
-	}
+	var out string
+	err = client.Call("DummyRPC.Append", "Hello", &out)
+	require.NoError(err)
+	require.Equal("Hello World", out)
 
 	err = client.Call("DummyRPC.Error", "Hello", &out)
-	if err == nil || err.Error() != "remote rpc error" {
-		t.Fatal("recieved wrong error")
-	}
+	require.Error(err)
+	require.Equal("remote rpc error", err.Error())
+	require.Equal("Hello World", out)
 }
