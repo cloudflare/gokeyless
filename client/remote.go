@@ -293,9 +293,9 @@ func (s *singleRemote) Dial(c *Client) (*Conn, error) {
 			err := cn.Conn.DoRead()
 			if err != nil {
 				if err == io.EOF {
-					log.Debug("connection closed by server")
+					log.Debugf("connection %v: closed by server", inner.RemoteAddr())
 				} else {
-					log.Errorf("failed to read next header from %v: %v", s.String(), err)
+					log.Errorf("connection %v: failed to read next header from %v: %v", inner.RemoteAddr(), s.String(), err)
 				}
 				break
 			}

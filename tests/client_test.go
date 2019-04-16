@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -313,7 +314,7 @@ func (s *IntegrationTestSuite) TestShutdown() {
 	// connections to the server, and then ask the server to shutdown and
 	// confirm it doesn't hang. The connection tracking logic is a bit hairy, so
 	// we rely on this test and the race detector to help ensure correctness.
-	const n = 100
+	const n = 25
 	wg := sync.WaitGroup{}
 	wg.Add(n)
 	wg2 := sync.WaitGroup{}
@@ -340,11 +341,20 @@ func (s *IntegrationTestSuite) TestShutdown() {
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
 
-	err := shutdownServer(s.server, 5*time.Second)
+	err := shutdownServer(s.server, 15*time.Second)
+
+	// Dump the stacks of running goroutines if we're about to fail.
+	if err != nil {
+		buf := make([]byte, 1<<20)
+		runtime.Stack(buf, true)
+		fmt.Printf("%s\n", buf)
+	}
+
 	close(done) // stop spawning connections
 	wg2.Wait()
-	require.NoError(err)
 
 	// Let TearDownTest know we've already closed it.
 	s.server = nil
+
+	require.NoError(err)
 }

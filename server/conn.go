@@ -24,7 +24,8 @@ type conn struct {
 	ecdsaPool, otherPool *worker.Pool
 	s                    *Server
 
-	closed uint32 // set to 1 when the conn is closed.
+	closed        uint32 // set to 1 when the conn is closed
+	serverClosing uint32 // set to 1 when the conn is being closed by the server (i.e. not an error)
 
 	stats *connStats
 }
@@ -164,6 +165,7 @@ func (c *conn) IsAlive() bool {
 }
 
 func (c *conn) Destroy() {
+	atomic.StoreUint32(&c.serverClosing, 1)
 	c.LogConnErr(nil)
 	c.conn.Close()
 	atomic.StoreUint32(&c.closed, 1)
@@ -173,6 +175,14 @@ func (c *conn) Destroy() {
 // Any error logged here is a fatal one that will cause us to terminate the
 // connection and clean up the client.
 func (c *conn) LogConnErr(err error) {
+	// When the server is proactively closing connections, this function will be
+	// called twice: once with a nil error, and then once again with a non-nil
+	// error when the reader goroutine reads from the closed connection. This
+	// check ensures we don't log an expected error.
+	if err != nil && atomic.LoadUint32(&c.serverClosing) == 1 {
+		return
+	}
+
 	if err == nil { // We're destroying the connection
 		log.Debugf("connection %v: server closing connection %s", c.name, c.stats)
 	} else if err == io.EOF {
