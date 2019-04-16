@@ -305,3 +305,46 @@ func (s *IntegrationTestSuite) TestRPC() {
 	require.Equal("remote rpc error", err.Error())
 	require.Equal("Hello World", out)
 }
+
+func (s *IntegrationTestSuite) TestShutdown() {
+	require := require.New(s.T())
+
+	// The idea here is to spawn a bunch of goroutines which keep making new
+	// connections to the server, and then ask the server to shutdown and
+	// confirm it doesn't hang. The connection tracking logic is a bit hairy, so
+	// we rely on this test and the race detector to help ensure correctness.
+	const n = 100
+	wg := sync.WaitGroup{}
+	wg.Add(n)
+	wg2 := sync.WaitGroup{}
+	wg2.Add(n)
+	done := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func() {
+			wg.Done()
+			defer wg2.Done()
+
+			// Continuously spawn new connections without closing them.
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				// Errors don't phase us, we're just trying to generate load.
+				s.remote.Dial(s.client)
+			}
+		}()
+	}
+
+	wg.Wait()
+	time.Sleep(100 * time.Millisecond)
+
+	err := shutdownServer(s.server, 5*time.Second)
+	close(done) // stop spawning connections
+	wg2.Wait()
+	require.NoError(err)
+
+	// Let TearDownTest know we've already closed it.
+	s.server = nil
+}
