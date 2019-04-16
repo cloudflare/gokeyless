@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudflare/backoff"
@@ -23,6 +24,10 @@ const (
 	connPoolSize = 512
 	defaultTTL   = 1 * time.Hour
 )
+
+// TestDisableConnectionPool allows the connection pooling to be disabled during
+// tests which require concurrency.
+var TestDisableConnectionPool uint32
 
 // connPoolType is a async safe pool of established gokeyless Conn
 // so we don't need to do TLS handshake unnecessarily.
@@ -43,6 +48,7 @@ type Remote interface {
 type Conn struct {
 	*conn.Conn
 	addr string
+	done chan struct{}
 }
 
 // A singleRemote is an individual remote server
@@ -64,6 +70,7 @@ func NewConn(addr string, conn *conn.Conn) *Conn {
 	c := &Conn{
 		Conn: conn,
 		addr: addr,
+		done: make(chan struct{}, 1),
 	}
 	go healthchecker(c)
 	return c
@@ -83,6 +90,14 @@ func (conn *Conn) Close() error {
 	// TODO(joshlf): This function seems fishy because it's meant to interact with
 	// the pool, and thus could close a connection out from somebody else's feet.
 	connPool.Remove(conn.addr)
+	// Try sending on the buffered channel, but only if it immediately succeeds.
+	// We need to do this rather than closing the channel since Close may be
+	// called multiple times.
+	select {
+	case conn.done <- struct{}{}:
+	default:
+		break
+	}
 	return conn.Conn.Close()
 }
 
@@ -98,7 +113,12 @@ func healthchecker(c *Conn) {
 	b.SetDecay(20 * time.Minute)
 
 	for {
-		time.Sleep(b.Duration())
+		select {
+		case <-time.After(b.Duration()):
+			break
+		case <-c.done:
+			return
+		}
 
 		err := c.Conn.Ping(nil)
 		if err != nil {
@@ -118,6 +138,9 @@ func healthchecker(c *Conn) {
 
 // Get returns a Conn from the pool if there is any.
 func (p *connPoolType) Get(key string) *Conn {
+	if atomic.LoadUint32(&TestDisableConnectionPool) == 1 {
+		return nil
+	}
 	// ignore stale indicator
 	value, _ := p.pool.Get(key)
 	conn, ok := value.(*Conn)
@@ -129,12 +152,18 @@ func (p *connPoolType) Get(key string) *Conn {
 
 // Add adds a Conn to the pool.
 func (p *connPoolType) Add(key string, conn *Conn) {
+	if atomic.LoadUint32(&TestDisableConnectionPool) == 1 {
+		return
+	}
 	p.pool.Set(key, conn, defaultTTL)
 	log.Debug("add conn with key:", key)
 }
 
 // Remove removes a Conn keyed by key.
 func (p *connPoolType) Remove(key string) {
+	if atomic.LoadUint32(&TestDisableConnectionPool) == 1 {
+		return
+	}
 	p.pool.Remove(key)
 	log.Debug("remove conn with key:", key)
 }

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -229,6 +230,9 @@ func (s *IntegrationTestSuite) TestConcurrency() {
 	if testing.Short() {
 		s.T().SkipNow()
 	}
+
+	// Here we explicitly want to test connection multiplexing.
+	atomic.StoreUint32(&client.TestDisableConnectionPool, 0)
 
 	conn, err := s.remote.Dial(s.client)
 	require.NoError(err)

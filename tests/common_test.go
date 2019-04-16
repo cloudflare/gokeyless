@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -125,6 +126,11 @@ func TestSuite(t *testing.T) {
 func (s *IntegrationTestSuite) SetupTest() {
 	require := require.New(s.T())
 
+	// By default we want to exercise the connection management code as much as
+	// possible, so we disable connection multiplexing. Individual tests can
+	// change this as necessary.
+	atomic.StoreUint32(&client.TestDisableConnectionPool, 1)
+
 	var err error
 	s.server, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
 	require.NoError(err)
@@ -193,6 +199,8 @@ func (s *IntegrationTestSuite) TearDownTest() {
 		err := shutdownServer(s.server, 2*time.Second)
 		require.NoError(err)
 	}
+
+	atomic.StoreUint32(&client.TestDisableConnectionPool, 0)
 }
 
 func shutdownServer(server *server.Server, timeout time.Duration) error {
@@ -207,4 +215,8 @@ func shutdownServer(server *server.Server, timeout time.Duration) error {
 	case <-time.After(timeout):
 		return fmt.Errorf("timed out waiting for Close() after %v", timeout)
 	}
+}
+
+func (s *IntegrationTestSuite) TearDownSuite() {
+	atomic.StoreUint32(&client.TestDisableConnectionPool, 0)
 }
