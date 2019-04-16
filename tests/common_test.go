@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,9 +42,8 @@ const (
 )
 
 func init() {
-	log.Level = log.LevelFatal
-
 	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.IntVar(&log.Level, "loglevel", log.LevelFatal, "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.Parse()
 }
 
@@ -153,7 +153,7 @@ func (s *IntegrationTestSuite) SetupTest() {
 	err = s.server.RegisterRPC(DummyRPC{})
 	require.NoError(err)
 
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0") // let the OS assign a random port
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0") // let the OS assign a random port
 	require.NoError(err)
 	l, err := net.ListenTCP("tcp", addr)
 	require.NoError(err)
@@ -171,7 +171,8 @@ func (s *IntegrationTestSuite) SetupTest() {
 	require.NoError(err)
 	s.client.Config.Time = fixedCurrentTime
 
-	s.remote, err = s.client.LookupServer(s.serverAddr)
+	// Specify 127.0.0.1 rather than localhost since we don't listen on IPv6.
+	s.remote, err = s.client.LookupServerWithName("localhost", "127.0.0.1", strconv.Itoa(s.serverPort))
 	require.NoError(err)
 	s.client.DefaultRemote = s.remote
 

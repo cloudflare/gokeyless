@@ -696,6 +696,7 @@ func (s *Server) Serve(l net.Listener) error {
 		// Close all of the connections so that the associated goroutines quit.
 		mapMtx.Lock()
 		shutdown = true
+		log.Debugf("Shutting down %v; closing %d active connections", l.Addr().String(), len(conns))
 		for c := range conns {
 			c.Destroy()
 		}
