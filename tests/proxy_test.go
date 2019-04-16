@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -52,15 +54,15 @@ func clientFunc(conn *tls.Conn) error {
 // TestTLSProxy tests a real TLS keyless server which
 // uses gokeyless client to finish TLS hanshake with a
 // real TLS client.
-func TestTLSProxy(t *testing.T) {
+func (s *IntegrationTestSuite) TestTLSProxy() {
+	require := require.New(s.T())
+
 	if testing.Short() {
-		t.SkipNow()
+		s.T().SkipNow()
 	}
 
-	cert, err := c.LoadTLSCertificate(serverAddr, tlsCert)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cert, err := s.client.LoadTLSCertificate(s.serverAddr, tlsCert)
+	require.NoError(err)
 
 	serverConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -68,9 +70,7 @@ func TestTLSProxy(t *testing.T) {
 	}
 
 	l, err := tls.Listen(network, localAddr, serverConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err)
 	defer l.Close()
 	go func() {
 		for c, err := l.Accept(); err == nil; c, err = l.Accept() {
@@ -82,38 +82,27 @@ func TestTLSProxy(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	keys := server.NewDefaultKeystore()
-	s.SetKeystore(keys)
+	s.server.SetKeystore(keys)
 	pemKey, err := ioutil.ReadFile(tlsKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err)
 	p, _ := pem.Decode(pemKey)
 	rsaKey, err := x509.ParseECPrivateKey(p.Bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := keys.Add(nil, rsaKey); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err)
+	err = keys.Add(nil, rsaKey)
+	require.NoError(err)
 
 	clientConfig := &tls.Config{
 		Time:       fixedCurrentTime,
-		ServerName: serverConfig.Certificates[0].Leaf.Subject.CommonName,
+		ServerName: serverConfig.ServerName,
 		RootCAs:    x509.NewCertPool(),
 	}
 
 	caBytes, err := ioutil.ReadFile(caCert)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err)
 	clientConfig.RootCAs.AppendCertsFromPEM(caBytes)
 
 	conn, err := tls.Dial(network, localAddr, clientConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err)
 
-	if err = clientFunc(conn); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(clientFunc(conn))
 }

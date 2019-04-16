@@ -6,8 +6,14 @@ import (
 	"encoding/pem"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
+	"net"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
@@ -21,7 +27,6 @@ const (
 	serverCert     = "testdata/server.pem"
 	serverKey      = "testdata/server-key.pem"
 	keylessCA      = "testdata/ca.pem"
-	serverAddr     = "localhost:3407"
 	rsaPrivKey     = "testdata/rsa.key"
 	ecdsaPrivKey   = "testdata/ecdsa.key"
 	ed25519PrivKey = "testdata/ed25519.key"
@@ -34,14 +39,25 @@ const (
 	ed25519PubKey = "testdata/ed25519.pubkey"
 )
 
-var (
-	s          *server.Server
-	c          *client.Client
+func init() {
+	log.Level = log.LevelFatal
+
+	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+	flag.Parse()
+}
+
+type IntegrationTestSuite struct {
+	suite.Suite
+
+	serverPort int
+	serverAddr string
+	server     *server.Server
+	client     *client.Client
 	rsaKey     *client.Decrypter
 	ecdsaKey   *client.PrivateKey
 	ed25519Key *client.PrivateKey
 	remote     client.Remote
-)
+}
 
 func fixedCurrentTime() time.Time {
 	// Fixed time where certificates are still valid.
@@ -84,7 +100,7 @@ func (DummyRPC) Error(_ string, _ *string) error {
 }
 
 // helper function reads a pub key from a file and convert it to a signer
-func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
+func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 	pemBytes, err := ioutil.ReadFile(filepath)
 	if err != nil {
 		return nil, err
@@ -97,99 +113,98 @@ func NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
 			return nil, err
 		}
 	}
-	s, err := c.NewRemoteSignerByPublicKey("", pub)
-	if err != nil {
-		return nil, err
-	}
-	return s, err
+	return s.client.NewRemoteSignerByPublicKey("", pub)
 }
 
-// Set up compatible server and client for use by tests.
-func init() {
+func TestSuite(t *testing.T) {
+	s := &IntegrationTestSuite{}
+	suite.Run(t, s)
+}
+
+// SetupTest sets up a compatible server and client for use by tests.
+func (s *IntegrationTestSuite) SetupTest() {
+	require := require.New(s.T())
+
 	var err error
-
-	log.Level = log.LevelFatal
-
-	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
-	flag.Parse()
-
-	s, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
-	if err != nil {
-		log.Fatal(err)
-	}
-	s.TLSConfig().Time = fixedCurrentTime
+	s.server, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
+	require.NoError(err)
+	s.server.TLSConfig().Time = fixedCurrentTime
 
 	if !testSoftHSM {
 		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
-		if err != nil {
-			log.Fatal(err)
-		}
-		s.SetKeystore(keys)
+		require.NoError(err)
+		s.server.SetKeystore(keys)
 	} else {
 		keys := server.NewDefaultKeystore()
-		if err := keys.AddFromURI(params.RSAURI, server.DefaultLoadURI); err != nil {
-			log.Fatal(err)
-		}
-		if err := keys.AddFromURI(params.ECDSAURI, server.DefaultLoadURI); err != nil {
-			log.Fatal(err)
-		}
-		s.SetKeystore(keys)
+		err = keys.AddFromURI(params.RSAURI, loadURI)
+		require.NoError(err)
+		err = keys.AddFromURI(params.ECDSAURI, loadURI)
+		require.NoError(err)
+		s.server.SetKeystore(keys)
 	}
 
-	s.SetSealer(dummySealer{})
-	if err = s.RegisterRPC(DummyRPC{}); err != nil {
-		log.Fatal(err)
-	}
+	s.server.SetSealer(dummySealer{})
+	err = s.server.RegisterRPC(DummyRPC{})
+	require.NoError(err)
+
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0") // let the OS assign a random port
+	require.NoError(err)
+	l, err := net.ListenTCP("tcp", addr)
+	require.NoError(err)
+	s.serverPort = l.Addr().(*net.TCPAddr).Port
+	s.serverAddr = fmt.Sprintf("localhost:%d", s.serverPort)
 
 	listening := make(chan bool)
 	go func() {
 		listening <- true
-		if err := s.ListenAndServe(serverAddr); err != nil {
-			log.Fatal(err)
-		}
+		s.server.Serve(l)
 	}()
 	<-listening
 
-	c, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA)
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.Config.Time = fixedCurrentTime
+	s.client, err = client.NewClientFromFile(clientCert, clientKey, keyserverCA)
+	require.NoError(err)
+	s.client.Config.Time = fixedCurrentTime
 
-	remote, err = c.LookupServer(serverAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.DefaultRemote = remote
-
-	privKey, err := NewRemoteSignerByPubKeyFile(rsaPubKey)
-	if err != nil {
-		log.Fatal(err)
-	}
+	s.remote, err = s.client.LookupServer(s.serverAddr)
+	require.NoError(err)
+	s.client.DefaultRemote = s.remote
 
 	var ok bool
-	rsaKey, ok = privKey.(*client.Decrypter)
-	if !ok {
-		log.Fatal("bad RSA key registration")
-	}
+	privKey, err := s.NewRemoteSignerByPubKeyFile(rsaPubKey)
+	require.NoError(err)
+	s.rsaKey, ok = privKey.(*client.Decrypter)
+	require.True(ok, "bad RSA key registration")
 
-	privKey, err = NewRemoteSignerByPubKeyFile(ecdsaPubKey)
-	if err != nil {
-		log.Fatal(err)
-	}
+	privKey, err = s.NewRemoteSignerByPubKeyFile(ecdsaPubKey)
+	require.NoError(err)
+	s.ecdsaKey, ok = privKey.(*client.PrivateKey)
+	require.True(ok, "bad ECDSA key registration")
 
-	ecdsaKey, ok = privKey.(*client.PrivateKey)
-	if !ok {
-		log.Fatal("bad ECDSA key registration")
-	}
+	privKey, err = s.NewRemoteSignerByPubKeyFile(ed25519PubKey)
+	require.NoError(err)
+	s.ed25519Key, ok = privKey.(*client.PrivateKey)
+	require.True(ok, "bad Ed25519 key registration")
+}
 
-	privKey, err = NewRemoteSignerByPubKeyFile(ed25519PubKey)
-	if err != nil {
-		log.Fatal(err)
-	}
+func (s *IntegrationTestSuite) TearDownTest() {
+	require := require.New(s.T())
 
-	ed25519Key, ok = privKey.(*client.PrivateKey)
-	if !ok {
-		log.Fatal("bad Ed25519 key registration")
+	if s.server != nil {
+		err := shutdownServer(s.server, 2*time.Second)
+		require.NoError(err)
+	}
+}
+
+func shutdownServer(server *server.Server, timeout time.Duration) error {
+	closed := make(chan struct{})
+	go func() {
+		server.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timed out waiting for Close() after %v", timeout)
 	}
 }
