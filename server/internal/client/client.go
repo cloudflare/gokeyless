@@ -176,6 +176,7 @@ type ConnHandle struct {
 	conn      Conn
 	wg        sync.WaitGroup
 	responses chan interface{}
+	done      chan struct{}
 	blocker   *blocker
 	destroyed uint32 // atomically set to 1 when destroyed
 }
@@ -185,10 +186,9 @@ type ConnHandle struct {
 // the other waits of the results of these jobs and writes them to the client.
 func SpawnConn(conn Conn) *ConnHandle {
 	c := &ConnHandle{
-		conn: conn,
-		// responses needs to have an extra slot for the sentinal value sent by
-		// Destroy
-		responses: make(chan interface{}, maxOutstandingRequests+2),
+		conn:      conn,
+		responses: make(chan interface{}, maxOutstandingRequests),
+		done:      make(chan struct{}),
 		blocker:   newBlocker(maxOutstandingRequests),
 	}
 	c.wg.Add(2)
@@ -228,18 +228,18 @@ func SpawnConn(conn Conn) *ConnHandle {
 // If Destroy is called on a ConnHandle which has already been destroyed, the
 // behavior is undefined.
 func (c *ConnHandle) Destroy() {
-	wasDestroyed := !atomic.CompareAndSwapUint32(&c.destroyed, 0, 1)
-	if wasDestroyed {
-		// This isn't technically necessary - we document that behavior in this case
-		// is undefined - but it's nice and makes it less likely that bugs will slip
-		// by unnoticed.
-		panic("destroy already-destroyed ClientHandle")
-	}
 	c.destroy()
 	c.wg.Wait()
 }
 
 func (c *ConnHandle) destroy() {
+	// This function may be called both by the health checker and explicitly, so
+	// we ensure we only execute it once.
+	wasDestroyed := !atomic.CompareAndSwapUint32(&c.destroyed, 0, 1)
+	if wasDestroyed {
+		return
+	}
+
 	// Make any call (including currently outstanding calls) to GetJob or
 	// SubmitResult immediately return false. This will signal to getter or setter
 	// to return.
@@ -250,17 +250,8 @@ func (c *ConnHandle) destroy() {
 	c.blocker.Close()
 	// The submitter might be blocked reading from the responses channel, in which
 	// case c.client.Destroy() will not be sufficient to instruct it to return. In
-	// case that's true, we send this sentinal value to tell it to return. This
-	// type is not exported, so nobody outside this package can construct an
-	// instance of it. Note that it's very important that responses has one more
-	// slot than the number of possible outstanding requests so that there's
-	// guaranteed to be room for this sentinal value.
-	//
-	// NOTE: It would NOT be safe to simply close the channel instead because we
-	// don't know whether there are outstanding jobs being done by workers; if
-	// there are, then closing this channel would cause them to panic when they
-	// tried to write their responses.
-	c.responses <- done{}
+	// case that's true, we close the done channel to signal it to exit.
+	close(c.done)
 }
 
 // Wait blocks until both background goroutines have quit. This can happen
@@ -291,9 +282,11 @@ func (c *ConnHandle) getter() {
 
 func (c *ConnHandle) submitter() {
 	for {
-		resp := <-c.responses
-		if (resp == done{}) {
+		var resp interface{}
+		select {
+		case <-c.done:
 			return
+		case resp = <-c.responses:
 		}
 
 		// Indicate that we've read another response off the channel, so there's
@@ -306,10 +299,6 @@ func (c *ConnHandle) submitter() {
 		}
 	}
 }
-
-// An arbitrary type guaranteed not to be instantiated by anyone outside this
-// package.
-type done struct{}
 
 // A blocker is an object that keeps track of a number of outstanding requests,
 // and blocks if that number would exceed some maximum.

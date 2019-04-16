@@ -181,10 +181,10 @@ type Server struct {
 	// limitedDispatcher is an RPC server for APIs less trusted clients can be trusted with
 	limitedDispatcher *rpc.Server
 
-	listeners []net.Listener
+	listeners map[net.Listener]map[*client.ConnHandle]struct{}
+	shutdown  bool
 	wp        *workerPool
 	mtx       sync.Mutex
-	wg        sync.WaitGroup
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
@@ -192,7 +192,7 @@ func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPo
 	if config == nil {
 		config = DefaultServeConfig()
 	}
-	return &Server{
+	s := &Server{
 		config: config,
 		tlsConfig: &tls.Config{
 			ClientCAs:    keylessCA,
@@ -207,7 +207,10 @@ func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPo
 		stats:             newStatistics(),
 		dispatcher:        rpc.NewServer(),
 		limitedDispatcher: rpc.NewServer(),
+		listeners:         make(map[net.Listener]map[*client.ConnHandle]struct{}),
 	}
+	s.wp = newWorkerPool(s)
+	return s
 }
 
 // NewServerFromFile reads certificate, key, and CA files in order to create a Server.
@@ -624,39 +627,18 @@ func (w *randGenWorker) Do(ctx context.Context) {
 	}
 }
 
-func (s *Server) addListener(l net.Listener) {
+func (s *Server) addListener(l net.Listener) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
-	if len(s.listeners) == 0 {
-		if s.wp != nil {
-			panic("workerPool exists without any listeners")
-		}
-		s.wp = newWorkerPool(s)
+	if s.shutdown {
+		return fmt.Errorf("attempt to add listener after calling Close")
 	}
-	s.listeners = append(s.listeners, l)
-	s.wg.Add(1)
-}
-
-func (s *Server) removeListener(l net.Listener) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	var listeners []net.Listener
-	for i := range s.listeners {
-		if s.listeners[i] != l {
-			listeners = append(listeners, s.listeners[i])
-		}
+	if _, ok := s.listeners[l]; ok {
+		return fmt.Errorf("attempt to add duplicate listener: %s", l.Addr().String())
 	}
-	if len(listeners)+1 != len(s.listeners) {
-		panic("attempt to remove listener which was not added")
-	}
-	if len(listeners) == 0 {
-		s.wp.Destroy()
-		s.wp = nil
-	}
-	s.listeners = listeners
-	s.wg.Done()
+	s.listeners[l] = make(map[*client.ConnHandle]struct{})
+	return nil
 }
 
 // Serve accepts incoming connections on the Listener l, creating a new
@@ -667,10 +649,21 @@ func (s *Server) removeListener(l net.Listener) {
 // taken to be the lower of the TCP timeout and the Unix timeout specified in
 // the server's config.
 func (s *Server) Serve(l net.Listener) error {
-	s.addListener(l)
-	defer s.removeListener(l)
-	defer l.Close()
+	if err := s.addListener(l); err != nil {
+		return err
+	}
 
+	for {
+		c, err := accept(l)
+		if err != nil {
+			log.Errorf("Accept error: %v; shutting down server", err)
+			return err
+		}
+		go s.spawn(l, c)
+	}
+}
+
+func (s *Server) spawn(l net.Listener, c net.Conn) {
 	timeout := s.config.tcpTimeout
 	switch l.(type) {
 	case *net.TCPListener:
@@ -682,69 +675,41 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 	}
 
-	// This map keeps track of all existing connections. This allows us to close
-	// them all (and thus cause the associated goroutines to quit, freeing
-	// resources) when we're about to return. The mutex protects the map since the
-	// handle method concurrently deletes its connection from it once the
-	// connection dies.
-	var mapMtx sync.Mutex
-	var shutdown bool
-	conns := make(map[*client.ConnHandle]bool)
-	var wg sync.WaitGroup
-
-	defer func() {
-		// Close all of the connections so that the associated goroutines quit.
-		mapMtx.Lock()
-		shutdown = true
-		log.Debugf("Shutting down %v; closing %d active connections", l.Addr().String(), len(conns))
-		for c := range conns {
-			c.Destroy()
-		}
-		mapMtx.Unlock()
-		// Wait for all of the goroutines to quit.
-		wg.Wait()
-	}()
-
-	for {
-		c, err := accept(l)
-		if err != nil {
-			log.Errorf("Accept error: %v; shutting down server", err)
-			return err
-		}
-		wg.Add(1)
-		go func() {
-			tconn := tls.Server(c, s.tlsConfig) // If limited use just limited workers
-			var conn *conn
-			if s.config.isLimited(tconn) {
-				log.Debug("Connection is limited")
-				conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
-			} else {
-				conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
-			}
-
-			log.Debugf("connection %v: spawned", c.RemoteAddr())
-			handle := client.SpawnConn(conn)
-
-			mapMtx.Lock()
-			if shutdown {
-				mapMtx.Unlock()
-				log.Debugf("connection %v: server is shutting down", c.RemoteAddr())
-				handle.Destroy()
-				handle.Wait()
-				wg.Done()
-				return
-			}
-			conns[handle] = true
-			mapMtx.Unlock()
-
-			handle.Wait()
-			log.Debugf("connection %v: removed", c.RemoteAddr())
-			mapMtx.Lock()
-			delete(conns, handle)
-			mapMtx.Unlock()
-			wg.Done()
-		}()
+	tconn := tls.Server(c, s.tlsConfig) // If limited use just limited workers
+	var connStr string
+	var conn *conn
+	if s.config.isLimited(tconn) {
+		connStr = fmt.Sprintf("limited connection %v", c.RemoteAddr())
+		conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
+	} else {
+		connStr = fmt.Sprintf("connection %v", c.RemoteAddr())
+		conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.ECDSA, s.wp.Other)
 	}
+
+	// Acquire the lock to atomically spawn the reader/writer goroutines for
+	// this connenction and add it to the connections map.
+	s.mtx.Lock()
+	if s.shutdown {
+		s.mtx.Unlock()
+		log.Debugf("%s: rejected (server is shutting down)", connStr)
+		tconn.Close()
+		return
+	}
+	handle := client.SpawnConn(conn)
+	s.listeners[l][handle] = struct{}{}
+	s.mtx.Unlock()
+	log.Debugf("%s: spawned", connStr)
+
+	// Block here until the connection and associated goroutines have completed.
+	handle.Wait()
+	log.Debugf("%s: closed", connStr)
+
+	// Acquire the lock again to remove the handle from the connections map. If
+	// we've shutdown in the meantime this is a safe no-op.
+	s.mtx.Lock()
+	delete(s.listeners[l], handle)
+	s.mtx.Unlock()
+	log.Debugf("%s: removed", connStr)
 }
 
 // accept wraps l.Accept with capped exponential-backoff in the case of
@@ -802,19 +767,30 @@ func (s *Server) UnixListenAndServe(path string) error {
 	return errors.New("can't listen on empty path")
 }
 
-// Close shuts down the listeners.
-func (s *Server) Close() {
+// Close shuts down the listeners and their active connections.
+func (s *Server) Close() error {
 	// Close each active listener. This will result in the blocking calls to
 	// Accept to immediately return with error, which will trigger the teardown
 	// of all active connections and associated goroutines.
 	s.mtx.Lock()
-	for _, l := range s.listeners {
-		l.Close()
+	defer s.mtx.Unlock()
+	if s.shutdown {
+		return fmt.Errorf("Close called multiple times")
 	}
-	s.mtx.Unlock()
 
-	// Block here until all goroutines have returned.
-	s.wg.Wait()
+	s.shutdown = true
+	for l, conns := range s.listeners {
+		delete(s.listeners, l)
+
+		log.Debugf("Shutting down %v; closing %d active connections", l.Addr().String(), len(conns))
+		l.Close()
+		for conn := range conns {
+			conn.Destroy()
+		}
+	}
+	s.wp.Destroy()
+
+	return nil
 }
 
 // ServeConfig is used to configure a call to Server.Serve. It specifies the

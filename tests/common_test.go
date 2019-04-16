@@ -205,14 +205,13 @@ func (s *IntegrationTestSuite) TearDownTest() {
 }
 
 func shutdownServer(server *server.Server, timeout time.Duration) error {
-	closed := make(chan struct{})
+	closed := make(chan error)
 	go func() {
-		server.Close()
-		close(closed)
+		closed <- server.Close()
 	}()
 	select {
-	case <-closed:
-		return nil
+	case err := <-closed:
+		return err
 	case <-time.After(timeout):
 		return fmt.Errorf("timed out waiting for Close() after %v", timeout)
 	}
