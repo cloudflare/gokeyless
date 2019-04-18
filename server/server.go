@@ -675,10 +675,25 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		}
 	}
 
-	tconn := tls.Server(c, s.tlsConfig) // If limited use just limited workers
+	// Perform the TLS handshake explicitly so we can determine if this is a
+	// limited connection.
+	tconn := tls.Server(c, s.tlsConfig)
+	err := tconn.Handshake()
+	if err != nil {
+		log.Errorf("connection %v: handshake failed: %v", c.RemoteAddr(), err)
+		tconn.Close()
+		return
+	}
+	limited, err := s.config.isLimited(tconn.ConnectionState())
+	if err != nil {
+		log.Errorf("connection %v: could not determine if limited: %v", c.RemoteAddr(), err)
+		tconn.Close()
+		return
+	}
+
 	var connStr string
 	var conn *conn
-	if s.config.isLimited(tconn) {
+	if limited {
 		connStr = fmt.Sprintf("limited connection %v", c.RemoteAddr())
 		conn = newConn(s, c.RemoteAddr().String(), tconn, timeout, s.wp.Limited, s.wp.Limited)
 	} else {
@@ -802,7 +817,7 @@ type ServeConfig struct {
 	bgWorkers                  int
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
-	isLimited                  func(conn *tls.Conn) bool
+	isLimited                  func(state tls.ConnectionState) (bool, error)
 }
 
 const (
@@ -830,7 +845,7 @@ func DefaultServeConfig() *ServeConfig {
 		bgWorkers:      1,
 		tcpTimeout:     defaultTCPTimeout,
 		unixTimeout:    defaultUnixTimeout,
-		isLimited:      func(conn *tls.Conn) bool { return false },
+		isLimited:      func(state tls.ConnectionState) (bool, error) { return false, nil },
 	}
 }
 
@@ -920,7 +935,7 @@ func (s *ServeConfig) WithUtilization(f func(other, ecdsa float64)) *ServeConfig
 // WithIsLimited specifies the function f to call to determine if a connection is limited.
 // f is called on each new connection, and if f returns true the connection will only serve
 // OpPing and OpRPC requests, and only RPCs registered with RegisterLimitedRPC
-func (s *ServeConfig) WithIsLimited(f func(conn *tls.Conn) bool) *ServeConfig {
+func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, error)) *ServeConfig {
 	s.isLimited = f
 	return s
 }
