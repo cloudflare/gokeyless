@@ -375,6 +375,20 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		}
 		return w.s.makeRespondResponse(req, codec.response, requestBegin)
 
+	case protocol.OpCustom:
+		customOpFunc := w.s.config.CustomOpFunc()
+		if customOpFunc == nil {
+			log.Errorf("Worker %v: OpCustom is undefined", w.name)
+			return w.s.makeErrResponse(req, protocol.ErrCustomOpCodeUndefined, requestBegin)
+		}
+
+		res, err := customOpFunc(pkt.Payload)
+		if err != nil {
+			log.Errorf("Worker %v: OpCustom failed: %v", w.name, err)
+			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		}
+		return w.s.makeRespondResponse(req, res, requestBegin)
+
 	case protocol.OpEd25519Sign:
 		keyLoadBegin := time.Now()
 		key, err := w.s.keys.Get(&pkt.Operation)
@@ -818,6 +832,7 @@ type ServeConfig struct {
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
 	isLimited                  func(state tls.ConnectionState) (bool, error)
+	customOpFunc               func([]byte) ([]byte, error)
 }
 
 const (
@@ -938,6 +953,17 @@ func (s *ServeConfig) WithUtilization(f func(other, ecdsa float64)) *ServeConfig
 func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, error)) *ServeConfig {
 	s.isLimited = f
 	return s
+}
+
+// WithCustomOpFunction defines a function to use with the OpCustom opcode.
+func (s *ServeConfig) WithCustomOpFunction(f func([]byte) ([]byte, error)) *ServeConfig {
+	s.customOpFunc = f
+	return s
+}
+
+// CustomOpFunc returns the CustomOpFunc
+func (s *ServeConfig) CustomOpFunc() func([]byte) ([]byte, error) {
+	return s.customOpFunc
 }
 
 // serverCodec implements net/rpc.ServerCodec over the payload of a gokeyless

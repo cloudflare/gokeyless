@@ -95,6 +95,8 @@ const (
 	OpUnseal Op = 0x22
 	// OpRPC executes an arbitrary exported function on the server.
 	OpRPC Op = 0x23
+	// OpCustom requests a custom operation that can be defined by a function set in the server configuration
+	OpCustom Op = 0x24
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
@@ -114,6 +116,8 @@ func (op Op) Type() string {
 		return "rsa"
 	case OpECDSASignMD5SHA1, OpECDSASignSHA1, OpECDSASignSHA224, OpECDSASignSHA256, OpECDSASignSHA384, OpECDSASignSHA512:
 		return "ecdsa"
+	case OpCustom:
+		return "custom"
 	case OpRPC:
 		return "rpc"
 	case OpSeal, OpUnseal, OpPing, OpPong, OpResponse, OpError:
@@ -151,6 +155,8 @@ const (
 	ErrCertNotFound
 	// ErrExpired indicates that the sealed blob is no longer unsealable.
 	ErrExpired
+	// ErrCustomOpUndefined indicates that the custom opcode was invoked but no definition was provided to the server configuration.
+	ErrCustomOpCodeUndefined
 )
 
 func (e Error) Error() string {
@@ -181,6 +187,8 @@ func (e Error) String() string {
 		return "certificate not found"
 	case ErrExpired:
 		return "sealing key expired"
+	case ErrCustomOpCodeUndefined:
+		return "custom opcode function undefined"
 	default:
 		return "unknown error"
 	}

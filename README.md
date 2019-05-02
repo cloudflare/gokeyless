@@ -84,6 +84,7 @@ The following opcodes are supported in the opcode item:
     0x15 - operation: ECDSA sign SHA256
     0x16 - operation: ECDSA sign SHA384
     0x17 - operation: ECDSA sign SHA512
+    0x24 - operation: Custom Function
     0x35 - operation: RSASSA-PSS sign SHA256
     0x36 - operation: RSASSA-PSS sign SHA384
     0x36 - operation: RSASSA-PSS sign SHA512
@@ -135,7 +136,7 @@ The private keys that this server is able to use must be stored with a `.key` ex
 
     --private-key-dirs
 
-Note that the configuration file is the recommened way to specify these options; see below for more information.
+Note that the configuration file is the recommended way to specify these options; see below for more information.
 
 ### Hardware Security Modules
 
@@ -175,7 +176,7 @@ The the keyserver for Keyless SSL consists of a single binary file, `gokeyless`.
 
 You should add your Cloudflare account details to the configuration file, and optionally customize the location of the private key directory. Most users should not need to modify the remaining defaults.
 
-Each option can optionally be overriden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
+Each option can optionally be overridden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
 
 ## Testing
 

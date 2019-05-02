@@ -225,6 +225,20 @@ func (s *IntegrationTestSuite) TestSeal() {
 	require.True(bytes.Equal(r, resp.Payload[len("OpUnseal "):]), "payload value mismatch")
 }
 
+func (s *IntegrationTestSuite) TestUndefinedCustomOp() {
+	require := require.New(s.T())
+
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
+	defer conn.Close()
+
+	resp, err := conn.DoOperation(protocol.Operation{
+		Opcode:  protocol.OpCustom,
+	})
+	require.NoError(err)
+	require.NotEqual(protocol.ErrCustomOpCodeUndefined, resp.Opcode, resp.GetError())
+}
+
 func (s *IntegrationTestSuite) TestConcurrency() {
 	require := require.New(s.T())
 
