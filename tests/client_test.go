@@ -234,9 +234,10 @@ func (s *IntegrationTestSuite) TestUndefinedCustomOp() {
 
 	resp, err := conn.DoOperation(protocol.Operation{
 		Opcode:  protocol.OpCustom,
+		CustomFuncName: "undefined",
 	})
 	require.NoError(err)
-	require.NotEqual(protocol.ErrCustomOpCodeUndefined, resp.Opcode, resp.GetError())
+	require.NotEqual(protocol.ErrBadOpcode, resp.Opcode, resp.GetError())
 }
 
 func (s *IntegrationTestSuite) TestConcurrency() {

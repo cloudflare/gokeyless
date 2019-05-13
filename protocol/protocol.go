@@ -43,6 +43,8 @@ const (
 	TagOpcode Tag = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
 	TagPayload Tag = 0x12
+	// TagCustomFuncName implies a function name to use for the OpCustom Opcode.
+	TagCustomFuncName Tag = 0x13
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -155,8 +157,6 @@ const (
 	ErrCertNotFound
 	// ErrExpired indicates that the sealed blob is no longer unsealable.
 	ErrExpired
-	// ErrCustomOpUndefined indicates that the custom opcode was invoked but no definition was provided to the server configuration.
-	ErrCustomOpCodeUndefined
 )
 
 func (e Error) Error() string {
@@ -187,8 +187,6 @@ func (e Error) String() string {
 		return "certificate not found"
 	case ErrExpired:
 		return "sealing key expired"
-	case ErrCustomOpCodeUndefined:
-		return "custom opcode function undefined"
 	default:
 		return "unknown error"
 	}
@@ -405,6 +403,7 @@ type Operation struct {
 	ServerIP net.IP
 	SNI      string
 	CertID   string
+	CustomFuncName string
 }
 
 func (o *Operation) String() string {
@@ -547,6 +546,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagCertID, []byte(o.CertID))...)
 	}
 
+	if o.CustomFuncName != "" {
+		b = append(b, tlvBytes(TagCustomFuncName, []byte(o.CustomFuncName))...)
+	}
+
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -626,6 +629,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.CertID = string(data)
 		case TagPadding:
 			// ignore padding
+		case TagCustomFuncName:
+			o.CustomFuncName = string(data)
 		default:
 			return fmt.Errorf("unknown tag: %02x", tag)
 		}

@@ -59,6 +59,7 @@ The following tag values are possible for items:
     0x03 - Client's IP address,
     0x11 - Opcode,
     0x12 - Payload,
+    0x13 - CustomFuncName, (for use with opcode 0x24)
 
 A requests contains a header and the following items:
 
@@ -84,6 +85,7 @@ The following opcodes are supported in the opcode item:
     0x15 - operation: ECDSA sign SHA256
     0x16 - operation: ECDSA sign SHA384
     0x17 - operation: ECDSA sign SHA512
+    0x23 - operation: RPC
     0x24 - operation: Custom Function
     0x35 - operation: RSASSA-PSS sign SHA256
     0x36 - operation: RSASSA-PSS sign SHA384

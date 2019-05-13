@@ -379,10 +379,10 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 		customOpFunc := w.s.config.CustomOpFunc()
 		if customOpFunc == nil {
 			log.Errorf("Worker %v: OpCustom is undefined", w.name)
-			return w.s.makeErrResponse(req, protocol.ErrCustomOpCodeUndefined, requestBegin)
+			return w.s.makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
 		}
 
-		res, err := customOpFunc(pkt.Payload)
+		res, err := customOpFunc(pkt.Operation)
 		if err != nil {
 			log.Errorf("Worker %v: OpCustom failed: %v", w.name, err)
 			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
@@ -832,7 +832,7 @@ type ServeConfig struct {
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
 	isLimited                  func(state tls.ConnectionState) (bool, error)
-	customOpFunc               func([]byte) ([]byte, error)
+	customOpFunc               func(protocol.Operation) ([]byte, error)
 }
 
 const (
@@ -956,13 +956,13 @@ func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, err
 }
 
 // WithCustomOpFunction defines a function to use with the OpCustom opcode.
-func (s *ServeConfig) WithCustomOpFunction(f func([]byte) ([]byte, error)) *ServeConfig {
+func (s *ServeConfig) WithCustomOpFunction(f func(protocol.Operation) ([]byte, error)) *ServeConfig {
 	s.customOpFunc = f
 	return s
 }
 
 // CustomOpFunc returns the CustomOpFunc
-func (s *ServeConfig) CustomOpFunc() func([]byte) ([]byte, error) {
+func (s *ServeConfig) CustomOpFunc() func(protocol.Operation) ([]byte, error) {
 	return s.customOpFunc
 }
 
