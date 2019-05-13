@@ -395,14 +395,14 @@ func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
 
 // Operation defines a single (repeatable) keyless operation.
 type Operation struct {
-	Opcode   Op
-	Payload  []byte
-	SKI      SKI
-	Digest   Digest
-	ClientIP net.IP
-	ServerIP net.IP
-	SNI      string
-	CertID   string
+	Opcode         Op
+	Payload        []byte
+	SKI            SKI
+	Digest         Digest
+	ClientIP       net.IP
+	ServerIP       net.IP
+	SNI            string
+	CertID         string
 	CustomFuncName string
 }
 
