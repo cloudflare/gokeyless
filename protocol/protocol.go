@@ -43,6 +43,8 @@ const (
 	TagOpcode Tag = 0x11
 	// TagPayload implies a payload to sign or encrypt OR payload response.
 	TagPayload Tag = 0x12
+	// TagCustomFuncName implies a function name to use for the OpCustom Opcode.
+	TagCustomFuncName Tag = 0x13
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -95,6 +97,8 @@ const (
 	OpUnseal Op = 0x22
 	// OpRPC executes an arbitrary exported function on the server.
 	OpRPC Op = 0x23
+	// OpCustom requests a custom operation that can be defined by a function set in the server configuration
+	OpCustom Op = 0x24
 
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
@@ -114,6 +118,8 @@ func (op Op) Type() string {
 		return "rsa"
 	case OpECDSASignMD5SHA1, OpECDSASignSHA1, OpECDSASignSHA224, OpECDSASignSHA256, OpECDSASignSHA384, OpECDSASignSHA512:
 		return "ecdsa"
+	case OpCustom:
+		return "custom"
 	case OpRPC:
 		return "rpc"
 	case OpSeal, OpUnseal, OpPing, OpPong, OpResponse, OpError:
@@ -389,14 +395,15 @@ func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
 
 // Operation defines a single (repeatable) keyless operation.
 type Operation struct {
-	Opcode   Op
-	Payload  []byte
-	SKI      SKI
-	Digest   Digest
-	ClientIP net.IP
-	ServerIP net.IP
-	SNI      string
-	CertID   string
+	Opcode         Op
+	Payload        []byte
+	SKI            SKI
+	Digest         Digest
+	ClientIP       net.IP
+	ServerIP       net.IP
+	SNI            string
+	CertID         string
+	CustomFuncName string
 }
 
 func (o *Operation) String() string {
@@ -539,6 +546,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagCertID, []byte(o.CertID))...)
 	}
 
+	if o.CustomFuncName != "" {
+		b = append(b, tlvBytes(TagCustomFuncName, []byte(o.CustomFuncName))...)
+	}
+
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -618,6 +629,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.CertID = string(data)
 		case TagPadding:
 			// ignore padding
+		case TagCustomFuncName:
+			o.CustomFuncName = string(data)
 		default:
 			return fmt.Errorf("unknown tag: %02x", tag)
 		}
