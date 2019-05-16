@@ -45,6 +45,8 @@ const (
 	TagPayload Tag = 0x12
 	// TagCustomFuncName implies a function name to use for the OpCustom Opcode.
 	TagCustomFuncName Tag = 0x13
+	// TagExtra implies a supplemental payload.
+	TagExtra Tag = 0x14
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -397,6 +399,7 @@ func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
 type Operation struct {
 	Opcode         Op
 	Payload        []byte
+	Extra          []byte
 	SKI            SKI
 	Digest         Digest
 	ClientIP       net.IP
@@ -453,6 +456,9 @@ func (o *Operation) Bytes() uint16 {
 	add(tlvLen(1))
 	if len(o.Payload) > 0 {
 		add(tlvLen(len(o.Payload)))
+	}
+	if len(o.Extra) > 0 {
+		add(tlvLen(len(o.Extra)))
 	}
 	if o.SKI.Valid() {
 		add(tlvLen(len(o.SKI[:])))
@@ -512,6 +518,9 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 
 	if len(o.Payload) > 0 {
 		b = append(b, tlvBytes(TagPayload, o.Payload)...)
+	}
+	if len(o.Extra) > 0 {
+		b = append(b, tlvBytes(TagExtra, o.Extra)...)
 	}
 
 	if o.SKI.Valid() {
@@ -603,6 +612,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.Opcode = Op(data[0])
 		case TagPayload:
 			o.Payload = data
+		case TagExtra:
+			o.Extra = data
 		case TagSubjectKeyIdentifier:
 			if len(data) == sha1.Size {
 				copy(o.SKI[:], data)
