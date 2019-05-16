@@ -2,39 +2,85 @@
 
 package protocol
 
-import "fmt"
+import "strconv"
+
+func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[TagCertificateDigest-1]
+	_ = x[TagServerName-2]
+	_ = x[TagClientIP-3]
+	_ = x[TagSubjectKeyIdentifier-4]
+	_ = x[TagServerIP-5]
+	_ = x[TagCertID-6]
+	_ = x[TagOpcode-17]
+	_ = x[TagPayload-18]
+	_ = x[TagCustomFuncName-19]
+	_ = x[TagExtra-20]
+	_ = x[TagPadding-32]
+}
 
 const (
-	_Tag_name_0 = "TagCertificateDigestTagServerNameTagClientIPTagSubjectKeyIdentifierTagServerIP"
-	_Tag_name_1 = "TagOpcodeTagPayload"
+	_Tag_name_0 = "TagCertificateDigestTagServerNameTagClientIPTagSubjectKeyIdentifierTagServerIPTagCertID"
+	_Tag_name_1 = "TagOpcodeTagPayloadTagCustomFuncNameTagExtra"
 	_Tag_name_2 = "TagPadding"
 )
 
 var (
-	_Tag_index_0 = [...]uint8{0, 20, 33, 44, 67, 78}
-	_Tag_index_1 = [...]uint8{0, 9, 19}
-	_Tag_index_2 = [...]uint8{0, 10}
+	_Tag_index_0 = [...]uint8{0, 20, 33, 44, 67, 78, 87}
+	_Tag_index_1 = [...]uint8{0, 9, 19, 36, 44}
 )
 
 func (i Tag) String() string {
 	switch {
-	case 1 <= i && i <= 5:
+	case 1 <= i && i <= 6:
 		i -= 1
 		return _Tag_name_0[_Tag_index_0[i]:_Tag_index_0[i+1]]
-	case 17 <= i && i <= 18:
+	case 17 <= i && i <= 20:
 		i -= 17
 		return _Tag_name_1[_Tag_index_1[i]:_Tag_index_1[i+1]]
 	case i == 32:
 		return _Tag_name_2
 	default:
-		return fmt.Sprintf("Tag(%d)", i)
+		return "Tag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
+}
+func _() {
+	// An "invalid array index" compiler error signifies that the constant values have changed.
+	// Re-run the stringer command to generate them again.
+	var x [1]struct{}
+	_ = x[OpRSADecrypt-1]
+	_ = x[OpRSASignMD5SHA1-2]
+	_ = x[OpRSASignSHA1-3]
+	_ = x[OpRSASignSHA224-4]
+	_ = x[OpRSASignSHA256-5]
+	_ = x[OpRSASignSHA384-6]
+	_ = x[OpRSASignSHA512-7]
+	_ = x[OpRSAPSSSignSHA256-53]
+	_ = x[OpRSAPSSSignSHA384-54]
+	_ = x[OpRSAPSSSignSHA512-55]
+	_ = x[OpECDSASignMD5SHA1-18]
+	_ = x[OpECDSASignSHA1-19]
+	_ = x[OpECDSASignSHA224-20]
+	_ = x[OpECDSASignSHA256-21]
+	_ = x[OpECDSASignSHA384-22]
+	_ = x[OpECDSASignSHA512-23]
+	_ = x[OpEd25519Sign-24]
+	_ = x[OpSeal-33]
+	_ = x[OpUnseal-34]
+	_ = x[OpRPC-35]
+	_ = x[OpCustom-36]
+	_ = x[OpPing-241]
+	_ = x[OpPong-242]
+	_ = x[OpResponse-240]
+	_ = x[OpError-255]
 }
 
 const (
 	_Op_name_0 = "OpRSADecryptOpRSASignMD5SHA1OpRSASignSHA1OpRSASignSHA224OpRSASignSHA256OpRSASignSHA384OpRSASignSHA512"
-	_Op_name_1 = "OpECDSASignMD5SHA1OpECDSASignSHA1OpECDSASignSHA224OpECDSASignSHA256OpECDSASignSHA384OpECDSASignSHA512"
-	_Op_name_2 = "OpSealOpUnsealOpRPC"
+	_Op_name_1 = "OpECDSASignMD5SHA1OpECDSASignSHA1OpECDSASignSHA224OpECDSASignSHA256OpECDSASignSHA384OpECDSASignSHA512OpEd25519Sign"
+	_Op_name_2 = "OpSealOpUnsealOpRPCOpCustom"
 	_Op_name_3 = "OpRSAPSSSignSHA256OpRSAPSSSignSHA384OpRSAPSSSignSHA512"
 	_Op_name_4 = "OpResponseOpPingOpPong"
 	_Op_name_5 = "OpError"
@@ -42,11 +88,10 @@ const (
 
 var (
 	_Op_index_0 = [...]uint8{0, 12, 28, 41, 56, 71, 86, 101}
-	_Op_index_1 = [...]uint8{0, 18, 33, 50, 67, 84, 101}
-	_Op_index_2 = [...]uint8{0, 6, 14, 19}
+	_Op_index_1 = [...]uint8{0, 18, 33, 50, 67, 84, 101, 114}
+	_Op_index_2 = [...]uint8{0, 6, 14, 19, 27}
 	_Op_index_3 = [...]uint8{0, 18, 36, 54}
 	_Op_index_4 = [...]uint8{0, 10, 16, 22}
-	_Op_index_5 = [...]uint8{0, 7}
 )
 
 func (i Op) String() string {
@@ -54,10 +99,10 @@ func (i Op) String() string {
 	case 1 <= i && i <= 7:
 		i -= 1
 		return _Op_name_0[_Op_index_0[i]:_Op_index_0[i+1]]
-	case 18 <= i && i <= 23:
+	case 18 <= i && i <= 24:
 		i -= 18
 		return _Op_name_1[_Op_index_1[i]:_Op_index_1[i+1]]
-	case 33 <= i && i <= 35:
+	case 33 <= i && i <= 36:
 		i -= 33
 		return _Op_name_2[_Op_index_2[i]:_Op_index_2[i+1]]
 	case 53 <= i && i <= 55:
@@ -69,6 +114,6 @@ func (i Op) String() string {
 	case i == 255:
 		return _Op_name_5
 	default:
-		return fmt.Sprintf("Op(%d)", i)
+		return "Op(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
 }
