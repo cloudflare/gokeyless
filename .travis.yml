@@ -3,10 +3,9 @@ sudo: false
 
 matrix:
   include:
-    - go: 1.9.x
-    - go: 1.10.x
     - go: 1.11.x
     - go: 1.12.x
+    - go: master
   allow_failures:
     - go: master
 
@@ -22,6 +21,7 @@ script:
 notifications:
   email:
     recipients:
+      - bowon@cloudflare.com
       - cbroglie@cloudflare.com
       - gabriel@cloudflare.com
       - leland@cloudflare.com
