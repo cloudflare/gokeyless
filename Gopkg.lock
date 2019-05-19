@@ -2,12 +2,12 @@
 
 
 [[projects]]
-  branch = "master"
-  digest = "1:29bdbba989da96424ca3adf1ae21fe849ccf569303021980a76c584f10335ce0"
+  digest = "1:0787023e0b484e030bf4b06345997139cdad77b1fe6c6d88daea36f4b3dd2913"
   name = "github.com/ThalesIgnite/crypto11"
   packages = ["."]
   pruneopts = "UT"
-  revision = "a49ec8bedc9aafac9f97ff2bb1e14193a10d2a4a"
+  revision = "38ef75346a1dc2094ffdd919341ef9827fb041c0"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -145,12 +145,11 @@
   version = "v1.0.4"
 
 [[projects]]
-  branch = "master"
-  digest = "1:47c399e7a41a3c4c5a4cb5b9c01bf54bec73e09a6980088736d2a3c25cbc5dbd"
+  digest = "1:ad3c98763b4167718a5941a6d202122f158ebc3e03aa028f59c09254d9fd2360"
   name = "github.com/miekg/pkcs11"
   packages = ["."]
   pruneopts = "UT"
-  revision = "287d9350987cc9334667882061e202e96cdfb4d0"
+  revision = "a667d056470f6e0da7facaff2466f0d2645e35d7"
 
 [[projects]]
   branch = "master"
@@ -167,6 +166,14 @@
   pruneopts = "UT"
   revision = "acdc4509485b587f5e675510c4f2c63e90ff68a8"
   version = "v1.1.0"
+
+[[projects]]
+  digest = "1:cf31692c14422fa27c83a05292eb5cbe0fb2775972e8f1f8446a71549bd8980b"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
 
 [[projects]]
   digest = "1:0028cb19b2e4c3112225cd871870f2d9cf49b9b4276531f03438a88e94be86fe"
@@ -273,12 +280,14 @@
   version = "v1.3.0"
 
 [[projects]]
-  digest = "1:cc63e0fc9ffc0cea20af20807ae8d50df2a4840ead930518a645179be770409e"
-  name = "github.com/youtube/vitess"
-  packages = ["go/pools"]
+  digest = "1:a5a5e0b3b25be317cec2561f753d66f85a19bd451ddb9a54ecb8e1a83425869a"
+  name = "github.com/vitessio/vitess"
+  packages = [
+    "go/pools",
+    "go/sync2",
+  ]
   pruneopts = "UT"
-  revision = "66e84fadcc1a7e956e7ffcebcaaba0b04132ca1f"
-  version = "v2.2"
+  revision = "5d425edc0cafad159bddaaaa9dc4505c98e8acbf"
 
 [[projects]]
   branch = "master"

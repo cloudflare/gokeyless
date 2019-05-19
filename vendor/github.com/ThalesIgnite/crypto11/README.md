@@ -1,7 +1,10 @@
 Crypto11
 ========
 
-This is an implementation of the standard Golang hardware crypto interface that
+[![GoDoc](https://godoc.org/github.com/ThalesIgnite/crypto11?status.svg)](https://godoc.org/github.com/ThalesIgnite/crypto11)
+[![Build Status](https://travis-ci.com/ThalesIgnite/crypto11.svg?branch=master)](https://travis-ci.com/ThalesIgnite/crypto11)
+
+This is an implementation of the standard Golang crypto interfaces that
 uses [PKCS#11](http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/errata01/os/pkcs11-base-v2.40-errata01-os-complete.html) as a backend. The supported features are:
 
 * Generation and retrieval of RSA, DSA and ECDSA keys.
@@ -12,6 +15,8 @@ uses [PKCS#11](http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/errata01/os/p
 * ECDSA signing.
 * DSA signing.
 * Random number generation.
+* AES and DES3 encryption and decryption.
+* HMAC support.
 
 Signing is done through the
 [crypto.Signer](https://golang.org/pkg/crypto/#Signer) interface and
@@ -20,37 +25,72 @@ decryption through
 
 To verify signatures or encrypt messages, retrieve the public key and do it in software.
 
-See the documentation for details of various limitations.
+See [the documentation](https://godoc.org/github.com/ThalesIgnite/crypto11) for details of various limitations,
+especially regarding symmetric crypto.
 
-There are some rudimentary tests.
-
-There is a demo web server in the `demo` directory, which publishes
-the contents of `/usr/share/doc`.
 
 Installation
 ============
 
-(If you don't have one already) create [a standard Go workspace](https://golang.org/doc/code.html#Workspaces) and set the `GOPATH` environment variable to point to the workspace root.
+Since v1.0.0, crypto11 requires Go v1.11+. Install the library by running:
 
-crypto11 manages it's dependencies via `dep`.  To Install `dep` run:
+```bash
+go get github.com/ThalesIgnite/crypto11
+```
 
-	go get -u github.com/golang/dep/cmd/dep
+The crypto11 library needs to be configured with information about your PKCS#11 installation. This is either done programmatically
+(see the `Config` struct in [the documentation](https://godoc.org/github.com/ThalesIgnite/crypto11)) or via a configuration
+file. The configuration file is a JSON representation of the `Config` struct.
 
-Clone, ensure deps, and build:
+A minimal configuration file looks like this:
 
-    go get github.com/thalesignite/crypto11
-    cd $GOPATH/src/github.com/thalesignite/crypto11
-    dep ensure
-    go build
+```json
+{
+  "Path" : "/usr/lib/softhsm/libsofthsm2.so",
+  "TokenLabel": "token1",
+  "Pin" : "password"
+}
+```
 
-Edit `config` to taste, and then run the test program:
-
-    go test
+- `Path` points to the library from your PKCS#11 vendor.
+- `TokenLabel` is the `CKA_LABEL` of the token you wish to use.
+- `Pin` is the password for the `CKU_USER` user.
 
 Testing Guidance
 ================
 
-Testing with nShield
+Testing with SoftHSM2
+---------------------
+
+To set up a slot:
+
+    $ cat softhsm2.conf
+    directories.tokendir = /home/rjk/go/src/github.com/ThalesIgnite/crypto11/tokens
+    objectstore.backend = file
+    log.level = INFO
+    $ mkdir tokens
+    $ export SOFTHSM2_CONF=`pwd`/softhsm2.conf
+    $ softhsm2-util --init-token --slot 0 --label test
+    === SO PIN (4-255 characters) ===
+    Please enter SO PIN: ********
+    Please reenter SO PIN: ********
+    === User PIN (4-255 characters) ===
+    Please enter user PIN: ********
+    Please reenter user PIN: ********
+    The token has been initialized.
+
+The configuration looks like this:
+
+    $ cat config
+    {
+      "Path" : "/usr/lib/softhsm/libsofthsm2.so",
+      "TokenLabel": "test",
+      "Pin" : "password"
+    }
+
+(At time of writing) OAEP is only partial and HMAC is unsupported, so expect test skips.
+
+Testing with nCipher nShield
 --------------------
 
 In all cases, it's worth enabling nShield PKCS#11 log output:
@@ -87,94 +127,29 @@ To protect keys with the module only, use the 'accelerator' token:
       "Pin" : "password"
     }
 
-Testing with SoftHSM
---------------------
+(At time of writing) GCM is not implemented, so expect test skips.
 
-While the aim of the exercise is to use an HSM, it can be convenient
-to test with a software-only provider.
+Limitations
+===========
 
-To set up a slot:
+ * The [PKCS1v15DecryptOptions SessionKeyLen](https://golang.org/pkg/crypto/rsa/#PKCS1v15DecryptOptions) field
+is not implemented and an error is returned if it is nonzero.
+The reason for this is that it is not possible for crypto11 to guarantee the constant-time behavior in the specification.
+See [issue #5](https://github.com/ThalesIgnite/crypto11/issues/5) for further discussion.
+ * Symmetric crypto support via [cipher.Block](https://golang.org/pkg/crypto/cipher/#Block) is very slow.
+You can use the `BlockModeCloser` API
+(over 400 times as fast on my computer)
+but you must call the Close()
+interface (not found in [cipher.BlockMode](https://golang.org/pkg/crypto/cipher/#BlockMode)).
+See [issue #6](https://github.com/ThalesIgnite/crypto11/issues/6) for further discussion.
 
-    $ cat softhsm.conf
-    0:softhsm0.db
-    $ export SOFTHSM_CONF=`pwd`/softhsm.conf
-    $ softhsm --init-token --slot 0 --label test
-    The SO PIN must have a length between 4 and 255 characters.
-    Enter SO PIN:
-    The user PIN must have a length between 4 and 255 characters.
-    Enter user PIN:
-    The token has been initialized.
-
-Configure as follows:
-
-    $ cat config
-    {
-      "Path" : "/usr/lib/softhsm/libsofthsm.so",
-      "TokenLabel": "test",
-      "Pin" : "password"
-    }
-
-DSA, ECDSA, PSS and OAEP aren't supported, so expect test failures.
-
-Testing with SoftHSM2
----------------------
-
-To set up a slot:
-
-    $ cat softhsm2.conf
-    directories.tokendir = /home/rjk/go/src/github.com/thalesignite/crypto11/tokens
-    objectstore.backend = file
-    log.level = INFO
-    $ mkdir tokens
-    $ export SOFTHSM2_CONF=`pwd`/softhsm2.conf
-    $ softhsm2-util --init-token --slot 0 --label test
-    === SO PIN (4-255 characters) ===
-    Please enter SO PIN: ********
-    Please reenter SO PIN: ********
-    === User PIN (4-255 characters) ===
-    Please enter user PIN: ********
-    Please reenter user PIN: ********
-    The token has been initialized.
-
-The configuration looks like this:
-
-    $ cat config
-    {
-      "Path" : "/usr/lib/softhsm/libsofthsm2.so",
-      "TokenLabel": "test",
-      "Pin" : "password"
-    }
-
-(At time of writing) PSS and OAEP aren't supported so expect test failures.
-
-Wishlist
+Contributions
 ========
 
+Contributions are gratefully received. Before beginning work on sizeable changes, please open an issue first to
+discuss.
+
+Here are some topics we'd like to cover:
+
 * Full test instructions for additional PKCS#11 implementations.
-* A pony.
-
-Copyright
-=========
-
-MIT License.
-
-Copyright 2016, 2017 Thales e-Security, Inc
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+* Move to another resource pool implementation (`github.com/vitessio/vitess` is a big dependency)

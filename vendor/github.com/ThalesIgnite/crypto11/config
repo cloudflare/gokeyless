@@ -1,5 +1,5 @@
 {
-  "Path" : "/opt/nfast/toolkits/pkcs11/libcknfast.so",
-  "TokenLabel": "rjk",
+  "Path" : "/usr/lib/softhsm/libsofthsm2.so",
+  "TokenLabel": "token1",
   "Pin" : "password"
 }

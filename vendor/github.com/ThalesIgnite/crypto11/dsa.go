@@ -27,23 +27,25 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/pkg/errors"
+
 	pkcs11 "github.com/miekg/pkcs11"
 )
 
-// PKCS11PrivateKeyDSA contains a reference to a loaded PKCS#11 DSA private key object.
-type PKCS11PrivateKeyDSA struct {
-	PKCS11PrivateKey
+// pkcs11PrivateKeyDSA contains a reference to a loaded PKCS#11 DSA private key object.
+type pkcs11PrivateKeyDSA struct {
+	pkcs11PrivateKey
 }
 
 // Export the public key corresponding to a private DSA key.
-func exportDSAPublicKey(session *PKCS11Session, pubHandle pkcs11.ObjectHandle) (crypto.PublicKey, error) {
+func exportDSAPublicKey(session *pkcs11Session, pubHandle pkcs11.ObjectHandle) (crypto.PublicKey, error) {
 	template := []*pkcs11.Attribute{
 		pkcs11.NewAttribute(pkcs11.CKA_PRIME, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_SUBPRIME, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_BASE, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_VALUE, nil),
 	}
-	exported, err := libHandle.GetAttributeValue(session.Handle, pubHandle, template)
+	exported, err := session.ctx.GetAttributeValue(session.handle, pubHandle, template)
 	if err != nil {
 		return nil, err
 	}
@@ -63,93 +65,112 @@ func exportDSAPublicKey(session *PKCS11Session, pubHandle pkcs11.ObjectHandle) (
 	return &result, nil
 }
 
-// GenerateDSAKeyPair creates a DSA private key on the default slot
-//
-// The key will have a random label and ID.
-func GenerateDSAKeyPair(params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
-	return GenerateDSAKeyPairOnSlot(defaultSlot, nil, nil, params)
+func notNilBytes(obj []byte, name string) error {
+	if obj == nil {
+		return errors.Errorf("%s cannot be nil", name)
+	}
+	return nil
 }
 
-// GenerateDSAKeyPairOnSlot creates a DSA private key on a specified slot
-//
-// Either or both label and/or id can be nil, in which case random values will be generated.
-func GenerateDSAKeyPairOnSlot(slot uint, id []byte, label []byte, params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
-	var k *PKCS11PrivateKeyDSA
-	var err error
-	if err = setupSessions(slot); err != nil {
+// GenerateDSAKeyPair creates a DSA key pair on the token. The id parameter is used to
+// set CKA_ID and must be non-nil.
+func (c *Context) GenerateDSAKeyPair(id []byte, params *dsa.Parameters) (Signer, error) {
+	if c.closed.Get() {
+		return nil, errClosed
+	}
+
+	if err := notNilBytes(id, "id"); err != nil {
 		return nil, err
 	}
-	err = withSession(slot, func(session *PKCS11Session) error {
-		k, err = GenerateDSAKeyPairOnSession(session, slot, id, label, params)
-		return err
+
+	return c.generateDSAKeyPair(id, nil, params)
+}
+
+// GenerateDSAKeyPairWithLabel creates a DSA key pair on the token. The id and label parameters are used to
+// set CKA_ID and CKA_LABEL respectively and must be non-nil.
+func (c *Context) GenerateDSAKeyPairWithLabel(id, label []byte, params *dsa.Parameters) (Signer, error) {
+	if c.closed.Get() {
+		return nil, errClosed
+	}
+
+	if err := notNilBytes(id, "id"); err != nil {
+		return nil, err
+	}
+	if err := notNilBytes(label, "label"); err != nil {
+		return nil, err
+	}
+
+	return c.generateDSAKeyPair(id, label, params)
+}
+
+// generateDSAKeyPair creates a DSA private key on the token.
+func (c *Context) generateDSAKeyPair(id, label []byte, params *dsa.Parameters) (k *pkcs11PrivateKeyDSA, err error) {
+	err = c.withSession(func(session *pkcs11Session) error {
+		p := params.P.Bytes()
+		q := params.Q.Bytes()
+		g := params.G.Bytes()
+
+		publicKeyTemplate := []*pkcs11.Attribute{
+			pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_PUBLIC_KEY),
+			pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_DSA),
+			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
+			pkcs11.NewAttribute(pkcs11.CKA_VERIFY, true),
+			pkcs11.NewAttribute(pkcs11.CKA_PRIME, p),
+			pkcs11.NewAttribute(pkcs11.CKA_SUBPRIME, q),
+			pkcs11.NewAttribute(pkcs11.CKA_BASE, g),
+		}
+
+		privateKeyTemplate := []*pkcs11.Attribute{
+			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
+			pkcs11.NewAttribute(pkcs11.CKA_SIGN, true),
+			pkcs11.NewAttribute(pkcs11.CKA_SENSITIVE, true),
+			pkcs11.NewAttribute(pkcs11.CKA_EXTRACTABLE, false),
+		}
+
+		if id != nil {
+			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
+			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
+		}
+
+		if label != nil {
+			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
+			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
+		}
+
+		mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_DSA_KEY_PAIR_GEN, nil)}
+		pubHandle, privHandle, err := session.ctx.GenerateKeyPair(session.handle,
+			mech,
+			publicKeyTemplate,
+			privateKeyTemplate)
+		if err != nil {
+			return err
+		}
+		pub, err := exportDSAPublicKey(session, pubHandle)
+		if err != nil {
+			return err
+		}
+		k = &pkcs11PrivateKeyDSA{
+			pkcs11PrivateKey: pkcs11PrivateKey{
+				pkcs11Object: pkcs11Object{
+					handle:  privHandle,
+					context: c,
+				},
+				pubKeyHandle: pubHandle,
+				pubKey:       pub,
+			}}
+		return nil
+
 	})
-	return k, err
-}
-
-// GenerateDSAKeyPairOnSession creates a DSA private key using a specified session
-//
-// Either or both label and/or id can be nil, in which case random values will be generated.
-func GenerateDSAKeyPairOnSession(session *PKCS11Session, slot uint, id []byte, label []byte, params *dsa.Parameters) (*PKCS11PrivateKeyDSA, error) {
-	var err error
-	var pub crypto.PublicKey
-
-	if libHandle == nil {
-		return nil, ErrNotConfigured
-	}
-	if label == nil {
-		if label, err = generateKeyLabel(); err != nil {
-			return nil, err
-		}
-	}
-	if id == nil {
-		if id, err = generateKeyLabel(); err != nil {
-			return nil, err
-		}
-	}
-	p := params.P.Bytes()
-	q := params.Q.Bytes()
-	g := params.G.Bytes()
-	publicKeyTemplate := []*pkcs11.Attribute{
-		pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_PUBLIC_KEY),
-		pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_DSA),
-		pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
-		pkcs11.NewAttribute(pkcs11.CKA_VERIFY, true),
-		pkcs11.NewAttribute(pkcs11.CKA_PRIME, p),
-		pkcs11.NewAttribute(pkcs11.CKA_SUBPRIME, q),
-		pkcs11.NewAttribute(pkcs11.CKA_BASE, g),
-		pkcs11.NewAttribute(pkcs11.CKA_LABEL, label),
-		pkcs11.NewAttribute(pkcs11.CKA_ID, id),
-	}
-	privateKeyTemplate := []*pkcs11.Attribute{
-		pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
-		pkcs11.NewAttribute(pkcs11.CKA_SIGN, true),
-		pkcs11.NewAttribute(pkcs11.CKA_SENSITIVE, true),
-		pkcs11.NewAttribute(pkcs11.CKA_EXTRACTABLE, false),
-		pkcs11.NewAttribute(pkcs11.CKA_LABEL, label),
-		pkcs11.NewAttribute(pkcs11.CKA_ID, id),
-	}
-	mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_DSA_KEY_PAIR_GEN, nil)}
-	pubHandle, privHandle, err := libHandle.GenerateKeyPair(session.Handle,
-		mech,
-		publicKeyTemplate,
-		privateKeyTemplate)
-	if err != nil {
-		return nil, err
-	}
-	if pub, err = exportDSAPublicKey(session, pubHandle); err != nil {
-		return nil, err
-	}
-	priv := PKCS11PrivateKeyDSA{PKCS11PrivateKey{PKCS11Object{privHandle, slot}, pub}}
-	return &priv, nil
+	return
 }
 
 // Sign signs a message using a DSA key.
 //
-// This completes the implemention of crypto.Signer for PKCS11PrivateKeyDSA.
+// This completes the implemention of crypto.Signer for pkcs11PrivateKeyDSA.
 //
 // PKCS#11 expects to pick its own random data for signatures, so the rand argument is ignored.
 //
 // The return value is a DER-encoded byteblock.
-func (signer *PKCS11PrivateKeyDSA) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	return dsaGeneric(signer.Slot, signer.Handle, pkcs11.CKM_DSA, digest)
+func (signer *pkcs11PrivateKeyDSA) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	return signer.context.dsaGeneric(signer.handle, pkcs11.CKM_DSA, digest)
 }

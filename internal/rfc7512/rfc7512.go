@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ThalesIgnite/crypto11"
 )
@@ -35,7 +37,7 @@ type PKCS11URI struct {
 
 	SlotManuf string // slot-manufacturer <- CK_SLOT_INFO
 	SlotDesc  string //  slot-description <- CK_SLOT_INFO
-	SlotID    uint   //           slot-id <- CK_SLOT_ID
+	SlotID    *int   //           slot-id <- CK_SLOT_ID
 
 	// query attributes:
 	PinSource string // pin-source
@@ -46,6 +48,20 @@ type PKCS11URI struct {
 
 	// Vendor specific query attributes:
 	MaxSessions int // max-sessions
+}
+
+var re *regexp.Regexp
+
+func init() {
+	aChar := "[a-z-_]"
+	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
+	pAttr := aChar + "+=" + pChar + "+"
+	pClause := "(" + pAttr + ";)*(" + pAttr + ")"
+	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
+	qAttr := aChar + "+=" + qChar + "+"
+	qClause := "(" + qAttr + "&)*(" + qAttr + ")"
+
+	re = regexp.MustCompile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
 }
 
 // ParsePKCS11URI decodes a PKCS #11 URI and returns it as a PKCS11URI object.
@@ -68,44 +84,35 @@ type PKCS11URI struct {
 // An error is returned if the input string does not appear to follow the rules
 // or if there are unrecognized path or query attributes.
 func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
-	// Check that the URI matches the specification from RFC 7512:
-	aChar := "[a-z-_]"
-	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
-	pAttr := aChar + "+=" + pChar + "+"
-	pClause := "(" + pAttr + ";)*(" + pAttr + ")"
-	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
-	qAttr := aChar + "+=" + qChar + "+"
-	qClause := "(" + qAttr + "&)*(" + qAttr + ")"
-	r, _ := regexp.Compile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
-
-	if !r.MatchString(uri) {
-		return nil, fmt.Errorf("PKCS#11 URI is malformed: %s", uri)
+	if !re.MatchString(uri) {
+		return nil, fmt.Errorf("error parsing pkcs11 uri %q: invalid format", uri)
 	}
 
 	var pk11uri PKCS11URI
-	var pAttrs []string
-	var qAttrs []string
-	var parts []string
-	var value string
+	var pAttrs, qAttrs []string
 
 	// Separate the scheme name, path, and query attributes:
 	uri = strings.Split(uri, "pkcs11:")[1]
-	parts = strings.Split(uri, "?")
+	parts := strings.Split(uri, "?")
 	pAttrs = strings.Split(parts[0], ";")
-	if 1 < len(parts) {
+	if len(parts) > 1 {
 		qAttrs = strings.Split(parts[1], "&")
 	}
 
 	// Parse the path attributes:
 	for _, attr := range pAttrs {
-		parts = strings.Split(attr, "=")
-		parts[0] = strings.Trim(parts[0], " \n\t\r")
-		if len(parts) == 2 {
-			parts[1] = strings.Trim(parts[1], " \n\t\r")
-			value, _ = url.QueryUnescape(parts[1])
-		} else {
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
+		parts := strings.Split(attr, "=")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: invalid format", parts[0])
 		}
+		parts[0] = strings.Trim(parts[0], " \n\t\r")
+		parts[1] = strings.Trim(parts[1], " \n\t\r")
+
+		value, err := url.QueryUnescape(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+		}
+
 		switch parts[0] {
 		case "token":
 			pk11uri.Token = value
@@ -134,24 +141,30 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		case "slot-description":
 			pk11uri.SlotDesc = value
 		case "slot-id":
-			// TODO the bit size is not clarified.
-			id, _ := strconv.ParseUint(value, 10, 32)
-			pk11uri.SlotID = uint(id)
+			id, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+			}
+			pk11uri.SlotID = &id
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Path Attribute: %s", parts[0])
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: unknown attribute", parts[0])
 		}
 	}
 
 	// Parse the query attributes:
 	for _, attr := range qAttrs {
-		parts = strings.Split(attr, "=")
-		parts[0] = strings.Trim(parts[0], " \n\t\r")
-		if len(parts) == 2 {
-			parts[1] = strings.Trim(parts[1], " \n\t\r")
-			value, _ = url.QueryUnescape(parts[1])
-		} else {
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
+		parts := strings.Split(attr, "=")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: invalid format", parts[0])
 		}
+		parts[0] = strings.Trim(parts[0], " \n\t\r")
+		parts[1] = strings.Trim(parts[1], " \n\t\r")
+
+		value, err := url.QueryUnescape(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+		}
+
 		switch parts[0] {
 		case "pin-source":
 			pk11uri.PinSource = value
@@ -162,10 +175,13 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		case "module-path":
 			pk11uri.ModulePath = value
 		case "max-sessions":
-			maxSessions, _ := strconv.ParseUint(value, 10, 32)
-			pk11uri.MaxSessions = int(maxSessions)
+			maxSessions, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+			}
+			pk11uri.MaxSessions = maxSessions
 		default:
-			return nil, fmt.Errorf("Unrecognized PKCS#11 URI Query Attribute: %s", parts[0])
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: unknown attribute", parts[0])
 		}
 	}
 
@@ -187,23 +203,36 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 // An error is returned if the crypto11 module cannot find the module, token,
 // or the specified object.
 func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
-	config := &crypto11.PKCS11Config{
-		Path:        pk11uri.ModulePath,
-		TokenSerial: pk11uri.Serial,
-		TokenLabel:  pk11uri.Token,
-		Pin:         pk11uri.PinValue,
-		MaxSessions: pk11uri.MaxSessions,
+	lock.Lock()
+	defer lock.Unlock()
+
+	// Ensure we only attempt to configure each module once to avoid
+	// CKR_CRYPTOKI_ALREADY_INITIALIZED.
+	// The implication of this is it is impossible to use multiple tokens from
+	// the same module at once.
+	context, ok := modules[pk11uri.ModulePath]
+	if !ok {
+		config := &crypto11.Config{
+			Path:            pk11uri.ModulePath,
+			TokenSerial:     pk11uri.Serial,
+			TokenLabel:      pk11uri.Token,
+			SlotNumber:      pk11uri.SlotID,
+			Pin:             pk11uri.PinValue,
+			MaxSessions:     pk11uri.MaxSessions,
+			PoolWaitTimeout: 10 * time.Second,
+		}
+
+		var err error
+		context, err = crypto11.Configure(config)
+		if err != nil {
+			return nil, err
+		}
+
+		modules[pk11uri.ModulePath] = context
 	}
 
-	_, err := crypto11.Configure(config)
-	if err != nil {
-		return nil, err
-	}
-
-	key, err := crypto11.FindKeyPairOnSlot(pk11uri.SlotID, pk11uri.ID, pk11uri.Object)
-	if err != nil {
-		return nil, err
-	}
-
-	return key.(crypto.Signer), nil
+	return context.FindKeyPair(pk11uri.ID, pk11uri.Object)
 }
+
+var modules = map[string]*crypto11.Context{}
+var lock sync.Mutex
