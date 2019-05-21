@@ -384,8 +384,12 @@ func (w *otherWorker) Do(job interface{}) interface{} {
 
 		res, err := customOpFunc(pkt.Operation)
 		if err != nil {
-			log.Errorf("Worker %v: OpCustom failed: %v", w.name, err)
-			return w.s.makeErrResponse(req, protocol.ErrInternal, requestBegin)
+			log.Errorf("Worker %v: OpCustom returned error: %v", w.name, err)
+			code := protocol.ErrInternal
+			if err, ok := err.(protocol.Error); ok {
+				code = err
+			}
+			return w.s.makeErrResponse(req, code, requestBegin)
 		}
 		return w.s.makeRespondResponse(req, res, requestBegin)
 
@@ -832,7 +836,7 @@ type ServeConfig struct {
 	tcpTimeout, unixTimeout    time.Duration
 	utilization                func(other, ecdsa float64)
 	isLimited                  func(state tls.ConnectionState) (bool, error)
-	customOpFunc               func(protocol.Operation) ([]byte, error)
+	customOpFunc               CustomOpFunction
 }
 
 const (
@@ -955,14 +959,20 @@ func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, err
 	return s
 }
 
+// CustomOpFunction is the signature for custom opcode functions.
+//
+// If it returns a non-nil error which implements protocol.Error, the server
+// will return it directly. Otherwise it will return protocol.ErrInternal.
+type CustomOpFunction func(protocol.Operation) ([]byte, error)
+
 // WithCustomOpFunction defines a function to use with the OpCustom opcode.
-func (s *ServeConfig) WithCustomOpFunction(f func(protocol.Operation) ([]byte, error)) *ServeConfig {
+func (s *ServeConfig) WithCustomOpFunction(f CustomOpFunction) *ServeConfig {
 	s.customOpFunc = f
 	return s
 }
 
 // CustomOpFunc returns the CustomOpFunc
-func (s *ServeConfig) CustomOpFunc() func(protocol.Operation) ([]byte, error) {
+func (s *ServeConfig) CustomOpFunc() CustomOpFunction {
 	return s.customOpFunc
 }
 
