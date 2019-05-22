@@ -89,6 +89,14 @@ func (c *conn) GetJob() (job interface{}, pool *worker.Pool, ok bool) {
 	pkt := new(protocol.Packet)
 	_, err = pkt.ReadFrom(c.conn)
 	if err != nil {
+		// If we timeout from the deadline above, call Destroy to indicate the
+		// server is closing an idle connection (as opposed to an actual error).
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			c.Destroy()
+			return nil, nil, false
+		}
+		// Otherwise, we've encountered some other kind of error and should
+		// report it appropriately.
 		c.LogConnErr(err)
 		c.conn.Close()
 		atomic.StoreUint32(&c.closed, 1)
@@ -165,7 +173,10 @@ func (c *conn) IsAlive() bool {
 }
 
 func (c *conn) Destroy() {
-	atomic.StoreUint32(&c.serverClosing, 1)
+	closing := !atomic.CompareAndSwapUint32(&c.serverClosing, 0, 1)
+	if closing {
+		return
+	}
 	c.LogConnErr(nil)
 	c.conn.Close()
 	atomic.StoreUint32(&c.closed, 1)
