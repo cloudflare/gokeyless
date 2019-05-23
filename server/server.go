@@ -13,6 +13,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/rpc"
@@ -698,7 +699,13 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 	tconn := tls.Server(c, s.tlsConfig)
 	err := tconn.Handshake()
 	if err != nil {
-		log.Errorf("connection %v: handshake failed: %v", c.RemoteAddr(), err)
+		// We get EOF here if the client closes the connection immediately after
+		// it's accepted, which is typical of a TCP health check.
+		if err == io.EOF {
+			log.Debugf("connection %v: closed by client before TLS handshake", c.RemoteAddr())
+		} else {
+			log.Errorf("connection %v: TLS handshake failed: %v", c.RemoteAddr(), err)
+		}
 		tconn.Close()
 		return
 	}
