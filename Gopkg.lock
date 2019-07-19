@@ -178,9 +178,12 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:c58e432f2d21c9d694e9e22eccef7c1db9b31caa6cb6db63dd2dc08bf3e9f037"
+  digest = "1:f8f022dbb1e6284be400d2ec4a82fdf9636edc7147fb7e7352b36e8357dd64e5"
   name = "github.com/prometheus/client_golang"
-  packages = ["prometheus"]
+  packages = [
+    "prometheus",
+    "prometheus/promauto",
+  ]
   pruneopts = "UT"
   revision = "77e8f2ddcfed59ece3a8151879efb2304b5cbbcf"
 
@@ -397,6 +400,7 @@
     "github.com/lziest/ttlcache",
     "github.com/miekg/dns",
     "github.com/prometheus/client_golang/prometheus",
+    "github.com/prometheus/client_golang/prometheus/promauto",
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
     "github.com/stretchr/testify/require",

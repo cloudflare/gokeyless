@@ -63,10 +63,6 @@ required = [
 
 [[constraint]]
   branch = "master"
-  name = "go4.org"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/ThalesIgnite/crypto11"
 
 [prune]
