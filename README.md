@@ -160,7 +160,7 @@ Note that for now only one PKCS #11 module can be used at a time, so if you have
 Instructions for installing Go Keyless from `.deb` and `.rpm` packages can be found at [https://pkg.cloudflare.com](https://pkg.cloudflare.com/).
 
 ### Source Installation
-Compiling Go Keyless requires Go 1.7. Binary distributions can be found at [golang.org/dl](https://golang.org/dl/).
+Compiling Go Keyless requires Go 1.11. Binary distributions can be found at [golang.org/dl](https://golang.org/dl/).
 
 Installing the appropriate package for your operating system should leave you with a [working Go installation](http://golang.org/doc/install) and a properly set `GOPATH`.
 
