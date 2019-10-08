@@ -98,7 +98,7 @@ test:
 
 .PHONY: test-nohsm
 test-nohsm:
-	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
 
 .PHONY: test-trust
 test-trust: gokeyless
