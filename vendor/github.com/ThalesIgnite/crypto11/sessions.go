@@ -23,9 +23,10 @@ package crypto11
 
 import (
 	"context"
+	"errors"
 
 	"github.com/miekg/pkcs11"
-	"github.com/vitessio/vitess/go/pools"
+	"github.com/thales-e-security/pool"
 )
 
 // pkcs11Session wraps a PKCS#11 session handle so we can use it in a resource pool.
@@ -64,9 +65,11 @@ func (c *Context) getSession() (*pkcs11Session, error) {
 	}
 
 	resource, err := c.pool.Get(ctx)
-	if err == pools.ErrClosed {
-		// Our Context must have been closed, return a nicer error
-		return nil, errClosed
+	if err == pool.ErrClosed {
+		// Our Context must have been closed, return a nicer error.
+		// We don't use errClosed to ensure our tests identify functions that aren't checking for closure
+		// correctly.
+		return nil, errors.New("context is closed")
 	}
 	if err != nil {
 		return nil, err
@@ -76,7 +79,7 @@ func (c *Context) getSession() (*pkcs11Session, error) {
 }
 
 // resourcePoolFactoryFunc is called by the resource pool when a new session is needed.
-func (c *Context) resourcePoolFactoryFunc() (pools.Resource, error) {
+func (c *Context) resourcePoolFactoryFunc() (pool.Resource, error) {
 	session, err := c.ctx.OpenSession(c.slot, pkcs11.CKF_SERIAL_SESSION|pkcs11.CKF_RW_SESSION)
 	if err != nil {
 		return nil, err

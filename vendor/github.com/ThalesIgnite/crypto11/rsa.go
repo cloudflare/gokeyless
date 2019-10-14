@@ -27,7 +27,6 @@ import (
 	"errors"
 	"io"
 	"math/big"
-	"unsafe"
 
 	"github.com/miekg/pkcs11"
 )
@@ -82,44 +81,54 @@ func exportRSAPublicKey(session *pkcs11Session, pubHandle pkcs11.ObjectHandle) (
 }
 
 // GenerateRSAKeyPair creates an RSA key pair on the token. The id parameter is used to
-// set CKA_ID and must be non-nil.
+// set CKA_ID and must be non-nil. RSA private keys are generated with both sign and decrypt
+// permissions, and a public exponent of 65537.
 func (c *Context) GenerateRSAKeyPair(id []byte, bits int) (SignerDecrypter, error) {
 	if c.closed.Get() {
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithID(id)
+	if err != nil {
 		return nil, err
 	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateRSAKeyPair(id, nil, bits)
+	return c.GenerateRSAKeyPairWithAttributes(public, private, bits)
 }
 
 // GenerateRSAKeyPairWithLabel creates an RSA key pair on the token. The id and label parameters are used to
-// set CKA_ID and CKA_LABEL respectively and must be non-nil.
+// set CKA_ID and CKA_LABEL respectively and must be non-nil. RSA private keys are generated with both sign and decrypt
+// permissions, and a public exponent of 65537.
 func (c *Context) GenerateRSAKeyPairWithLabel(id, label []byte, bits int) (SignerDecrypter, error) {
 	if c.closed.Get() {
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithIDAndLabel(id, label)
+	if err != nil {
 		return nil, err
 	}
-	if err := notNilBytes(label, "label"); err != nil {
-		return nil, err
-	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateRSAKeyPair(id, label, bits)
+	return c.GenerateRSAKeyPairWithAttributes(public, private, bits)
 }
 
-// GenerateRSAKeyPair creates an RSA private key of given length. The CKA_ID and CKA_LABEL attributes can be set by passing
-// non-nil values for id and label.
-//
-// RSA private keys are generated with both sign and decrypt permissions, and a public exponent of 65537.
-func (c *Context) generateRSAKeyPair(id, label []byte, bits int) (k SignerDecrypter, err error) {
-	err = c.withSession(func(session *pkcs11Session) error {
+// GenerateRSAKeyPairWithAttributes generates an RSA key pair on the token. After this function returns, public and
+// private will contain the attributes applied to the key pair. If required attributes are missing, they will be set to
+// a default value.
+func (c *Context) GenerateRSAKeyPairWithAttributes(public, private AttributeSet, bits int) (SignerDecrypter, error) {
+	if c.closed.Get() {
+		return nil, errClosed
+	}
 
-		publicKeyTemplate := []*pkcs11.Attribute{
+	var k SignerDecrypter
+
+	err := c.withSession(func(session *pkcs11Session) error {
+
+		public.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_PUBLIC_KEY),
 			pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_RSA),
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
@@ -127,30 +136,20 @@ func (c *Context) generateRSAKeyPair(id, label []byte, bits int) (k SignerDecryp
 			pkcs11.NewAttribute(pkcs11.CKA_ENCRYPT, true),
 			pkcs11.NewAttribute(pkcs11.CKA_PUBLIC_EXPONENT, []byte{1, 0, 1}),
 			pkcs11.NewAttribute(pkcs11.CKA_MODULUS_BITS, bits),
-		}
-		privateKeyTemplate := []*pkcs11.Attribute{
+		})
+		private.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SIGN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_DECRYPT, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SENSITIVE, true),
 			pkcs11.NewAttribute(pkcs11.CKA_EXTRACTABLE, false),
-		}
-
-		if id != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-		}
-
-		if label != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-		}
+		})
 
 		mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_RSA_PKCS_KEY_PAIR_GEN, nil)}
 		pubHandle, privHandle, err := session.ctx.GenerateKeyPair(session.handle,
 			mech,
-			publicKeyTemplate,
-			privateKeyTemplate)
+			public.ToSlice(),
+			private.ToSlice())
 		if err != nil {
 			return err
 		}
@@ -170,7 +169,7 @@ func (c *Context) generateRSAKeyPair(id, label []byte, bits int) (k SignerDecryp
 			}}
 		return nil
 	})
-	return
+	return k, err
 }
 
 // Decrypt decrypts a message using a RSA key.
@@ -210,29 +209,25 @@ func decryptPKCS1v15(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertex
 	return session.ctx.Decrypt(session.handle, ciphertext)
 }
 
-func decryptOAEP(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertext []byte, hashFunction crypto.Hash, label []byte) ([]byte, error) {
-	var err error
-	var hMech, mgf, sourceData, sourceDataLen uint
-	if hMech, mgf, _, err = hashToPKCS11(hashFunction); err != nil {
+func decryptOAEP(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertext []byte, hashFunction crypto.Hash,
+	label []byte) ([]byte, error) {
+
+	hashAlg, mgfAlg, _, err := hashToPKCS11(hashFunction)
+	if err != nil {
 		return nil, err
 	}
-	if len(label) > 0 {
-		sourceData = uint(uintptr(unsafe.Pointer(&label[0])))
-		sourceDataLen = uint(len(label))
-	}
-	parameters := concat(ulongToBytes(hMech),
-		ulongToBytes(mgf),
-		ulongToBytes(pkcs11.CKZ_DATA_SPECIFIED),
-		ulongToBytes(sourceData),
-		ulongToBytes(sourceDataLen))
-	mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_RSA_PKCS_OAEP, parameters)}
-	if err = session.ctx.DecryptInit(session.handle, mech, key.handle); err != nil {
+
+	mech := pkcs11.NewMechanism(pkcs11.CKM_RSA_PKCS_OAEP,
+		pkcs11.NewOAEPParams(hashAlg, mgfAlg, pkcs11.CKZ_DATA_SPECIFIED, label))
+
+	err = session.ctx.DecryptInit(session.handle, []*pkcs11.Mechanism{mech}, key.handle)
+	if err != nil {
 		return nil, err
 	}
 	return session.ctx.Decrypt(session.handle, ciphertext)
 }
 
-func hashToPKCS11(hashFunction crypto.Hash) (uint, uint, uint, error) {
+func hashToPKCS11(hashFunction crypto.Hash) (hashAlg uint, mgfAlg uint, hashLen uint, err error) {
 	switch hashFunction {
 	case crypto.SHA1:
 		return pkcs11.CKM_SHA_1, pkcs11.CKG_MGF1_SHA1, 20, nil

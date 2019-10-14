@@ -79,11 +79,14 @@ func (c *Context) GenerateDSAKeyPair(id []byte, params *dsa.Parameters) (Signer,
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithID(id)
+	if err != nil {
 		return nil, err
 	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateDSAKeyPair(id, nil, params)
+	return c.GenerateDSAKeyPairWithAttributes(public, private, params)
 }
 
 // GenerateDSAKeyPairWithLabel creates a DSA key pair on the token. The id and label parameters are used to
@@ -93,24 +96,31 @@ func (c *Context) GenerateDSAKeyPairWithLabel(id, label []byte, params *dsa.Para
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithIDAndLabel(id, label)
+	if err != nil {
 		return nil, err
 	}
-	if err := notNilBytes(label, "label"); err != nil {
-		return nil, err
-	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateDSAKeyPair(id, label, params)
+	return c.GenerateDSAKeyPairWithAttributes(public, private, params)
 }
 
-// generateDSAKeyPair creates a DSA private key on the token.
-func (c *Context) generateDSAKeyPair(id, label []byte, params *dsa.Parameters) (k *pkcs11PrivateKeyDSA, err error) {
-	err = c.withSession(func(session *pkcs11Session) error {
+// GenerateDSAKeyPairWithAttributes creates a DSA key pair on the token. After this function returns, public and private
+// will contain the attributes applied to the key pair. If required attributes are missing, they will be set to a
+// default value.
+func (c *Context) GenerateDSAKeyPairWithAttributes(public, private AttributeSet, params *dsa.Parameters) (Signer, error) {
+	if c.closed.Get() {
+		return nil, errClosed
+	}
+
+	var k Signer
+	err := c.withSession(func(session *pkcs11Session) error {
 		p := params.P.Bytes()
 		q := params.Q.Bytes()
 		g := params.G.Bytes()
 
-		publicKeyTemplate := []*pkcs11.Attribute{
+		public.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_PUBLIC_KEY),
 			pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_DSA),
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
@@ -118,30 +128,19 @@ func (c *Context) generateDSAKeyPair(id, label []byte, params *dsa.Parameters) (
 			pkcs11.NewAttribute(pkcs11.CKA_PRIME, p),
 			pkcs11.NewAttribute(pkcs11.CKA_SUBPRIME, q),
 			pkcs11.NewAttribute(pkcs11.CKA_BASE, g),
-		}
-
-		privateKeyTemplate := []*pkcs11.Attribute{
+		})
+		private.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SIGN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SENSITIVE, true),
 			pkcs11.NewAttribute(pkcs11.CKA_EXTRACTABLE, false),
-		}
-
-		if id != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-		}
-
-		if label != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-		}
+		})
 
 		mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_DSA_KEY_PAIR_GEN, nil)}
 		pubHandle, privHandle, err := session.ctx.GenerateKeyPair(session.handle,
 			mech,
-			publicKeyTemplate,
-			privateKeyTemplate)
+			public.ToSlice(),
+			private.ToSlice())
 		if err != nil {
 			return err
 		}
@@ -161,7 +160,7 @@ func (c *Context) generateDSAKeyPair(id, label []byte, params *dsa.Parameters) (
 		return nil
 
 	})
-	return
+	return k, err
 }
 
 // Sign signs a message using a DSA key.

@@ -12,16 +12,16 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+Modified by Duncan Jones to remove the external dependency.
 */
 
 // Package timer provides various enhanced timer functions.
-package timer
+package pool
 
 import (
 	"sync"
 	"time"
-
-	"vitess.io/vitess/go/sync2"
 )
 
 // Out-of-band messages
@@ -56,7 +56,7 @@ A zero value interval will cause the timer to wait indefinitely, and it
 will react only to an explicit Trigger or Stop.
 */
 type Timer struct {
-	interval sync2.AtomicDuration
+	interval AtomicDuration
 
 	// state management
 	mu      sync.Mutex
@@ -87,16 +87,20 @@ func (tm *Timer) Start(keephouse func()) {
 }
 
 func (tm *Timer) run(keephouse func()) {
+	var timer *time.Timer
 	for {
 		var ch <-chan time.Time
 		interval := tm.interval.Get()
-		if interval <= 0 {
-			ch = nil
-		} else {
-			ch = time.After(interval)
+		if interval > 0 {
+			timer = time.NewTimer(interval)
+			ch = timer.C
 		}
 		select {
 		case action := <-tm.msg:
+			if timer != nil {
+				timer.Stop()
+				timer = nil
+			}
 			switch action {
 			case timerStop:
 				return

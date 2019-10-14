@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ThalesIgnite/crypto11"
@@ -203,36 +202,18 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 // An error is returned if the crypto11 module cannot find the module, token,
 // or the specified object.
 func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
-	lock.Lock()
-	defer lock.Unlock()
-
-	// Ensure we only attempt to configure each module once to avoid
-	// CKR_CRYPTOKI_ALREADY_INITIALIZED.
-	// The implication of this is it is impossible to use multiple tokens from
-	// the same module at once.
-	context, ok := modules[pk11uri.ModulePath]
-	if !ok {
-		config := &crypto11.Config{
-			Path:            pk11uri.ModulePath,
-			TokenSerial:     pk11uri.Serial,
-			TokenLabel:      pk11uri.Token,
-			SlotNumber:      pk11uri.SlotID,
-			Pin:             pk11uri.PinValue,
-			MaxSessions:     pk11uri.MaxSessions,
-			PoolWaitTimeout: 10 * time.Second,
-		}
-
-		var err error
-		context, err = crypto11.Configure(config)
-		if err != nil {
-			return nil, err
-		}
-
-		modules[pk11uri.ModulePath] = context
+	context, err := crypto11.Configure(&crypto11.Config{
+		Path:            pk11uri.ModulePath,
+		TokenSerial:     pk11uri.Serial,
+		TokenLabel:      pk11uri.Token,
+		SlotNumber:      pk11uri.SlotID,
+		Pin:             pk11uri.PinValue,
+		MaxSessions:     pk11uri.MaxSessions,
+		PoolWaitTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return context.FindKeyPair(pk11uri.ID, pk11uri.Object)
 }
-
-var modules = map[string]*crypto11.Context{}
-var lock sync.Mutex

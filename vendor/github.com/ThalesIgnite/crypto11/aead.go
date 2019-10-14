@@ -42,6 +42,8 @@ const (
 	PaddingPKCS
 )
 
+var errBadGCMNonceSize = errors.New("nonce slice too small to hold IV")
+
 type genericAead struct {
 	key *SecretKey
 
@@ -49,7 +51,9 @@ type genericAead struct {
 
 	nonceSize int
 
-	makeMech func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, error)
+	// Note - if the GCMParams result is non-nil, the caller must call Free() on the params when
+	// finished.
+	makeMech func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error)
 }
 
 // NewGCM returns a given cipher wrapped in Galois Counter Mode, with the standard
@@ -66,9 +70,9 @@ func (key *SecretKey) NewGCM() (cipher.AEAD, error) {
 		key:       key,
 		overhead:  16,
 		nonceSize: 12,
-		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, error) {
+		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
 			params := pkcs11.NewGCMParams(nonce, additionalData, 16*8 /*bits*/)
-			return []*pkcs11.Mechanism{pkcs11.NewMechanism(key.Cipher.GCMMech, params)}, nil
+			return []*pkcs11.Mechanism{pkcs11.NewMechanism(key.Cipher.GCMMech, params)}, params, nil
 		},
 	}
 	return g, nil
@@ -96,12 +100,12 @@ func (key *SecretKey) NewCBC(paddingMode PaddingMode) (cipher.AEAD, error) {
 		key:       key,
 		overhead:  0,
 		nonceSize: key.BlockSize(),
-		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, error) {
+		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
 			if len(additionalData) > 0 {
-				return nil, errors.New("additional data not supported for CBC mode")
+				return nil, nil, errors.New("additional data not supported for CBC mode")
 			}
 
-			return []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcsMech, nonce)}, nil
+			return []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcsMech, nonce)}, nil, nil
 		},
 	}
 
@@ -117,12 +121,15 @@ func (g genericAead) Overhead() int {
 }
 
 func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
+
 	var result []byte
 	if err := g.key.context.withSession(func(session *pkcs11Session) (err error) {
-		var mech []*pkcs11.Mechanism
-		if mech, err = g.makeMech(nonce, additionalData); err != nil {
-			return
+		mech, params, err := g.makeMech(nonce, additionalData)
+		if err != nil {
+			return err
 		}
+		defer params.Free()
+
 		if err = session.ctx.EncryptInit(session.handle, mech, g.key.handle); err != nil {
 			err = fmt.Errorf("C_EncryptInit: %v", err)
 			return
@@ -131,6 +138,15 @@ func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 			err = fmt.Errorf("C_Encrypt: %v", err)
 			return
 		}
+
+		if g.key.context.cfg.UseGCMIVFromHSM {
+			if len(nonce) != len(params.IV()) {
+				return errBadGCMNonceSize
+			}
+
+			copy(nonce, params.IV())
+		}
+
 		return
 	}); err != nil {
 		panic(err)
@@ -143,10 +159,12 @@ func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 func (g genericAead) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
 	var result []byte
 	if err := g.key.context.withSession(func(session *pkcs11Session) (err error) {
-		var mech []*pkcs11.Mechanism
-		if mech, err = g.makeMech(nonce, additionalData); err != nil {
+		mech, params, err := g.makeMech(nonce, additionalData)
+		if err != nil {
 			return
 		}
+		defer params.Free()
+
 		if err = session.ctx.DecryptInit(session.handle, mech, g.key.handle); err != nil {
 			err = fmt.Errorf("C_DecryptInit: %v", err)
 			return

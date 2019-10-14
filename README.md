@@ -150,7 +150,7 @@ Private keys can also be stored on a Hardware Security Module. Keyless can acces
     - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
     - uri: pkcs11:token=elab2parN;id=%04?module-path=/usr/lib/libCryptoki2_64.so&pin-value=crypto1
 
-Note only one PKCS #11 token can be specified per module. And you must provide exactly one of the `token`, `serial`, or `slot-id` attributes to identify the token.
+Note you must provide exactly one of the `token`, `serial`, or `slot-id` attributes to identify the token.
 
 # Deploying
 

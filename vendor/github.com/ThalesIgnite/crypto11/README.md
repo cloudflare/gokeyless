@@ -8,6 +8,7 @@ This is an implementation of the standard Golang crypto interfaces that
 uses [PKCS#11](http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/errata01/os/pkcs11-base-v2.40-errata01-os-complete.html) as a backend. The supported features are:
 
 * Generation and retrieval of RSA, DSA and ECDSA keys.
+* Importing and retrieval of x509 certificates
 * PKCS#1 v1.5 signing.
 * PKCS#1 PSS signing.
 * PKCS#1 v1.5 decryption
@@ -58,6 +59,53 @@ A minimal configuration file looks like this:
 
 Testing Guidance
 ================
+
+Disabling tests
+---------------
+
+To disable specific tests, set the environment variable `CRYPTO11_SKIP=<flags>` where `<flags>` is a comma-separated
+list of the following options:
+
+*  `CERTS` - disables certificate-related tests. Needed for AWS CloudHSM, which doesn't support certificates.
+*  `OAEP_LABEL` - disables RSA OAEP encryption tests that use source data encoding parameter (also known as a 'label' 
+in some crypto libraries). Needed for AWS CloudHSM.
+*  `DSA` - disables DSA tests. Needed for AWS CloudHSM (and any other tokens not supporting DSA).
+
+Testing with AWS CloudHSM
+-------------------------
+
+A minimal configuration file for CloudHSM will look like this:
+
+```json
+{
+  "Path" : "/opt/cloudhsm/lib/libcloudhsm_pkcs11_standard.so",
+  "TokenLabel": "cavium",
+  "Pin" : "username:password",
+  "UseGCMIVFromHSM" : true,
+}
+```
+
+To run the test suite you must skip unsupported tests:
+
+```
+CRYPTO11_SKIP=CERTS,OAEP_LABEL,DSA go test -v
+```
+
+Be sure to take note of the supported mechanisms, key types and other idiosyncrasies described at
+https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html. Here's a collection of things we
+noticed when testing with the  v2.0.4 PKCS#11 library:
+
+- 1024-bit RSA keys don't appear to be supported, despite what `C_GetMechanismInfo` tells you.
+- The `CKM_RSA_PKCS_OAEP` mechanism doesn't support source data. I.e. when constructing a `CK_RSA_PKCS_OAEP_PARAMS`, 
+one must set `pSourceData` to `NULL` and `ulSourceDataLen` to zero.
+- CloudHSM will generate it's own IV for GCM mode. This is described in their documentation, see footnote 4 on
+https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-mechanisms.html.
+- It appears that `CKA_ID` values must be unique, otherwise you get a `CKR_ATTRIBUTE_VALUE_INVALID` error.
+- Very rapid session opening can trigger the following error:
+  ```
+  C_OpenSession failed with error CKR_ARGUMENTS_BAD : 0x00000007
+  HSM error 8c: HSM Error: Already maximum number of sessions are issued
+  ```
 
 Testing with SoftHSM2
 ---------------------
@@ -152,4 +200,3 @@ discuss.
 Here are some topics we'd like to cover:
 
 * Full test instructions for additional PKCS#11 implementations.
-* Move to another resource pool implementation (`github.com/vitessio/vitess` is a big dependency)

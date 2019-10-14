@@ -63,21 +63,12 @@ required = [
 
 [[constraint]]
   name = "github.com/ThalesIgnite/crypto11"
-  version = "v1.0.0"
+  version = "v1.2.0"
 
 # crypto11 uses go modules so dep doesn't understand its dependencies
 [[override]]
   name = "github.com/miekg/pkcs11"
-  revision = "a667d056470f6e0da7facaff2466f0d2645e35d7"
-
-# https://github.com/ThalesIgnite/crypto11/issues/35
-[[override]]
-  name = "github.com/vitessio/vitess"
-  revision = "5d425edc0cafad159bddaaaa9dc4505c98e8acbf"
-
-[[override]]
-  branch = "master"
-  name = "github.com/youtube/vitess"
+  version = "v1.0.3"
 
 [prune]
   go-tests = true

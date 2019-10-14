@@ -2,12 +2,12 @@
 
 
 [[projects]]
-  digest = "1:0787023e0b484e030bf4b06345997139cdad77b1fe6c6d88daea36f4b3dd2913"
+  digest = "1:19321613124d8fbb6cd9e5487a25bb3aa6603edc86f45e588e7018dba7488c65"
   name = "github.com/ThalesIgnite/crypto11"
   packages = ["."]
   pruneopts = "UT"
-  revision = "38ef75346a1dc2094ffdd919341ef9827fb041c0"
-  version = "v1.0.0"
+  revision = "3d83a0a5d480dbbc8a65be3a111e194b5275e58b"
+  version = "v1.2.0"
 
 [[projects]]
   branch = "master"
@@ -145,11 +145,12 @@
   version = "v1.0.4"
 
 [[projects]]
-  digest = "1:ad3c98763b4167718a5941a6d202122f158ebc3e03aa028f59c09254d9fd2360"
+  digest = "1:4e6747259a47ce5cd9dc04bbaef87b8e061b32038f428c05db7179e5ec3e47ff"
   name = "github.com/miekg/pkcs11"
   packages = ["."]
   pruneopts = "UT"
-  revision = "a667d056470f6e0da7facaff2466f0d2645e35d7"
+  revision = "210dc1e16747c5ba98a03bcbcf728c38086ea357"
+  version = "v1.0.3"
 
 [[projects]]
   branch = "master"
@@ -283,14 +284,12 @@
   version = "v1.3.0"
 
 [[projects]]
-  digest = "1:a5a5e0b3b25be317cec2561f753d66f85a19bd451ddb9a54ecb8e1a83425869a"
-  name = "github.com/vitessio/vitess"
-  packages = [
-    "go/pools",
-    "go/sync2",
-  ]
+  digest = "1:bc21c70fb9132715a7c23738bf31e4b9c3e9a3e15472536dacf63ef65334c172"
+  name = "github.com/thales-e-security/pool"
+  packages = ["."]
   pruneopts = "UT"
-  revision = "5d425edc0cafad159bddaaaa9dc4505c98e8acbf"
+  revision = "07b23cbb4bb51b263ee7aea7a0a8ec730967a563"
+  version = "v0.0.1"
 
 [[projects]]
   branch = "master"
@@ -321,11 +320,10 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:fd4ba4d747705d0f30f598fde62fe67a86c0e6337707db5a8800424f99352ea1"
+  digest = "1:45b89e227942d5c1aa9ff09afea678f97e075541478b8f4468e902bfec57b560"
   name = "golang.org/x/net"
   packages = [
     "bpf",
-    "context",
     "internal/iana",
     "internal/socket",
     "ipv4",
@@ -381,18 +379,6 @@
   pruneopts = "UT"
   revision = "5420a8b6744d3b0345ab293f6fcba19c978f1183"
   version = "v2.2.1"
-
-[[projects]]
-  digest = "1:55a027ba64b8be1b5385e215d353dff19f9e18d1a479e614b31e618d9ba4be8a"
-  name = "vitess.io/vitess"
-  packages = [
-    "go/cache",
-    "go/sync2",
-    "go/timer",
-  ]
-  pruneopts = "UT"
-  revision = "66e84fadcc1a7e956e7ffcebcaaba0b04132ca1f"
-  version = "v2.2"
 
 [solve-meta]
   analyzer-name = "dep"

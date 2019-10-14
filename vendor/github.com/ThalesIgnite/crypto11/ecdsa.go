@@ -206,11 +206,14 @@ func (c *Context) GenerateECDSAKeyPair(id []byte, curve elliptic.Curve) (Signer,
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithID(id)
+	if err != nil {
 		return nil, err
 	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateECDSAKeyPair(id, nil, curve)
+	return c.GenerateECDSAKeyPairWithAttributes(public, private, curve)
 }
 
 // GenerateECDSAKeyPairWithLabel creates a ECDSA key pair on the token using curve c. The id and label parameters are used to
@@ -221,53 +224,50 @@ func (c *Context) GenerateECDSAKeyPairWithLabel(id, label []byte, curve elliptic
 		return nil, errClosed
 	}
 
-	if err := notNilBytes(id, "id"); err != nil {
+	public, err := NewAttributeSetWithIDAndLabel(id, label)
+	if err != nil {
 		return nil, err
 	}
-	if err := notNilBytes(label, "label"); err != nil {
-		return nil, err
-	}
+	// Copy the AttributeSet to allow modifications.
+	private := public.Copy()
 
-	return c.generateECDSAKeyPair(id, label, curve)
+	return c.GenerateECDSAKeyPairWithAttributes(public, private, curve)
 }
 
-// generateECDSAKeyPair generates a key pair on the token.
-func (c *Context) generateECDSAKeyPair(id, label []byte, curve elliptic.Curve) (k *pkcs11PrivateKeyECDSA, err error) {
-	err = c.withSession(func(session *pkcs11Session) error {
+// GenerateECDSAKeyPairWithAttributes generates an ECDSA key pair on the token. After this function returns, public and
+// private will contain the attributes applied to the key pair. If required attributes are missing, they will be set to
+// a default value.
+func (c *Context) GenerateECDSAKeyPairWithAttributes(public, private AttributeSet, curve elliptic.Curve) (Signer, error) {
+	if c.closed.Get() {
+		return nil, errClosed
+	}
+
+	var k Signer
+	err := c.withSession(func(session *pkcs11Session) error {
 
 		parameters, err := marshalEcParams(curve)
 		if err != nil {
 			return err
 		}
-		publicKeyTemplate := []*pkcs11.Attribute{
+		public.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_CLASS, pkcs11.CKO_PUBLIC_KEY),
 			pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_ECDSA),
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_VERIFY, true),
 			pkcs11.NewAttribute(pkcs11.CKA_ECDSA_PARAMS, parameters),
-		}
-		privateKeyTemplate := []*pkcs11.Attribute{
+		})
+		private.AddIfNotPresent([]*pkcs11.Attribute{
 			pkcs11.NewAttribute(pkcs11.CKA_TOKEN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SIGN, true),
 			pkcs11.NewAttribute(pkcs11.CKA_SENSITIVE, true),
 			pkcs11.NewAttribute(pkcs11.CKA_EXTRACTABLE, false),
-		}
-
-		if id != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_ID, id))
-		}
-
-		if label != nil {
-			publicKeyTemplate = append(publicKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-			privateKeyTemplate = append(privateKeyTemplate, pkcs11.NewAttribute(pkcs11.CKA_LABEL, label))
-		}
+		})
 
 		mech := []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_ECDSA_KEY_PAIR_GEN, nil)}
 		pubHandle, privHandle, err := session.ctx.GenerateKeyPair(session.handle,
 			mech,
-			publicKeyTemplate,
-			privateKeyTemplate)
+			public.ToSlice(),
+			private.ToSlice())
 		if err != nil {
 			return err
 		}
@@ -287,7 +287,7 @@ func (c *Context) generateECDSAKeyPair(id, label []byte, curve elliptic.Curve) (
 			}}
 		return nil
 	})
-	return
+	return k, err
 }
 
 // Sign signs a message using an ECDSA key.

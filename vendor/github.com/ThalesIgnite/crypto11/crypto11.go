@@ -90,15 +90,16 @@ package crypto11
 import (
 	"crypto"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
+	"strings"
+	"sync"
 	"time"
-
-	"github.com/vitessio/vitess/go/sync2"
 
 	"github.com/miekg/pkcs11"
 	"github.com/pkg/errors"
-	"github.com/vitessio/vitess/go/pools"
+	"github.com/thales-e-security/pool"
 )
 
 const (
@@ -112,9 +113,6 @@ var errTokenNotFound = errors.New("could not find PKCS#11 token")
 
 // errClosed is returned if a Context is used after a call to Close.
 var errClosed = errors.New("cannot used closed Context")
-
-// errAmbiguousToken is returned if the supplied Config specifies more than one way to select the token.
-var errAmbiguousToken = errors.New("config must only specify one way to select a token")
 
 // pkcs11Object contains a reference to a loaded PKCS#11 object.
 type pkcs11Object struct {
@@ -164,14 +162,14 @@ func (k *pkcs11PrivateKey) Delete() error {
 // All functions, except Close, are safe to call from multiple goroutines.
 type Context struct {
 	// Atomic fields must be at top (according to the package owners)
-	closed sync2.AtomicBool
+	closed pool.AtomicBool
 
 	ctx *pkcs11.Ctx
 	cfg *Config
 
 	token *pkcs11.TokenInfo
 	slot  uint
-	pool  *pools.ResourcePool
+	pool  *pool.ResourcePool
 
 	// persistentSession is a session held open so we can be confident handles and login status
 	// persist for the duration of this context
@@ -241,23 +239,39 @@ type Config struct {
 
 	// Maximum time to wait for a session from the sessions pool. Zero means wait indefinitely.
 	PoolWaitTimeout time.Duration
+
+	// LoginNotSupported should be set to true for tokens that do not support logging in.
+	LoginNotSupported bool
+
+	// UseGCMIVFromHSM should be set to true for tokens such as CloudHSM, which ignore the supplied IV for
+	// GCM mode and generate their own. In this case, the token will write the IV used into the CK_GCM_PARAMS.
+	// If UseGCMIVFromHSM is true, we will copy this IV and overwrite the 'nonce' slice passed to Seal and Open. It
+	// is therefore necessary that the nonce is the correct length (12 bytes for CloudHSM).
+	UseGCMIVFromHSM bool
 }
+
+// refCount counts the number of contexts using a particular P11 library. It must not be read or modified
+// without holding refCountMutex.
+var refCount = map[string]int{}
+var refCountMutex = sync.Mutex{}
 
 // Configure creates a new Context based on the supplied PKCS#11 configuration.
 func Configure(config *Config) (*Context, error) {
 	// Have we been given exactly one way to select a token?
-	count := 0
+	var fields []string
 	if config.SlotNumber != nil {
-		count++
+		fields = append(fields, "slot number")
 	}
 	if config.TokenLabel != "" {
-		count++
+		fields = append(fields, "token label")
 	}
 	if config.TokenSerial != "" {
-		count++
+		fields = append(fields, "token serial number")
 	}
-	if count != 1 {
-		return nil, errAmbiguousToken
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("config must specify exactly one way to select a token: none given")
+	} else if len(fields) > 1 {
+		return nil, fmt.Errorf("config must specify exactly one way to select a token: %v given", strings.Join(fields, ", "))
 	}
 
 	if config.MaxSessions == 0 {
@@ -272,9 +286,18 @@ func Configure(config *Config) (*Context, error) {
 	if instance.ctx == nil {
 		return nil, errors.New("could not open PKCS#11")
 	}
-	if err := instance.ctx.Initialize(); err != nil {
-		instance.ctx.Destroy()
-		return nil, errors.WithMessage(err, "failed to initialize PKCS#11 library")
+
+	// Check how many contexts are currently using this library
+	refCountMutex.Lock()
+	defer refCountMutex.Unlock()
+	numExistingContexts := refCount[config.Path]
+
+	// Only Initialize if we are the first Context using the library
+	if numExistingContexts == 0 {
+		if err := instance.ctx.Initialize(); err != nil {
+			instance.ctx.Destroy()
+			return nil, errors.WithMessage(err, "failed to initialize PKCS#11 library")
+		}
 	}
 	slots, err := instance.ctx.GetSlotList(true)
 	if err != nil {
@@ -298,22 +321,35 @@ func Configure(config *Config) (*Context, error) {
 	}
 
 	// We will use one session to keep state alive, so the pool gets maxSessions - 1
-	instance.pool = pools.NewResourcePool(instance.resourcePoolFactoryFunc, maxSessions-1, maxSessions-1, 0)
+	instance.pool = pool.NewResourcePool(instance.resourcePoolFactoryFunc, maxSessions-1, maxSessions-1, 0, 0)
 
-	// Create a long-term session and log it in. This session won't be used by callers, instead it is used to keep
-	// a connection alive to the token to ensure object handles and the log in status remain accessible.
+	// Create a long-term session and log it in (if supported). This session won't be used by callers, instead it is
+	// used to keep a connection alive to the token to ensure object handles and the log in status remain accessible.
 	instance.persistentSession, err = instance.ctx.OpenSession(instance.slot, pkcs11.CKF_SERIAL_SESSION|pkcs11.CKF_RW_SESSION)
 	if err != nil {
 		_ = instance.ctx.Finalize()
 		instance.ctx.Destroy()
 		return nil, errors.WithMessagef(err, "failed to create long term session")
 	}
-	err = instance.ctx.Login(instance.persistentSession, pkcs11.CKU_USER, instance.cfg.Pin)
-	if err != nil {
-		_ = instance.ctx.Finalize()
-		instance.ctx.Destroy()
-		return nil, errors.WithMessagef(err, "failed to log into long term session")
+
+	if !config.LoginNotSupported {
+		// Try to log in our persistent session. This may fail with CKR_USER_ALREADY_LOGGED_IN if another instance
+		// already exists.
+		err = instance.ctx.Login(instance.persistentSession, pkcs11.CKU_USER, instance.cfg.Pin)
+		if err != nil {
+
+			pErr, isP11Error := err.(pkcs11.Error)
+
+			if !isP11Error || pErr != pkcs11.CKR_USER_ALREADY_LOGGED_IN {
+				_ = instance.ctx.Finalize()
+				instance.ctx.Destroy()
+				return nil, errors.WithMessagef(err, "failed to log into long term session")
+			}
+		}
 	}
+
+	// Increment the reference count
+	refCount[config.Path] = numExistingContexts + 1
 
 	return instance, nil
 }
@@ -370,9 +406,14 @@ func loadConfigFromFile(configLocation string) (*Config, error) {
 	return config, errors.WithMessage(err, "could decode config file:")
 }
 
-// Close releases all the resources used by the Context and unloads the PKCS #11 library. Close blocks until existing
-// operations have finished. A closed Context cannot be reused.
+// Close releases resources used by the Context and unloads the PKCS #11 library if there are no other
+// Contexts using it. Close blocks until existing operations have finished. A closed Context cannot be reused.
 func (c *Context) Close() error {
+
+	// Take lock on the reference count
+	refCountMutex.Lock()
+	defer refCountMutex.Unlock()
+
 	c.closed.Set(true)
 
 	// Block until all resources returned to pool
@@ -382,9 +423,20 @@ func (c *Context) Close() error {
 	// since we plan to kill our collection to the library anyway.
 	_ = c.ctx.CloseSession(c.persistentSession)
 
-	err := c.ctx.Finalize()
-	if err != nil {
-		return err
+	count, found := refCount[c.cfg.Path]
+	if !found || count == 0 {
+		// We have somehow lost track of reference counts, this is very bad
+		panic("invalid reference count for PKCS#11 library")
+	}
+
+	refCount[c.cfg.Path] = count - 1
+
+	// If we were the last Context, finalize the library
+	if count == 1 {
+		err := c.ctx.Finalize()
+		if err != nil {
+			return err
+		}
 	}
 
 	c.ctx.Destroy()
