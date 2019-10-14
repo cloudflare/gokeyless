@@ -85,7 +85,7 @@ gokeyless: $(shell find . -type f -name '*.go')
 
 .PHONY: vet
 vet:
-	go vet -tags pkcs11 `go list ./... | grep -v /vendor/`
+	go vet -tags pkcs11 ./...
 
 .PHONY: lint
 lint:
@@ -93,12 +93,12 @@ lint:
 
 .PHONY: test
 test:
-	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race ./...
 	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race ./tests -args -softhsm2
 
 .PHONY: test-nohsm
 test-nohsm:
-	GODEBUG=cgocheck=2 go test -v -cover -race `go list ./... | grep -v /vendor/`
+	GODEBUG=cgocheck=2 go test -v -cover -race ./...
 
 .PHONY: test-trust
 test-trust: gokeyless

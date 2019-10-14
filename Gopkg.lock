@@ -294,7 +294,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:929df8ff815abb014de83a46e5567664fcf8da7b8c848599fba11090053228e5"
+  digest = "1:589cbde0f35e76f76730eab484c7adfc6582545bdb7c613781382e7c953850ce"
   name = "golang.org/x/crypto"
   packages = [
     "cryptobyte",
@@ -306,7 +306,7 @@
     "pkcs12/internal/rc2",
   ]
   pruneopts = "UT"
-  revision = "c126467f60eb25f8f27e5a981f32a87e3965053f"
+  revision = "87dc89f01550277dc22b74ffcf4cd89fa2f40f4c"
 
 [[projects]]
   branch = "master"

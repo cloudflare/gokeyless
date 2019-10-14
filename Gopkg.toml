@@ -62,10 +62,6 @@ required = [
   name = "github.com/prometheus/client_golang"
 
 [[constraint]]
-  branch = "master"
-  name = "go4.org"
-
-[[constraint]]
   name = "github.com/ThalesIgnite/crypto11"
   version = "v1.0.0"
 

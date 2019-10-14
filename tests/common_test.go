@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"os"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -44,7 +45,11 @@ const (
 func init() {
 	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
 	flag.IntVar(&log.Level, "loglevel", log.LevelFatal, "Log level (0 = DEBUG, 5 = FATAL)")
+}
+
+func TestMain(m *testing.M) {
 	flag.Parse()
+	os.Exit(m.Run())
 }
 
 type IntegrationTestSuite struct {
