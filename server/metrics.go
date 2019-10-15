@@ -7,6 +7,7 @@ import (
 	"github.com/cloudflare/cfssl/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/cloudflare/gokeyless/protocol"
 )
@@ -70,7 +71,7 @@ func logRequestTotalDuration(opcode protocol.Op, requestBegin time.Time, err pro
 // MetricsListenAndServe serves Prometheus metrics at metricsAddr
 func (s *Server) MetricsListenAndServe(metricsAddr string) error {
 	if metricsAddr != "" {
-		http.Handle("/metrics", prometheus.Handler())
+		http.Handle("/metrics", promhttp.Handler())
 
 		log.Infof("Serving metrics endpoint at %s/metrics\n", metricsAddr)
 		return http.ListenAndServe(metricsAddr, nil)

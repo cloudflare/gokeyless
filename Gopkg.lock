@@ -186,11 +186,12 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f8f022dbb1e6284be400d2ec4a82fdf9636edc7147fb7e7352b36e8357dd64e5"
+  digest = "1:26351fda10262c3c6854d5ab8e7a2aeb14d6cba4ee193f15b989c939c05d6b45"
   name = "github.com/prometheus/client_golang"
   packages = [
     "prometheus",
     "prometheus/promauto",
+    "prometheus/promhttp",
   ]
   pruneopts = "UT"
   revision = "77e8f2ddcfed59ece3a8151879efb2304b5cbbcf"
@@ -396,6 +397,7 @@
     "github.com/miekg/dns",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promauto",
+    "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/spf13/pflag",
     "github.com/spf13/viper",
     "github.com/stretchr/testify/require",
