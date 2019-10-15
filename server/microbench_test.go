@@ -10,6 +10,7 @@ import (
 	"crypto/rsa"
 	"flag"
 	"io"
+	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -23,7 +24,11 @@ var testSoftHSM bool
 
 func init() {
 	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
+}
+
+func TestMain(m *testing.M) {
 	flag.Parse()
+	os.Exit(m.Run())
 }
 
 // mustReadFull tries to read from r until b is fully populated, calling

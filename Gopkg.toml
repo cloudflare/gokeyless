@@ -62,8 +62,13 @@ required = [
   name = "github.com/prometheus/client_golang"
 
 [[constraint]]
-  branch = "master"
   name = "github.com/ThalesIgnite/crypto11"
+  version = "v1.2.0"
+
+# crypto11 uses go modules so dep doesn't understand its dependencies
+[[override]]
+  name = "github.com/miekg/pkcs11"
+  version = "v1.0.3"
 
 [prune]
   go-tests = true

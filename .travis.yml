@@ -5,6 +5,8 @@ matrix:
   include:
     - go: 1.11.x
     - go: 1.12.x
+    - go: 1.13.x
+    - go: master
   allow_failures:
     - go: master
 
@@ -16,15 +18,3 @@ go_import_path: github.com/cloudflare/gokeyless
 
 script:
   - make vet lint test-nohsm test-trust
-
-notifications:
-  email:
-    recipients:
-      - cbroglie@cloudflare.com
-      - gabriel@cloudflare.com
-      - leland@cloudflare.com
-      - mihir@cloudflare.com
-      - mitul@cloudflare.com
-      - nicky@cloudflare.com
-    on_success: never
-    on_failure: change
