@@ -3,7 +3,7 @@ VENDOR := "Cloudflare"
 LICENSE := "See License File"
 URL := "https://github.com/cloudflare/gokeyless"
 DESCRIPTION="A Go implementation of the keyless server protocol"
-VERSION := $(shell git describe --tags --always --dirty=-dev)
+VERSION := $(shell git describe --tags --abbrev=0 | tr -d '[:alpha:]')
 LDFLAGS := "-X main.version=$(VERSION)"
 
 DESTDIR                      := build
@@ -18,6 +18,10 @@ OS ?= linux
 ARCH ?= amd64
 DEB_PACKAGE := $(NAME)_$(VERSION)_$(ARCH).deb
 RPM_PACKAGE := $(NAME)-$(VERSION).$(ARCH).rpm
+
+# build without using the network
+export GOPROXY := off
+export GOFLAGS := -mod=vendor
 
 .PHONY: all
 all: $(DEB_PACKAGE) $(RPM_PACKAGE)
