@@ -16,15 +16,13 @@ CONFIG_PREFIX                := $(DESTDIR)/$(CONFIG_PATH)
 
 OS ?= linux
 ARCH ?= amd64
-DEB_PACKAGE := $(NAME)_$(VERSION)_$(ARCH).deb
-RPM_PACKAGE := $(NAME)-$(VERSION).$(ARCH).rpm
 
 # build without using the network
 export GOPROXY := off
 export GOFLAGS := -mod=vendor
 
 .PHONY: all
-all: $(DEB_PACKAGE) $(RPM_PACKAGE)
+all: package-deb package-rpm
 
 .PHONY: install-config
 install-config:
@@ -39,13 +37,12 @@ install-config:
 	@install -m600 pkg/gokeyless.yaml $(CONFIG_PREFIX)/gokeyless.yaml
 
 $(INSTALL_BIN)/$(NAME): | install-config
-	@GOOS=$(OS) GOARCH=$(ARCH) go build -tags pkcs11 -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
+	GOOS=$(OS) GOARCH=$(ARCH) go build -tags pkcs11 -ldflags $(LDFLAGS) -o $@ ./cmd/$(NAME)/...
 
 .PHONY: clean
 clean:
-	@$(RM) -r $(DESTDIR)
-	@$(RM) $(DEB_PACKAGE)
-	@$(RM) $(RPM_PACKAGE)
+	$(RM) -r $(DESTDIR)
+	$(RM) *.rpm *.deb
 
 FPM = fpm -C $(DESTDIR) \
 	-n $(NAME) \
@@ -57,8 +54,9 @@ FPM = fpm -C $(DESTDIR) \
 	--vendor $(VENDOR) \
 	--license $(LICENSE) \
 
-$(DEB_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
-	@$(FPM) \
+.PHONY: package-deb
+package-deb: | $(INSTALL_BIN)/$(NAME) install-config
+	$(FPM) \
 	-t deb \
 	-d libltdl7 \
 	--before-install pkg/debian/before-install.sh \
@@ -69,8 +67,9 @@ $(DEB_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
 	--deb-user root --deb-group root \
 	.
 
-$(RPM_PACKAGE): | $(INSTALL_BIN)/$(NAME) install-config
-	@$(FPM) \
+.PHONY: package-rpm
+package-rpm: | $(INSTALL_BIN)/$(NAME) install-config
+	$(FPM) \
 	-t rpm \
 	-d libtool-ltdl \
 	--rpm-os linux \
