@@ -235,6 +235,7 @@ type Config struct {
 	Pin string
 
 	// Maximum number of concurrent sessions to open. If zero, DefaultMaxSessions is used.
+	// Otherwise, the value specified must be at least 2.
 	MaxSessions int
 
 	// Maximum time to wait for a session from the sessions pool. Zero means wait indefinitely.
@@ -276,6 +277,9 @@ func Configure(config *Config) (*Context, error) {
 
 	if config.MaxSessions == 0 {
 		config.MaxSessions = DefaultMaxSessions
+	}
+	if config.MaxSessions == 1 {
+		return nil, errors.New("MaxSessions must be larger than 1")
 	}
 
 	instance := &Context{

@@ -202,7 +202,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 // An error is returned if the crypto11 module cannot find the module, token,
 // or the specified object.
 func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
-	context, err := crypto11.Configure(&crypto11.Config{
+	config := &crypto11.Config{
 		Path:            pk11uri.ModulePath,
 		TokenSerial:     pk11uri.Serial,
 		TokenLabel:      pk11uri.Token,
@@ -210,10 +210,24 @@ func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 		Pin:             pk11uri.PinValue,
 		MaxSessions:     pk11uri.MaxSessions,
 		PoolWaitTimeout: 10 * time.Second,
-	})
+	}
+	// crypto11 uses 1 of the sessions in the background for itself, so the
+	// practical mininum is 2.
+	if config.MaxSessions < 2 {
+		config.MaxSessions = 2
+	}
+
+	context, err := crypto11.Configure(config)
 	if err != nil {
 		return nil, err
 	}
 
-	return context.FindKeyPair(pk11uri.ID, pk11uri.Object)
+	signer, err := context.FindKeyPair(pk11uri.ID, pk11uri.Object)
+	if err != nil {
+		return nil, err
+	} else if signer == nil {
+		return nil, fmt.Errorf("not found")
+	}
+
+	return signer, nil
 }

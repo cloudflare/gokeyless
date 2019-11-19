@@ -1,4 +1,4 @@
-# github.com/ThalesIgnite/crypto11 v1.2.0
+# github.com/ThalesIgnite/crypto11 v1.2.1
 github.com/ThalesIgnite/crypto11
 # github.com/beorn7/perks v0.0.0-20160804104726-4c0e84591b9a
 github.com/beorn7/perks/quantile
