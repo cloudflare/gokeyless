@@ -4,7 +4,7 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
-	github.com/ThalesIgnite/crypto11 v1.2.0
+	github.com/ThalesIgnite/crypto11 v1.2.1
 	github.com/beorn7/perks v0.0.0-20160804104726-4c0e84591b9a // indirect
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
 	github.com/cloudflare/cfssl v0.0.0-20180724182639-74781550e7f0
