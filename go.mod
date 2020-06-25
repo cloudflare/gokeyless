@@ -18,7 +18,7 @@ require (
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
 	github.com/magiconair/properties v1.7.6 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.0 // indirect
-	github.com/miekg/dns v1.0.4
+	github.com/miekg/dns v1.1.29
 	github.com/miekg/pkcs11 v1.0.3 // indirect
 	github.com/mitchellh/mapstructure v0.0.0-20180511142126-bb74f1db0675 // indirect
 	github.com/pelletier/go-toml v1.1.0 // indirect
@@ -35,6 +35,6 @@ require (
 	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
 	golang.org/x/lint v0.0.0-20190930215403-16217165b5de
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
-	golang.org/x/tools v0.0.0-20191015150414-f936694f27bf
+	golang.org/x/tools v0.0.0-20191216052735-49a3e744a425
 	gopkg.in/yaml.v2 v2.2.1
 )
