@@ -124,7 +124,7 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 			// not the last attempt, log error and retry
 			if attempts > 1 {
 				log.Info("failed remote operation:", err)
-				log.Infof("retry new connction")
+				log.Infof("retry new connection")
 				continue
 			}
 			return nil, err

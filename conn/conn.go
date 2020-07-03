@@ -23,11 +23,11 @@ import (
 //
 // Interacting with the Network Connection
 ///
-// While the net.Conn interface is, stricly-speaking, thread-safe, it's not
+// While the net.Conn interface is, strictly-speaking, thread-safe, it's not
 // good enough for our needs. In particular, if two goroutines read or write to
 // or from the connection at the same time, the net.Conn object will not crash,
 // but it may write the bytes of the two goroutines' payloads interleaved or
-// return different bits of each messsage payload to the reader goroutines.
+// return different bits of each message payload to the reader goroutines.
 //
 // However, so long as there is only one goroutine reading and one goroutine
 // writing at a time, we are fine since reading and writing to not interfere
@@ -73,7 +73,7 @@ import (
 // Closing the Connection
 //
 // Ideally, a client would only close the connection after all of its other
-// outsanding operations were complete. However, it would be brittle to rely on
+// outstanding operations were complete. However, it would be brittle to rely on
 // this behavior for correctness. Thus, we support closing the connection in any
 // state.
 //

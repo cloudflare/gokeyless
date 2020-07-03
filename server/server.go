@@ -41,7 +41,7 @@ var keyExt = regexp.MustCompile(`.+\.key`)
 // Keystore is an abstract container for a server's private keys, allowing
 // lookup of keys based on incoming `Operation` requests.
 type Keystore interface {
-	// Get retreives a key for signing. The Sign method will be called directly on
+	// Get retrieves a key for signing. The Sign method will be called directly on
 	// this key, so it's advisable to perform any precomputation on this key that
 	// may speed up signing over the course of multiple signatures (e.g.,
 	// crypto/rsa.PrivateKey's Precompute method).
@@ -263,13 +263,13 @@ func (s *Server) SetSealer(sealer Sealer) {
 // When a client sends a message with the opcode OpRPC, the payload of the
 // message is extracted and decoded as an RPC method and a set of RPC arguments.
 // This information is passed to the server's dispatcher (a *net/rpc.Server),
-// which then calls the appropriate dynamically-registered reciever. See net/rpc
-// for information on what kinds of recievers can be registered.
+// which then calls the appropriate dynamically-registered receiver. See net/rpc
+// for information on what kinds of receivers can be registered.
 func (s *Server) RegisterRPC(rcvr interface{}) error {
 	return s.dispatcher.Register(rcvr)
 }
 
-// RegisterLimitedRPC makes RPCs availible for limited clients.
+// RegisterLimitedRPC makes RPCs available for limited clients.
 func (s *Server) RegisterLimitedRPC(rcvr interface{}) error {
 	return s.limitedDispatcher.Register(rcvr)
 }
@@ -660,7 +660,7 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 	conn := newConn(c.RemoteAddr().String(), tconn, timeout, &poolSelector{limited, s.wp})
 
 	// Acquire the lock to atomically spawn the reader/writer goroutines for
-	// this connenction and add it to the connections map.
+	// this connection and add it to the connections map.
 	s.mtx.Lock()
 	if s.shutdown {
 		s.mtx.Unlock()

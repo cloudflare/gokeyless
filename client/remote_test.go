@@ -145,7 +145,7 @@ func TestRemoteGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// defqult remote group has one working remote and one that doesn't.
+	// default remote group has one working remote and one that doesn't.
 	// PingAll should not hang.
 	r.PingAll(c, 1)
 	r.PingAll(c, 2)

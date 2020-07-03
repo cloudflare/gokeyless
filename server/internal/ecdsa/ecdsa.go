@@ -23,7 +23,7 @@ type rand struct {
 // CAREFUL that this behavior is maintained.
 
 // A RandProvider is capable of producing random values for use in ECDSA
-// signatures. It cannot be implemented by types outisde of this package.
+// signatures. It cannot be implemented by types outside of this package.
 type RandProvider interface {
 	gen(rand io.Reader) (kInv, rr *big.Int, err error)
 	curve() elliptic.Curve
