@@ -253,7 +253,7 @@ func (c *Client) LookupServerWithName(serverName, host, port string) (Remote, er
 			servers = append(servers, NewServer(addr, serverName))
 		}
 	}
-	log.Infof("server lookup: %s has %d usable upstream", host, len(servers))
+	log.Debugf("server lookup: %s has %d usable upstream", host, len(servers))
 	return NewGroup(servers)
 }
 
