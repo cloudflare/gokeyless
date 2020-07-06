@@ -8,7 +8,7 @@ import (
 
 // A Job represents a unit of work to be done by a worker in the pool.
 type Job struct {
-	// job == nil is used as a sentinal value to instruct workers to quit
+	// job == nil is used as a sentinel value to instruct workers to quit
 	job    interface{}
 	commit func(result interface{})
 }

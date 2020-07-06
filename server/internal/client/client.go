@@ -80,7 +80,7 @@ import (
 // number of outstanding requests plus two. This ensures that regardless of how
 // slowly the client reads responses off the connection, there will always be
 // room in the channel for the responses to be written, and so no worker
-// goroutine will ever need to block; the extra two slots are for a sentinal
+// goroutine will ever need to block; the extra two slots are for a sentinel
 // value which is used by destroy to signal to the submitter goroutine that it
 // should quit - it's important that sending that value never block either (and
 // destroy can be called twice - once by Destroy and once by the liveness

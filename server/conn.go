@@ -13,7 +13,7 @@ import (
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
-// A PoolSelector returns the appropraite *worker.Pool based on the request.
+// A PoolSelector returns the appropriate *worker.Pool based on the request.
 type PoolSelector interface {
 	SelectPool(*protocol.Packet) *worker.Pool
 }

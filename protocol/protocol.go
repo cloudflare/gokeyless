@@ -579,10 +579,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	return b, nil
 }
 
-// UnmarshalBinary unmarshals a binary-encoded TLV list of items into o.
+// UnmarshalBinary unmarshalls a binary-encoded TLV list of items into o.
 // It guarantees that ClientIP and ServerIP, if present, are each 4 or 16 bytes.
 func (o *Operation) UnmarshalBinary(body []byte) error {
-	// seen has enough entires to be indexed by any valid Tag value. If more tags
+	// seen has enough entries to be indexed by any valid Tag value. If more tags
 	// are added later, change this code!
 	var seen [33]bool
 	var length int

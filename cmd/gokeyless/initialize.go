@@ -80,7 +80,7 @@ func initAPICall(token, hostname, zoneID, csr string) ([]byte, error) {
 	}
 
 	if !apiResp.Success {
-		return nil, fmt.Errorf("certificate API call returnes errors: %s", string(bodyBytes))
+		return nil, fmt.Errorf("certificate API call returns errors: %s", string(bodyBytes))
 	}
 
 	if cert, ok := apiResp.Result["certificate"]; ok {

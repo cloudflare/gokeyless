@@ -195,7 +195,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 //	Slot:	use SlotID, ID, or Object to specify the PKCS #11 key pair.
 //
 // For certain modules, a query attribute max-sessions is required in order to
-// prevent openning too many sessions to the module. Certain additional attributes,
+// prevent opening too many sessions to the module. Certain additional attributes,
 // such as pin-value, may be necessary depending on the situation. Refer to the
 // documentation for your PKCS #11 module for more details.
 //
@@ -212,7 +212,7 @@ func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 		PoolWaitTimeout: 10 * time.Second,
 	}
 	// crypto11 uses 1 of the sessions in the background for itself, so the
-	// practical mininum is 2.
+	// practical minimum is 2.
 	if config.MaxSessions < 2 {
 		config.MaxSessions = 2
 	}

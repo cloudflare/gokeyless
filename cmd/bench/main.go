@@ -230,7 +230,7 @@ func makeLatencyClientFromOp(cli *client.Client, server, port string, op protoco
 		t1 := time.Now()
 		if t1.Before(t0) {
 			// Time went backwards (probably because somebody reset the clock - Go
-			// doens't yet support monotonic clocks). This test is obviously invalid.
+			// doesn't yet support monotonic clocks). This test is obviously invalid.
 			panic("time moved backwards; the results of this test are untrustworthy")
 		}
 

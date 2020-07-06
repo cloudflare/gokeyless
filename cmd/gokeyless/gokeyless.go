@@ -300,7 +300,7 @@ func initKeyStore() (server.Keystore, error) {
 	return keys, nil
 }
 
-// validCertExpiry checks if cerficiate is currently valid.
+// validCertExpiry checks if certificate is currently valid.
 func validCertExpiry(cert *x509.Certificate) bool {
 	now := currentTime
 	if currentTime.IsZero() {
