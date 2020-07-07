@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudflare/gokeyless/certmetrics"
+
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
@@ -644,7 +646,9 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		tconn.Close()
 		return
 	}
-	limited, err := s.config.isLimited(tconn.ConnectionState())
+	connState := tconn.ConnectionState()
+	certmetrics.Observe(connState.PeerCertificates...)
+	limited, err := s.config.isLimited(connState)
 	if err != nil {
 		log.Errorf("connection %v: could not determine if limited: %v", c.RemoteAddr(), err)
 		tconn.Close()
