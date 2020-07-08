@@ -21,17 +21,20 @@ var certificateExpirationTimes = promauto.NewGaugeVec(
 // Observe takes in a list of certs and emits its expiration times
 func Observe(certs ...*x509.Certificate) {
 	for _, cert := range certs {
-		hostnames := cert.DNSNames
-		sort.Strings(hostnames)
-		labels := prometheus.Labels{
-			"serial_no": cert.SerialNumber.String(),
-			"cn":        cert.Subject.CommonName,
-			"hostnames": strings.Join(hostnames, ","),
-			"ca":        boolToBinaryString(cert.IsCA),
-			"server":    containsKeyUsage(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth),
-			"client":    containsKeyUsage(cert.ExtKeyUsage, x509.ExtKeyUsageClientAuth)}
-		certificateExpirationTimes.With(labels).Set(float64(cert.NotAfter.Unix()))
+		certificateExpirationTimes.With(getPrometheusLabels(cert)).Set(float64(cert.NotAfter.Unix()))
 	}
+}
+
+func getPrometheusLabels(cert *x509.Certificate) prometheus.Labels {
+	hostnames := append([]string(nil), cert.DNSNames...)
+	sort.Strings(hostnames)
+	return prometheus.Labels{
+		"serial_no": cert.SerialNumber.String(),
+		"cn":        cert.Subject.CommonName,
+		"hostnames": strings.Join(hostnames, ","),
+		"ca":        boolToBinaryString(cert.IsCA),
+		"server":    hasKeyUsageAsBinaryString(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth),
+		"client":    hasKeyUsageAsBinaryString(cert.ExtKeyUsage, x509.ExtKeyUsageClientAuth)}
 }
 
 func boolToBinaryString(val bool) string {
@@ -41,7 +44,7 @@ func boolToBinaryString(val bool) string {
 	return "0"
 }
 
-func containsKeyUsage(a []x509.ExtKeyUsage, x x509.ExtKeyUsage) string {
+func hasKeyUsageAsBinaryString(a []x509.ExtKeyUsage, x x509.ExtKeyUsage) string {
 	for _, e := range a {
 		if e == x || e == x509.ExtKeyUsageAny {
 			return "1"

@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/certmetrics"
 	"github.com/cloudflare/gokeyless/server"
 )
 
@@ -272,7 +273,8 @@ func main() {
 			f.Close()
 		}
 	}
-
+	certs := gatherCerts()
+	certmetrics.Observe(certs...)
 	go func() {
 		log.Critical(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
 	}()
@@ -392,4 +394,37 @@ func verifyCSRAndKey() bool {
 	}
 
 	return true
+}
+
+// pemCertsFromFile reads PEM format certificates from a file.
+func pemCertsFromFile(path string) []*x509.Certificate {
+	file, err := os.Open(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pemData, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	certs, err := helpers.ParseCertificatesPEM(pemData)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return certs
+}
+
+func gatherCerts() []*x509.Certificate {
+	certPaths := []string{
+		config.CertFile,
+		config.CACertFile,
+	}
+	var allCerts []*x509.Certificate
+	for _, cPath := range certPaths {
+		if cPath == "" {
+			continue
+		}
+		pemCerts := pemCertsFromFile(cPath)
+		allCerts = append(allCerts, pemCerts...)
+	}
+	return allCerts
 }
