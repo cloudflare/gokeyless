@@ -643,7 +643,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 		case TagCustomFuncName:
 			o.CustomFuncName = string(data)
 		default:
-			return fmt.Errorf("unknown tag: %02x", tag)
+			// Silently ignore any unknown tags (to allow for new tags to be gradually added to the protocol).
+			continue
 		}
 
 		// only use tag as an index in seen after we've validated that it's a tag
