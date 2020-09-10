@@ -25,6 +25,9 @@ import (
 	"time"
 
 	"github.com/cloudflare/gokeyless/certmetrics"
+	"github.com/cloudflare/gokeyless/tracing"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
@@ -47,7 +50,7 @@ type Keystore interface {
 	// this key, so it's advisable to perform any precomputation on this key that
 	// may speed up signing over the course of multiple signatures (e.g.,
 	// crypto/rsa.PrivateKey's Precompute method).
-	Get(*protocol.Operation) (crypto.Signer, error)
+	Get(context.Context, *protocol.Operation) (crypto.Signer, error)
 }
 
 // DefaultKeystore is a simple in-memory Keystore.
@@ -149,7 +152,10 @@ func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(op *protocol.Operation) (crypto.Signer, error) {
+func (keys *DefaultKeystore) Get(ctx context.Context, op *protocol.Operation) (crypto.Signer, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "DefaultKeystore.Get")
+	defer span.Finish()
+
 	keys.mtx.RLock()
 	defer keys.mtx.RUnlock()
 
@@ -331,6 +337,15 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 	req := job.(request)
 	pkt := req.pkt
 
+	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
+	if err != nil {
+		log.Errorf("failed to extract span: %v", err)
+	}
+	span, ctx := opentracing.StartSpanFromContext(context.Background(), "keylessWorker.Do", ext.RPCServerOption(spanCtx))
+	defer span.Finish()
+	tracing.SetOperationSpanTags(span, &pkt.Operation)
+	span.SetTag("worker", w.name)
+
 	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
 		req.connName,
 		w.name,
@@ -386,7 +401,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 			return makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
 		}
 
-		res, err := customOpFunc(pkt.Operation)
+		res, err := customOpFunc(ctx, pkt.Operation)
 		if err != nil {
 			log.Errorf("Worker %v: OpCustom returned error: %v", w.name, err)
 			code := protocol.ErrInternal
@@ -399,7 +414,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 
 	case protocol.OpEd25519Sign:
 		keyLoadBegin := time.Now()
-		key, err := w.s.keys.Get(&pkt.Operation)
+		key, err := w.s.keys.Get(ctx, &pkt.Operation)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
@@ -423,7 +438,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 
 	case protocol.OpRSADecrypt:
 		keyLoadBegin := time.Now()
-		key, err := w.s.keys.Get(&pkt.Operation)
+		key, err := w.s.keys.Get(ctx, &pkt.Operation)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
@@ -487,7 +502,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 	}
 
 	keyLoadBegin := time.Now()
-	key, err := w.s.keys.Get(&pkt.Operation)
+	key, err := w.s.keys.Get(ctx, &pkt.Operation)
 	if err != nil {
 		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 		return makeErrResponse(req, protocol.ErrInternal, requestBegin)
@@ -497,6 +512,8 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 	}
 	logKeyLoadDuration(keyLoadBegin)
 
+	signSpan, _ := opentracing.StartSpanFromContext(ctx, "keylessWorker.Sign")
+	defer signSpan.Finish()
 	var sig []byte
 	if k, ok := key.(*ecdsa.PrivateKey); ok && k.Curve == elliptic.P256() {
 		sig, err = buf_ecdsa.Sign(rand.Reader, k, pkt.Operation.Payload, opts, w.buf)
@@ -504,6 +521,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 		sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 	}
 	if err != nil {
+		tracing.LogError(span, err)
 		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
 		return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
 	}
@@ -523,6 +541,16 @@ func newLimitedWorker(s *Server, name string) *limitedWorker {
 func (w *limitedWorker) Do(job interface{}) interface{} {
 	req := job.(request)
 	pkt := req.pkt
+
+	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
+	if err != nil {
+		log.Errorf("failed to extract span: %v", err)
+	}
+	span, _ := opentracing.StartSpanFromContext(context.Background(), "limitedWorker.Do", ext.RPCServerOption(spanCtx))
+	defer span.Finish()
+	tracing.SetOperationSpanTags(span, &pkt.Operation)
+	span.SetTag("worker", w.name)
+
 	requestBegin := time.Now()
 	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
 		req.connName,
@@ -942,7 +970,7 @@ func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, err
 //
 // If it returns a non-nil error which implements protocol.Error, the server
 // will return it directly. Otherwise it will return protocol.ErrInternal.
-type CustomOpFunction func(protocol.Operation) ([]byte, error)
+type CustomOpFunction func(context.Context, protocol.Operation) ([]byte, error)
 
 // WithCustomOpFunction defines a function to use with the OpCustom opcode.
 func (s *ServeConfig) WithCustomOpFunction(f CustomOpFunction) *ServeConfig {

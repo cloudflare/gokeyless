@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -120,7 +121,7 @@ func healthchecker(c *Conn) {
 			return
 		}
 
-		err := c.Conn.Ping(nil)
+		err := c.Conn.Ping(context.Background(), nil)
 		if err != nil {
 			if err == conn.ErrClosed {
 				// somebody else closed the connection while we were sleeping
@@ -314,7 +315,7 @@ func (s *singleRemote) PingAll(c *Client, concurrency int) {
 		return
 	}
 
-	err = cn.Conn.Ping(nil)
+	err = cn.Conn.Ping(context.Background(), nil)
 	if err != nil {
 		cn.Close()
 	}
@@ -470,7 +471,7 @@ func (g *Group) PingAll(c *Client, concurrency int) {
 			}
 
 			start := time.Now()
-			err = cn.Conn.Ping(nil)
+			err = cn.Conn.Ping(context.Background(), nil)
 			duration := time.Since(start)
 
 			if err != nil {

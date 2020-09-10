@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -35,7 +36,7 @@ func (s *IntegrationTestSuite) TestConnect() {
 	require.NoError(err)
 	defer conn.Close()
 
-	err = conn.Ping([]byte("Hello!"))
+	err = conn.Ping(context.Background(), []byte("Hello!"))
 	require.NoError(err)
 }
 
@@ -206,7 +207,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	_, err = rand.Read(r)
 	require.NoError(err)
 
-	resp, err := conn.DoOperation(protocol.Operation{
+	resp, err := conn.DoOperation(context.Background(), protocol.Operation{
 		Opcode:  protocol.OpSeal,
 		Payload: r,
 	})
@@ -215,7 +216,7 @@ func (s *IntegrationTestSuite) TestSeal() {
 	require.True(bytes.Equal([]byte("OpSeal "), resp.Payload[:len("OpSeal ")]), "payload type mismatch")
 	require.True(bytes.Equal(r, resp.Payload[len("OpSeal "):]), "payload value mismatch")
 
-	resp, err = conn.DoOperation(protocol.Operation{
+	resp, err = conn.DoOperation(context.Background(), protocol.Operation{
 		Opcode:  protocol.OpUnseal,
 		Payload: r,
 	})
@@ -232,7 +233,7 @@ func (s *IntegrationTestSuite) TestUndefinedCustomOp() {
 	require.NoError(err)
 	defer conn.Close()
 
-	resp, err := conn.DoOperation(protocol.Operation{
+	resp, err := conn.DoOperation(context.Background(), protocol.Operation{
 		Opcode:         protocol.OpCustom,
 		CustomFuncName: "undefined",
 	})
@@ -261,7 +262,7 @@ func (s *IntegrationTestSuite) TestConcurrency() {
 	go func() {
 		// Make a slow request first.
 		start := time.Now()
-		_, err := conn.DoOperation(protocol.Operation{
+		_, err := conn.DoOperation(context.Background(), protocol.Operation{
 			Opcode:  protocol.OpSeal,
 			Payload: []byte("slow"),
 		})
@@ -279,7 +280,7 @@ func (s *IntegrationTestSuite) TestConcurrency() {
 		time.Sleep(250 * time.Millisecond)
 
 		start := time.Now()
-		_, err := conn.DoOperation(protocol.Operation{
+		_, err := conn.DoOperation(context.Background(), protocol.Operation{
 			Opcode:  protocol.OpSeal,
 			Payload: []byte("fast"),
 		})

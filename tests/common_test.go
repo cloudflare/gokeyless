@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
@@ -119,7 +120,7 @@ func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (cry
 			return nil, err
 		}
 	}
-	return s.client.NewRemoteSignerByPublicKey("", pub)
+	return s.client.NewRemoteSignerByPublicKey(context.Background(), "", pub)
 }
 
 func TestSuite(t *testing.T) {

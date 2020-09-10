@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go"
+
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
@@ -48,6 +51,10 @@ type Config struct {
 	PidFile string `yaml:"pid_file" mapstructure:"pid_file"`
 
 	CurrentTime string `yaml:"current_time" mapstructure:"current_time"`
+
+	TracingEnabled    bool    `yaml:"tracing_enabled" mapstructure:"tracing_enabled"`
+	TracingAddress    string  `yaml:"tracing_address" mapstructure:"tracing_address"`
+	TracingSampleRate float64 `yaml:"tracing_sample_rate" mapstructure:"tracing_sample_rate"` // between 0 and 1
 }
 
 // PrivateKeyStoreConfig defines a key store.
@@ -106,6 +113,10 @@ func init() {
 	viper.SetDefault("metrics_port", 2406)
 	flagset.String("pid-file", "", "File to store PID of running server")
 	flagset.String("current-time", "", "Current time used for certificate validation (for testing only)")
+	flagset.Bool("tracing-enabled", false, "")
+	flagset.String("tracing-address", "", "")
+	viper.SetDefault("tracing-address", "localhost:6831")
+	flagset.Float64("tracing-sample-rate", 0, "")
 	// These override the private_key_stores value from the config file.
 	flagset.StringVar(&privateKeyDirs, "private-key-dirs", "", "Comma-separated list of directories in which private keys are stored with .key extension")
 	flagset.StringVar(&privateKeyFiles, "private-key-files", "", "Comma-separated list of private key files")
@@ -235,6 +246,22 @@ func main() {
 		}
 		fmt.Print(string(b))
 		os.Exit(0)
+	}
+	if config.TracingEnabled {
+		// jaeger failing to connect to the agent / initializing shouldn't prevent keyless from starting,
+		// so if we encounter an error we should log it but move on.
+		jaegerTransport, err := jaeger.NewUDPTransport(config.TracingAddress, 0)
+		if err != nil {
+			log.Errorf("failed to enable tracing: %s", err)
+		}
+		sampler, err := jaeger.NewProbabilisticSampler(config.TracingSampleRate)
+		if err != nil {
+			log.Errorf("failed to enable tracing: %s", err)
+		}
+		tracer, closer := jaeger.NewTracer("gokeyless", sampler, jaeger.NewRemoteReporter(jaegerTransport))
+		defer closer.Close()
+		opentracing.SetGlobalTracer(tracer)
+		log.Infof("tracing enabled: %s", sampler.String())
 	}
 
 	// If we make it here we need to ask for user input, so we need to give up

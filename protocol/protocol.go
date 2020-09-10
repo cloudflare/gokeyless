@@ -47,6 +47,8 @@ const (
 	TagCustomFuncName Tag = 0x13
 	// TagExtra implies a supplemental payload.
 	TagExtra Tag = 0x14
+	// TagJaegerSpan contains a binary encoded jaeger span context. See https://www.jaegertracing.io/docs/1.19/client-libraries/#value
+	TagJaegerSpan Tag = 0x15
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -407,6 +409,7 @@ type Operation struct {
 	SNI            string
 	CertID         string
 	CustomFuncName string
+	JaegerSpan     []byte
 }
 
 func (o *Operation) String() string {
@@ -558,6 +561,9 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	if o.CustomFuncName != "" {
 		b = append(b, tlvBytes(TagCustomFuncName, []byte(o.CustomFuncName))...)
 	}
+	if o.JaegerSpan != nil {
+		b = append(b, tlvBytes(TagJaegerSpan, o.JaegerSpan)...)
+	}
 
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
@@ -642,6 +648,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			// ignore padding
 		case TagCustomFuncName:
 			o.CustomFuncName = string(data)
+		case TagJaegerSpan:
+			o.JaegerSpan = data
 		default:
 			// Silently ignore any unknown tags (to allow for new tags to be gradually added to the protocol).
 			continue

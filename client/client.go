@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -18,7 +19,9 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/lziest/ttlcache"
+	"github.com/opentracing/opentracing-go"
 )
 
 const (
@@ -190,8 +193,10 @@ func (c *Client) getRemote(server string) (Remote, error) {
 // NewRemoteSignerWithCertID returns a remote keyserver based crypto.Signer
 // ski, sni, serverIP, and certID are used to identify the key by the remote
 // keyserver.
-func NewRemoteSignerWithCertID(c *Client, keyserver string, ski protocol.SKI,
+func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (crypto.Signer, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
+	defer span.Finish()
 	priv := PrivateKey{
 		public:    pub,
 		client:    c,
@@ -200,6 +205,11 @@ func NewRemoteSignerWithCertID(c *Client, keyserver string, ski protocol.SKI,
 		serverIP:  serverIP,
 		keyserver: keyserver,
 		certID:    certID,
+	}
+	var err error
+	priv.JaegerSpan, err = tracing.SpanContextToBinary(span.Context())
+	if err != nil {
+		log.Errorf("failed to inject span: %v", err)
 	}
 
 	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
@@ -213,8 +223,11 @@ func NewRemoteSignerWithCertID(c *Client, keyserver string, ski protocol.SKI,
 // NewRemoteSigner returns a remote keyserver based crypto.Signer,
 // ski, sni, and serverIP are used to identified the key by the remote
 // keyserver.
-func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
+func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+
+	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
+	defer span.Finish()
 	priv := PrivateKey{
 		public:    pub,
 		client:    c,
@@ -222,6 +235,11 @@ func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
 		sni:       sni,
 		serverIP:  serverIP,
 		keyserver: keyserver,
+	}
+	var err error
+	priv.JaegerSpan, err = tracing.SpanContextToBinary(span.Context())
+	if err != nil {
+		log.Errorf("failed to inject span: %v", err)
 	}
 
 	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
@@ -237,42 +255,42 @@ func NewRemoteSigner(c *Client, keyserver string, ski protocol.SKI,
 // SKI is computed from the public key and along with sni and serverIP,
 // the remote Signer uses those key identification info to contact the
 // remote keyserver for keyless operations.
-func (c *Client) NewRemoteSignerTemplate(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
-	return NewRemoteSigner(c, keyserver, ski, pub, sni, serverIP)
+	return NewRemoteSigner(ctx, c, keyserver, ski, pub, sni, serverIP)
 }
 
 // NewRemoteSignerTemplateWithCertID returns a remote keyserver
 // based crypto.Signer with the public key.
 // SKI is computed from public key, and along with sni, serverIP, and
 // certID the remote signer uses these to contact the remote keyserver.
-func (c *Client) NewRemoteSignerTemplateWithCertID(keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
-	return NewRemoteSignerWithCertID(c, keyserver, ski, pub, sni, certID, serverIP)
+	return NewRemoteSignerWithCertID(ctx, c, keyserver, ski, pub, sni, certID, serverIP)
 }
 
 // NewRemoteSignerByPublicKey returns a remote keyserver based signer
 // with the the public key.
-func (c *Client) NewRemoteSignerByPublicKey(server string, pub crypto.PublicKey) (crypto.Signer, error) {
-	return c.NewRemoteSignerTemplate(server, pub, "", nil)
+func (c *Client) NewRemoteSignerByPublicKey(ctx context.Context, server string, pub crypto.PublicKey) (crypto.Signer, error) {
+	return c.NewRemoteSignerTemplate(ctx, server, pub, "", nil)
 }
 
 // NewRemoteSignerByCert returns a remote keyserver based signer
 // with the the public key contained in a x509.Certificate.
-func (c *Client) NewRemoteSignerByCert(server string, cert *x509.Certificate) (crypto.Signer, error) {
-	return c.NewRemoteSignerTemplate(server, cert.PublicKey, "", nil)
+func (c *Client) NewRemoteSignerByCert(ctx context.Context, server string, cert *x509.Certificate) (crypto.Signer, error) {
+	return c.NewRemoteSignerTemplate(ctx, server, cert.PublicKey, "", nil)
 }
 
 // NewRemoteSignerByCertPEM returns a remote keyserver based signer
 // with the public key extracted from  a single PEM cert
 // (possibly the leaf of a chain of certs).
-func (c *Client) NewRemoteSignerByCertPEM(server string, certsPEM []byte) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerByCertPEM(ctx context.Context, server string, certsPEM []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(certsPEM)
 	if block == nil {
 		return nil, errors.New("couldn't parse PEM bytes")
@@ -283,7 +301,7 @@ func (c *Client) NewRemoteSignerByCertPEM(server string, certsPEM []byte) (crypt
 		return nil, err
 	}
 
-	return c.NewRemoteSignerTemplate(server, cert.PublicKey, "", nil)
+	return c.NewRemoteSignerTemplate(ctx, server, cert.PublicKey, "", nil)
 }
 
 var (
@@ -318,11 +336,11 @@ func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.Pub
 					return err
 				}
 
-				if priv, err = c.NewRemoteSignerByPublicKey(server, pub); err != nil {
+				if priv, err = c.NewRemoteSignerByPublicKey(context.Background(), server, pub); err != nil {
 					return err
 				}
 			} else {
-				if priv, err = c.NewRemoteSignerByCertPEM(server, in); err != nil {
+				if priv, err = c.NewRemoteSignerByCertPEM(context.Background(), server, in); err != nil {
 					return err
 				}
 			}
@@ -363,7 +381,7 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 		return fail(err)
 	}
 
-	cert.PrivateKey, err = c.NewRemoteSignerByCert(server, cert.Leaf)
+	cert.PrivateKey, err = c.NewRemoteSignerByCert(context.TODO(), server, cert.Leaf)
 	if err != nil {
 		return fail(err)
 	}
