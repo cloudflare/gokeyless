@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/tracing"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"golang.org/x/crypto/ed25519"
 )
 
@@ -87,6 +91,10 @@ type PrivateKey struct {
 	keyserver string
 	sni       string
 	certID    string
+
+	// We have shove the span context inside PrivateKey because
+	// it's used by calling functions on the `crypto.Signer` interface, which don't take ctx as a parameter.
+	JaegerSpan []byte
 }
 
 // Public returns the public key corresponding to the opaque private key.
@@ -96,7 +104,9 @@ func (key *PrivateKey) Public() crypto.PublicKey {
 
 // execute performs an opaque cryptographic operation on a server associated
 // with the key.
-func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
+func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) ([]byte, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "PrivateKey.execute")
+	defer span.Finish()
 	var result *protocol.Operation
 	// retry once if connection returned by remote Dial is problematic.
 	for attempts := 2; attempts > 0; attempts-- {
@@ -110,7 +120,11 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		result, err = conn.Conn.DoOperation(protocol.Operation{
+		// We explicitly do NOT want to fill in JaegerSpan here, since the remote keyless server
+		// will error if it does know how to handle that Tag
+		// https://github.com/cloudflare/gokeyless/pull/276 makes it safe to fill it in,
+		// but there's no way to know the version of the remote keyserver
+		result, err = conn.Conn.DoOperation(ctx, protocol.Operation{
 			Opcode:   op,
 			Payload:  msg,
 			SKI:      key.ski,
@@ -149,6 +163,13 @@ func (key *PrivateKey) execute(op protocol.Op, msg []byte) ([]byte, error) {
 
 // Sign implements the crypto.Signer operation for the given key.
 func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
+	spanCtx, err := tracing.SpanContextFromBinary(key.JaegerSpan)
+	if err != nil {
+		log.Errorf("failed to extract span: %v", err)
+	}
+	span, ctx := opentracing.StartSpanFromContext(context.Background(), "client: PrivateKey.Sign", ext.RPCServerOption(spanCtx))
+	defer span.Finish()
+
 	// If opts specifies a hash function, then the message is expected to be the
 	// length of the output of that hash function.
 	if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
@@ -159,7 +180,7 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	if op == protocol.OpError {
 		return nil, errors.New("invalid key type, hash or options")
 	}
-	return key.execute(op, msg)
+	return key.execute(ctx, op, msg)
 }
 
 // Decrypter implements the Decrypt method on a PrivateKey.
@@ -169,12 +190,18 @@ type Decrypter struct {
 
 // Decrypt implements the crypto.Decrypter operation for the given key.
 func (key *Decrypter) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterOpts) ([]byte, error) {
+	spanCtx, err := tracing.SpanContextFromBinary(key.JaegerSpan)
+	if err != nil {
+		log.Errorf("failed to extract span: %v", err)
+	}
+	span, ctx := opentracing.StartSpanFromContext(context.Background(), "client: Decrypter.Decrypt", ext.RPCServerOption(spanCtx))
+	defer span.Finish()
 	opts1v15, ok := opts.(*rsa.PKCS1v15DecryptOptions)
 	if opts != nil && !ok {
 		return nil, errors.New("invalid options for Decrypt")
 	}
 
-	ptxt, err := key.execute(protocol.OpRSADecrypt, msg)
+	ptxt, err := key.execute(ctx, protocol.OpRSADecrypt, msg)
 	if err != nil {
 		return nil, err
 	}

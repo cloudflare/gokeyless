@@ -5,6 +5,7 @@ package conn
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/tracing"
+	"github.com/opentracing/opentracing-go"
 )
 
 // The Conn type implemented here contains a single network connection to a
@@ -212,7 +215,11 @@ func (c *Conn) DoRead() error {
 }
 
 // DoOperation executes an entire keyless operation, returning its result.
-func (c *Conn) DoOperation(op protocol.Operation) (*protocol.Operation, error) {
+func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protocol.Operation, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation")
+	defer span.Finish()
+	tracing.SetOperationSpanTags(span, &op)
+
 	// NOTE: It's very important that this channel be buffered so that if we
 	// time out, but a reader finds this channel before we have a chance to delete
 	// it from the map, the reader doesn't block forever sending us a value that
@@ -281,8 +288,11 @@ func (c *Conn) DoOperation(op protocol.Operation) (*protocol.Operation, error) {
 
 // Ping sends a ping message over the connection and waits for a corresponding
 // Pong response from the server.
-func (c *Conn) Ping(data []byte) error {
-	result, err := c.DoOperation(protocol.Operation{
+func (c *Conn) Ping(ctx context.Context, data []byte) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.Ping")
+	defer span.Finish()
+
+	result, err := c.DoOperation(ctx, protocol.Operation{
 		Opcode:  protocol.OpPing,
 		Payload: data,
 	})
@@ -333,7 +343,7 @@ func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
 		return err
 	}
 
-	result, err := cc.conn.DoOperation(protocol.Operation{
+	result, err := cc.conn.DoOperation(context.Background(), protocol.Operation{
 		Opcode:  protocol.OpRPC,
 		Payload: buff.Bytes(),
 	})

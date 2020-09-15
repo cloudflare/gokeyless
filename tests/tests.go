@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -138,7 +139,7 @@ func NewPingRemoteTest(c *client.Client, r client.Remote) TestFunc {
 		if err != nil {
 			return err
 		}
-		return conn.Ping(nil)
+		return conn.Ping(context.Background(), nil)
 	}
 }
 
@@ -154,7 +155,7 @@ func NewPingTest(c *client.Client, server string) TestFunc {
 		if err != nil {
 			return err
 		}
-		return conn.Ping(nil)
+		return conn.Ping(context.Background(), nil)
 	}
 }
 

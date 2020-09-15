@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
@@ -244,7 +245,7 @@ func NewRemoteSignerByCertFile(filepath string) (crypto.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := c.NewRemoteSignerByPublicKey("", pub)
+	s, err := c.NewRemoteSignerByPublicKey(context.Background(), "", pub)
 	if err != nil {
 		return nil, err
 	}
