@@ -494,6 +494,12 @@ func (o *Operation) Bytes() uint16 {
 	if o.CertID != "" {
 		add(tlvLen(len([]byte(o.CertID))))
 	}
+	if o.CustomFuncName != "" {
+		add(tlvLen(len([]byte(o.CustomFuncName))))
+	}
+	if o.JaegerSpan != nil {
+		add(tlvLen(len(o.JaegerSpan)))
+	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 

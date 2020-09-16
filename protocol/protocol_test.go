@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"net"
@@ -12,10 +14,16 @@ import (
 func TestMarshalBinary(t *testing.T) {
 	require := require.New(t)
 
+	// we want to push the payload over the paddedLength of 1024
+	// to ensure that the size is calculated correctly.
+	extra := make([]byte, 100)
+	payload := make([]byte, 1000)
+	rand.Read(extra)
+	rand.Read(payload)
 	op := Operation{
 		Opcode:         OpECDSASignSHA256,
-		Payload:        []byte("Payload"),
-		Extra:          []byte("Extra"),
+		Payload:        payload,
+		Extra:          extra,
 		Digest:         sha256.Sum256([]byte("Digest")),
 		SKI:            sha1.Sum([]byte("SKI")),
 		ClientIP:       net.ParseIP("1.1.1.1").To4(),
@@ -23,13 +31,14 @@ func TestMarshalBinary(t *testing.T) {
 		SNI:            "SNI",
 		CertID:         "SNI",
 		CustomFuncName: "CustomFuncName",
+		JaegerSpan:     []byte("615f730ad5fe896f:615f730ad5fe896f:1"),
 	}
 	pkt := NewPacket(42, op)
 	b, err := pkt.MarshalBinary()
 	require.NoError(err)
 
 	var pkt2 Packet
-	err = pkt2.UnmarshalBinary(b)
+	_, err = pkt2.ReadFrom(bytes.NewReader(b))
 	require.NoError(err)
 	require.Equal(pkt.ID, pkt2.ID)
 	require.Equal(op, pkt2.Operation)
