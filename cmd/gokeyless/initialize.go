@@ -21,7 +21,7 @@ type v4apiError struct {
 type initAPIRequest struct {
 	Rqtype    string   `json:"request_type,omitempty"`
 	Hostnames []string `json:"hostnames,omitempty"`
-	ZoneID    string   `json:"zone_id,omitemtpy"`
+	ZoneID    string   `json:"zone_id,omitempty"`
 	CSR       string   `json:"csr,omitempty"`
 	//Days      int      `json:"requested_validity,omitempty"`
 }
