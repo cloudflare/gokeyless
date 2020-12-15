@@ -264,6 +264,7 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 	if err != nil {
 		return nil, fmt.Errorf("could not write to connection: %v", err)
 	}
+	waitingSpan, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation.Waiting")
 
 	// Take into account how long we've already been waiting since the beginning
 	// of writing to the connection (which could have taken a while if the
@@ -271,6 +272,7 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 	left := end.Sub(time.Now())
 	select {
 	case op := <-response:
+		waitingSpan.Finish()
 		c.mapMtx.Lock()
 		delete(c.listeners, id)
 		c.mapMtx.Unlock()
@@ -279,6 +281,7 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 		}
 		return op, nil
 	case <-time.After(left):
+		waitingSpan.Finish()
 		c.mapMtx.Lock()
 		delete(c.listeners, id)
 		c.mapMtx.Unlock()
