@@ -1,13 +1,11 @@
 package server
 
 import (
-	"crypto/elliptic"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/cloudflare/gokeyless/protocol"
-	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
@@ -32,12 +30,9 @@ type workerPool struct {
 	Limited *worker.Pool
 
 	selector WorkerPoolSelector
-	bg       *worker.BackgroundPool
 	utilCh   chan struct{}
 	utilWg   sync.WaitGroup
 }
-
-const randBufferLen = 1024
 
 func newWorkerPool(s *Server) (*workerPool, error) {
 	// This is mostly so we don't divide by zero below, but will also prevent
@@ -52,31 +47,24 @@ func newWorkerPool(s *Server) (*workerPool, error) {
 	var rsas []worker.Worker
 	var others []worker.Worker
 	var limiteds []worker.Worker
-	var background []worker.BackgroundWorker
-	rbuf := buf_ecdsa.NewSyncRandBuffer(randBufferLen, elliptic.P256())
 	for i := 0; i < s.config.rsaWorkers; i++ {
-		rsas = append(rsas, newKeylessWorker(s, rbuf, fmt.Sprintf("rsa-%v", i)))
+		rsas = append(rsas, newKeylessWorker(s, fmt.Sprintf("rsa-%v", i)))
 	}
 	for i := 0; i < s.config.ecdsaWorkers; i++ {
-		ecdsas = append(ecdsas, newKeylessWorker(s, rbuf, fmt.Sprintf("ecdsa-%v", i)))
+		ecdsas = append(ecdsas, newKeylessWorker(s, fmt.Sprintf("ecdsa-%v", i)))
 	}
 	for i := 0; i < s.config.otherWorkers; i++ {
-		others = append(others, newKeylessWorker(s, rbuf, fmt.Sprintf("other-%v", i)))
+		others = append(others, newKeylessWorker(s, fmt.Sprintf("other-%v", i)))
 	}
 	for i := 0; i < s.config.limitedWorkers; i++ {
 		limiteds = append(limiteds, newLimitedWorker(s, fmt.Sprintf("limited-%v", i)))
 	}
-	for i := 0; i < s.config.bgWorkers; i++ {
-		background = append(background, newRandGenWorker(rbuf))
-	}
-
 	wp := &workerPool{
 		RSA:      worker.NewPool(rsas...),
 		ECDSA:    worker.NewPool(ecdsas...),
 		Other:    worker.NewPool(others...),
 		Limited:  worker.NewPool(limiteds...),
 		selector: s.config.poolSelector,
-		bg:       worker.NewBackgroundPool(background...),
 		utilCh:   make(chan struct{}),
 	}
 
@@ -109,7 +97,6 @@ func newWorkerPool(s *Server) (*workerPool, error) {
 
 func (wp *workerPool) Destroy() {
 	// Destroy the pools
-	wp.bg.Destroy()
 	wp.Other.Destroy()
 	wp.ECDSA.Destroy()
 	// Stop publishing utilization info.
