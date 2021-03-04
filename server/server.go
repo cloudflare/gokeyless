@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/gokeyless/certmetrics"
+	"github.com/cloudflare/gokeyless/internal/azure"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -113,14 +114,18 @@ func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (cryp
 // AddFromURI loads all keys matching the given PKCS#11 URI to the keystore. LoadURI
 // is called to parse the URL, connect to the module, and populate a crypto.Signer,
 // which is stored in the Keystore.
-func (keys *DefaultKeystore) AddFromURI(uri string, LoadURI func(string) (crypto.Signer, error)) error {
+func (keys *DefaultKeystore) AddFromURI(uri string, LoadPKCS11URI func(string) (crypto.Signer, error)) error {
 	log.Infof("loading %s...", uri)
-
-	priv, err := LoadURI(uri)
+	var priv crypto.Signer
+	var err error
+	if azure.IsKeyVaultURI(uri) {
+		priv, err = azure.New(uri)
+	} else {
+		priv, err = LoadPKCS11URI(uri)
+	}
 	if err != nil {
 		return err
 	}
-
 	return keys.Add(nil, priv)
 }
 
@@ -137,7 +142,7 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 
 	keys.skis[ski] = priv
 
-	log.Debugf("add signer with SKI: %v", ski)
+	log.Debugf("add signer with SKI: %v (https://crt.sh/?ski=%v)", ski, ski)
 	return nil
 }
 

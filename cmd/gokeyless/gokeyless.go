@@ -216,7 +216,7 @@ func main() {
 		fmt.Println("gokeyless version", version)
 		os.Exit(0)
 	case manualMode && configMode:
-		log.Fatal("can't specify both -manual-activation and -config-only!")
+		log.Fatal("can't specify both --manual-activation and --config-only!")
 	case manualMode:
 		// Allow manual activation (requires the CSR to be manually signed).
 		// manual activation won't proceed to start the server
@@ -270,7 +270,7 @@ func main() {
 	// daemon blocked waiting on input can be hard to debug.
 	if needNewCertAndKey() {
 		if needInteractivePrompt() {
-			log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the -config-only or -manual-activation flag to generate the pair interactively")
+			log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
 			os.Exit(1)
 		}
 		initializeServerCertAndKey()
