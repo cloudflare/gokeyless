@@ -1,8 +1,13 @@
 module github.com/cloudflare/gokeyless
 
-go 1.13
+go 1.15
 
 require (
+	github.com/Azure/azure-sdk-for-go v52.2.0+incompatible
+	github.com/Azure/go-autorest/autorest v0.11.17
+	github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
+	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
+	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.1
 	github.com/beorn7/perks v0.0.0-20160804104726-4c0e84591b9a // indirect
@@ -13,6 +18,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/golang/protobuf v1.0.0 // indirect
 	github.com/google/certificate-transparency-go v1.0.10-0.20180222191210-5ab67e519c93 // indirect
+	github.com/google/go-cmp v0.5.5 // indirect
 	github.com/hashicorp/hcl v0.0.0-20180404174102-ef8a98b0bbce // indirect
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
@@ -36,8 +42,9 @@ require (
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	go.uber.org/atomic v1.6.0 // indirect
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
+	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
 	golang.org/x/lint v0.0.0-20190930215403-16217165b5de
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e // indirect
+	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v2 v2.2.1
 )

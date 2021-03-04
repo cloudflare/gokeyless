@@ -10,6 +10,7 @@
   - [Protocol](#protocol)
   - [Key Management](#key-management)
     - [Hardware Security Modules](#hardware-security-modules)
+    - [Azure Key Store or Managed HSM](#azure-key-store-or-managed-hsm)
 - [Deploying](#deploying)
   - [Installing](#installing)
     - [Package Installation](#package-installation)
@@ -144,13 +145,25 @@ Note that the configuration file is the recommended way to specify these options
 
 Private keys can also be stored on a Hardware Security Module. Keyless can access such a key using a [PKCS #11 URI](https://tools.ietf.org/html/rfc7512) in the configuration file. Here are some examples of URIs for keys stored on various HSM providers:
 
+```
     - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
     - uri: pkcs11:token=accelerator;object=thaleskey?module-path=/opt/nfast/toolkits/pkcs11/libcknfast.so
     - uri: pkcs11:token=YubiKey%20PIV;id=%00?module-path=/usr/lib64/libykcs11.so&pin-value=123456&max-sessions=1
     - uri: pkcs11:token=SoftHSM2%20RSA%20Token;id=%03?module-path=/usr/lib64/libsofthsm2.so&pin-value=1234
     - uri: pkcs11:token=elab2parN;id=%04?module-path=/usr/lib/libCryptoki2_64.so&pin-value=crypto1
+```
 
 Note you must provide exactly one of the `token`, `serial`, or `slot-id` attributes to identify the token.
+
+### Azure Key Store or Managed HSM
+
+Private keys can also be stored in Azure's HSM offerings.
+```
+    - uri: https://keyless-hsm-1.managedhsm.azure.net/keys/keyless-a/256400ae07e74327b5d233c15aea837
+    - uri: https://keyless-vault-1.vault.azure.net/keys/keyless-b/d791e7f42b3a4f3ea8acc65014ea6a95
+```
+If gokeyless is running in a VM with Managed Services enabled, auth works out of the box. Otherwise, credentials can also be specified with an env var containing the path to a file. (env vars are defined [here](https://pkg.go.dev/github.com/Azure/go-autorest/autorest/azure/auth#pkg-constants))
+The required roles are `/keys/read/action` and `/keys/sign/action`
 
 # Deploying
 
