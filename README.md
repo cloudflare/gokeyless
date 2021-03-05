@@ -1,22 +1,22 @@
 # Go Keyless
-[![Build Status](https://travis-ci.org/cloudflare/gokeyless.png?branch=master)](https://travis-ci.org/cloudflare/gokeyless)
-[![GoDoc](https://godoc.org/github.com/cloudflare/gokeyless?status.png)](https://godoc.org/github.com/cloudflare/gokeyless)
+[![Go Test](https://github.com/cloudflare/gokeyless/actions/workflows/go.yml/badge.svg)](https://github.com/cloudflare/gokeyless/actions/workflows/go.yml)
+[![GoDoc](https://pkg.go.dev/badge/github.com/cloudflare/gokeyless)](https://pkg.go.dev/github.com/cloudflare/gokeyless)
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
 - [Go Keyless](#go-keyless)
-    - [Keyless SSL implementation in Go](#keyless-ssl-implementation-in-go)
-    - [Protocol](#protocol)
-    - [Key Management](#key-management)
-        - [Hardware Security Modules](#hardware-security-modules)
+  - [Keyless SSL implementation in Go](#keyless-ssl-implementation-in-go)
+  - [Protocol](#protocol)
+  - [Key Management](#key-management)
+    - [Hardware Security Modules](#hardware-security-modules)
 - [Deploying](#deploying)
-    - [Installing](#installing)
-        - [Package Installation](#package-installation)
-        - [Source Installation](#source-installation)
-    - [Running](#running)
-    - [Testing](#testing)
-    - [License](#license)
+  - [Installing](#installing)
+    - [Package Installation](#package-installation)
+    - [Source Installation](#source-installation)
+  - [Running](#running)
+  - [Testing](#testing)
+  - [License](#license)
 
 <!-- markdown-toc end -->
 

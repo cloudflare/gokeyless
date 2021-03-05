@@ -18,18 +18,19 @@ func _() {
 	_ = x[TagPayload-18]
 	_ = x[TagCustomFuncName-19]
 	_ = x[TagExtra-20]
+	_ = x[TagJaegerSpan-21]
 	_ = x[TagPadding-32]
 }
 
 const (
 	_Tag_name_0 = "TagCertificateDigestTagServerNameTagClientIPTagSubjectKeyIdentifierTagServerIPTagCertID"
-	_Tag_name_1 = "TagOpcodeTagPayloadTagCustomFuncNameTagExtra"
+	_Tag_name_1 = "TagOpcodeTagPayloadTagCustomFuncNameTagExtraTagJaegerSpan"
 	_Tag_name_2 = "TagPadding"
 )
 
 var (
 	_Tag_index_0 = [...]uint8{0, 20, 33, 44, 67, 78, 87}
-	_Tag_index_1 = [...]uint8{0, 9, 19, 36, 44}
+	_Tag_index_1 = [...]uint8{0, 9, 19, 36, 44, 57}
 )
 
 func (i Tag) String() string {
@@ -37,7 +38,7 @@ func (i Tag) String() string {
 	case 1 <= i && i <= 6:
 		i -= 1
 		return _Tag_name_0[_Tag_index_0[i]:_Tag_index_0[i+1]]
-	case 17 <= i && i <= 20:
+	case 17 <= i && i <= 21:
 		i -= 17
 		return _Tag_name_1[_Tag_index_1[i]:_Tag_index_1[i+1]]
 	case i == 32:
