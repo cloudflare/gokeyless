@@ -9,7 +9,6 @@ import (
 	"crypto"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,20 +48,6 @@ type PKCS11URI struct {
 	MaxSessions int // max-sessions
 }
 
-var re *regexp.Regexp
-
-func init() {
-	aChar := "[a-z-_]"
-	pChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=&]"
-	pAttr := aChar + "+=" + pChar + "+"
-	pClause := "(" + pAttr + ";)*(" + pAttr + ")"
-	qChar := "[a-zA-Z0-9-_.~%:\\[\\]@!\\$'\\(\\)\\*\\+,=/\\?\\|]"
-	qAttr := aChar + "+=" + qChar + "+"
-	qClause := "(" + qAttr + "&)*(" + qAttr + ")"
-
-	re = regexp.MustCompile("^pkcs11:" + pClause + "(\\?" + qClause + ")?$")
-}
-
 // ParsePKCS11URI decodes a PKCS #11 URI and returns it as a PKCS11URI object.
 //
 // A PKCS #11 URI is a sequence of attribute value pairs separated by a
@@ -83,7 +68,7 @@ func init() {
 // An error is returned if the input string does not appear to follow the rules
 // or if there are unrecognized path or query attributes.
 func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
-	if !re.MatchString(uri) {
+	if IsPKCS11URI(uri) {
 		return nil, fmt.Errorf("error parsing pkcs11 uri %q: invalid format", uri)
 	}
 

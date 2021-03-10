@@ -20,3 +20,7 @@ func DefaultLoadURI(uri string) (crypto.Signer, error) {
 
 	return rfc7512.LoadPKCS11Signer(pk11uri)
 }
+
+func loadPKCS11URI(uri string) (crypto.Signer, error) {
+	return DefaultLoadURI(uri)
+}

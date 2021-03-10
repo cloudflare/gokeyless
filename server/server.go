@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudflare/gokeyless/certmetrics"
 	"github.com/cloudflare/gokeyless/internal/azure"
+	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -111,17 +112,19 @@ func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (cryp
 	return keys.Add(nil, priv)
 }
 
-// AddFromURI loads all keys matching the given PKCS#11 URI to the keystore. LoadURI
+// AddFromURI loads all keys matching the given PKCS#11 or Azure URI to the keystore. LoadPKCS11URI
 // is called to parse the URL, connect to the module, and populate a crypto.Signer,
 // which is stored in the Keystore.
-func (keys *DefaultKeystore) AddFromURI(uri string, LoadPKCS11URI func(string) (crypto.Signer, error)) error {
+func (keys *DefaultKeystore) AddFromURI(uri string) error {
 	log.Infof("loading %s...", uri)
 	var priv crypto.Signer
 	var err error
 	if azure.IsKeyVaultURI(uri) {
 		priv, err = azure.New(uri)
+	} else if rfc7512.IsPKCS11URI(uri) {
+		priv, err = loadPKCS11URI(uri)
 	} else {
-		priv, err = LoadPKCS11URI(uri)
+		return fmt.Errorf("unknown uri format: %s", uri)
 	}
 	if err != nil {
 		return err

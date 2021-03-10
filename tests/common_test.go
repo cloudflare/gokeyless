@@ -148,9 +148,9 @@ func (s *IntegrationTestSuite) SetupTest() {
 		s.server.SetKeystore(keys)
 	} else {
 		keys := server.NewDefaultKeystore()
-		err = keys.AddFromURI(params.RSAURI, loadURI)
+		err = keys.AddFromURI(params.RSAURI)
 		require.NoError(err)
-		err = keys.AddFromURI(params.ECDSAURI, loadURI)
+		err = keys.AddFromURI(params.ECDSAURI)
 		require.NoError(err)
 		s.server.SetKeystore(keys)
 	}
