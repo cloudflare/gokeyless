@@ -1,12 +1,12 @@
 // +build !pkcs11 !cgo
 
-package main
+package server
 
 import (
 	"crypto"
 	"fmt"
 )
 
-func loadURI(uri string) (crypto.Signer, error) {
+func loadPKCS11URI(uri string) (crypto.Signer, error) {
 	return nil, fmt.Errorf("pkcs#11 support is not enabled")
 }

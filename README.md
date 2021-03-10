@@ -10,7 +10,7 @@
   - [Protocol](#protocol)
   - [Key Management](#key-management)
     - [Hardware Security Modules](#hardware-security-modules)
-    - [Azure Key Store or Managed HSM](#azure-key-store-or-managed-hsm)
+    - [Azure Key Vault or Managed HSM](#azure-key-vault-or-managed-hsm)
 - [Deploying](#deploying)
   - [Installing](#installing)
     - [Package Installation](#package-installation)
@@ -155,9 +155,9 @@ Private keys can also be stored on a Hardware Security Module. Keyless can acces
 
 Note you must provide exactly one of the `token`, `serial`, or `slot-id` attributes to identify the token.
 
-### Azure Key Store or Managed HSM
+### Azure Key Vault or Managed HSM
 
-Private keys can also be stored in Azure's HSM offerings.
+Private keys can also be stored in Azure's [key management offerings](https://docs.microsoft.com/en-us/azure/key-vault/keys/about-keys).
 ```
     - uri: https://keyless-hsm-1.managedhsm.azure.net/keys/keyless-a/256400ae07e74327b5d233c15aea837
     - uri: https://keyless-vault-1.vault.azure.net/keys/keyless-b/d791e7f42b3a4f3ea8acc65014ea6a95
