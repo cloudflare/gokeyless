@@ -68,7 +68,7 @@ type PKCS11URI struct {
 // An error is returned if the input string does not appear to follow the rules
 // or if there are unrecognized path or query attributes.
 func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
-	if IsPKCS11URI(uri) {
+	if !IsPKCS11URI(uri) {
 		return nil, fmt.Errorf("error parsing pkcs11 uri %q: invalid format", uri)
 	}
 

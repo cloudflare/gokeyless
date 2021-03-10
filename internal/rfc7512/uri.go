@@ -18,5 +18,5 @@ func init() {
 
 // IsPKCS11URI checks if the uri is in the pkcs11 format
 func IsPKCS11URI(uri string) bool {
-	return !re.MatchString(uri)
+	return re.MatchString(uri)
 }
