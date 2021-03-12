@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloudflare/gokeyless/certmetrics"
 	"github.com/cloudflare/gokeyless/internal/azure"
+	"github.com/cloudflare/gokeyless/internal/google"
 	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
@@ -123,9 +124,12 @@ func (keys *DefaultKeystore) AddFromURI(uri string) error {
 		priv, err = azure.New(uri)
 	} else if rfc7512.IsPKCS11URI(uri) {
 		priv, err = loadPKCS11URI(uri)
+	} else if google.IsKMSResource(uri) {
+		priv, err = google.New(uri)
 	} else {
 		return fmt.Errorf("unknown uri format: %s", uri)
 	}
+
 	if err != nil {
 		return err
 	}
