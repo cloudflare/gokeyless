@@ -90,7 +90,7 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 
 	signed, err := k.client.Sign(context.Background(), k.baseURL, k.keyName, k.keyVersion, keyvault.KeySignParameters{Algorithm: algo, Value: &payload})
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign against azure: %w", err)
+		return nil, fmt.Errorf("azure: failed to sign against azure: %w", err)
 	}
 
 	res, err := base64.RawURLEncoding.DecodeString(*signed.Result)
@@ -98,7 +98,7 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 		return nil, fmt.Errorf("failed to base64 recode result: `%s` %w", *signed.Result, err)
 	}
 
-	log.Infof("signed %d bytes with %s for %s key %s", len(digest), algo, k.keyType, k.keyName)
+	log.Infof("azure: signed %d bytes with %s for %s key %s", len(digest), algo, k.keyType, k.keyName)
 
 	if k.keyType == keyvault.RSA {
 		return res, nil
@@ -124,7 +124,7 @@ func (k KeyVaultSigner) determineSigAlg(opts crypto.SignerOpts) (algo keyvault.J
 	case k.keyType == keyvault.RSA && opts == crypto.SHA512: // for OpRSASignSHA512
 		algo = keyvault.RS512
 	default:
-		return keyvault.RSNULL, fmt.Errorf("unsupported opt: %s for key %s", opts.HashFunc().String(), k.keyType)
+		return keyvault.RSNULL, fmt.Errorf("azure: unsupported opt: %s for key %s", opts.HashFunc().String(), k.keyType)
 	}
 	return
 }
@@ -143,7 +143,7 @@ func (k KeyVaultSigner) determineSigAlg(opts crypto.SignerOpts) (algo keyvault.J
 func (k *KeyVaultSigner) getPublicKey(ctx context.Context) error {
 	keyBundle, err := k.client.GetKey(ctx, k.baseURL, k.keyName, k.keyVersion)
 	if err != nil {
-		return fmt.Errorf("failed to fetch key bundle: %w", err)
+		return fmt.Errorf("azure: failed to fetch key bundle: %w", err)
 	}
 
 	// https://docs.microsoft.com/en-us/azure/key-vault/keys/about-keys#key-types-and-protection-methods
@@ -156,18 +156,18 @@ func (k *KeyVaultSigner) getPublicKey(ctx context.Context) error {
 	case keyvault.RSAHSM:
 		keyBundle.Key.Kty = keyvault.RSA
 	default:
-		return fmt.Errorf("unsupported key type: %s", keyBundle.Key.Kty)
+		return fmt.Errorf("azure: unsupported key type: %s", keyBundle.Key.Kty)
 	}
 
 	jwkJSON, err := json.Marshal(keyBundle.Key)
 	if err != nil {
-		return fmt.Errorf("failed to marshal key bundle: %w", err)
+		return fmt.Errorf("azure: failed to marshal key bundle: %w", err)
 	}
 
 	jwk := jose.JSONWebKey{}
 	err = jwk.UnmarshalJSON(jwkJSON)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal jwk: %w", err)
+		return fmt.Errorf("azure: failed to unmarshal jwk: %w", err)
 	}
 
 	// persist for future operations
@@ -197,12 +197,12 @@ func IsKeyVaultURI(url string) bool {
 
 func parseKeyURL(url string) (baseURL, keyName, keyVersion string, err error) {
 	if !(IsKeyVaultURI(url)) {
-		err = fmt.Errorf("invalid url: %s", url)
+		err = fmt.Errorf("azure: invalid url: %s", url)
 		return
 	}
 	parts := strings.Split(url, "/")
 	if len(parts) != 6 {
-		err = fmt.Errorf("invalid url: %s", url)
+		err = fmt.Errorf("azure: invalid url: %s", url)
 		return
 	}
 	baseURL = strings.Join(parts[:3], "/")
@@ -240,7 +240,7 @@ func makeClientWithAuth(baseURL string) (*keyvault.BaseClient, error) {
 		}
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to auth: %w", err)
+		return nil, fmt.Errorf("azure: failed to auth: %w", err)
 	}
 
 	basicClient := keyvault.New()

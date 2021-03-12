@@ -6,6 +6,8 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"runtime/debug"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -58,7 +60,7 @@ func (suite *Suite) Assert() *assert.Assertions {
 func failOnPanic(t *testing.T) {
 	r := recover()
 	if r != nil {
-		t.Errorf("test panicked: %v", r)
+		t.Errorf("test panicked: %v\n%s", r, debug.Stack())
 		t.FailNow()
 	}
 }
@@ -79,17 +81,11 @@ func (suite *Suite) Run(name string, subtest func()) bool {
 // Run takes a testing suite and runs all of the tests attached
 // to it.
 func Run(t *testing.T, suite TestingSuite) {
+	testsSync := &sync.WaitGroup{}
 	suite.SetT(t)
 	defer failOnPanic(t)
 
-	if setupAllSuite, ok := suite.(SetupAllSuite); ok {
-		setupAllSuite.SetupSuite()
-	}
-	defer func() {
-		if tearDownAllSuite, ok := suite.(TearDownAllSuite); ok {
-			tearDownAllSuite.TearDownSuite()
-		}
-	}()
+	suiteSetupDone := false
 
 	methodFinder := reflect.TypeOf(suite)
 	tests := []testing.InternalTest{}
@@ -100,34 +96,49 @@ func Run(t *testing.T, suite TestingSuite) {
 			fmt.Fprintf(os.Stderr, "testify: invalid regexp for -m: %s\n", err)
 			os.Exit(1)
 		}
-		if ok {
-			test := testing.InternalTest{
-				Name: method.Name,
-				F: func(t *testing.T) {
-					parentT := suite.T()
-					suite.SetT(t)
-					defer failOnPanic(t)
-
-					if setupTestSuite, ok := suite.(SetupTestSuite); ok {
-						setupTestSuite.SetupTest()
-					}
-					if beforeTestSuite, ok := suite.(BeforeTest); ok {
-						beforeTestSuite.BeforeTest(methodFinder.Elem().Name(), method.Name)
-					}
-					defer func() {
-						if afterTestSuite, ok := suite.(AfterTest); ok {
-							afterTestSuite.AfterTest(methodFinder.Elem().Name(), method.Name)
-						}
-						if tearDownTestSuite, ok := suite.(TearDownTestSuite); ok {
-							tearDownTestSuite.TearDownTest()
-						}
-						suite.SetT(parentT)
-					}()
-					method.Func.Call([]reflect.Value{reflect.ValueOf(suite)})
-				},
-			}
-			tests = append(tests, test)
+		if !ok {
+			continue
 		}
+		if !suiteSetupDone {
+			if setupAllSuite, ok := suite.(SetupAllSuite); ok {
+				setupAllSuite.SetupSuite()
+			}
+			defer func() {
+				if tearDownAllSuite, ok := suite.(TearDownAllSuite); ok {
+					testsSync.Wait()
+					tearDownAllSuite.TearDownSuite()
+				}
+			}()
+			suiteSetupDone = true
+		}
+		test := testing.InternalTest{
+			Name: method.Name,
+			F: func(t *testing.T) {
+				defer testsSync.Done()
+				parentT := suite.T()
+				suite.SetT(t)
+				defer failOnPanic(t)
+
+				if setupTestSuite, ok := suite.(SetupTestSuite); ok {
+					setupTestSuite.SetupTest()
+				}
+				if beforeTestSuite, ok := suite.(BeforeTest); ok {
+					beforeTestSuite.BeforeTest(methodFinder.Elem().Name(), method.Name)
+				}
+				defer func() {
+					if afterTestSuite, ok := suite.(AfterTest); ok {
+						afterTestSuite.AfterTest(methodFinder.Elem().Name(), method.Name)
+					}
+					if tearDownTestSuite, ok := suite.(TearDownTestSuite); ok {
+						tearDownTestSuite.TearDownTest()
+					}
+					suite.SetT(parentT)
+				}()
+				method.Func.Call([]reflect.Value{reflect.ValueOf(suite)})
+			},
+		}
+		tests = append(tests, test)
+		testsSync.Add(1)
 	}
 	runTests(t, tests)
 }
