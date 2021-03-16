@@ -90,7 +90,7 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 
 	signed, err := k.client.Sign(context.Background(), k.baseURL, k.keyName, k.keyVersion, keyvault.KeySignParameters{Algorithm: algo, Value: &payload})
 	if err != nil {
-		return nil, fmt.Errorf("azure: failed to sign against azure: %w", err)
+		return nil, fmt.Errorf("azure: failed to sign: %w", err)
 	}
 
 	res, err := base64.RawURLEncoding.DecodeString(*signed.Result)
@@ -98,7 +98,7 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 		return nil, fmt.Errorf("failed to base64 recode result: `%s` %w", *signed.Result, err)
 	}
 
-	log.Infof("azure: signed %d bytes with %s for %s key %s", len(digest), algo, k.keyType, k.keyName)
+	log.Debugf("azure: signed %d bytes with %s for %s key %s", len(digest), algo, k.keyType, k.keyName)
 
 	if k.keyType == keyvault.RSA {
 		return res, nil

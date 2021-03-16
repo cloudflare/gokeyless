@@ -98,7 +98,7 @@ func (k KMSSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (sig
 		return nil, fmt.Errorf("google: signature crc32 incorrect")
 	}
 
-	log.Infof("google: signed %d bytes with %s for %s key %s", len(digest), opts.HashFunc().String(), k.keyType, k.name)
+	log.Debugf("google: signed %d bytes with %s for %s key %s", len(digest), opts.HashFunc().String(), k.keyType, k.name)
 
 	return result.Signature, nil
 
