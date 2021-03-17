@@ -110,3 +110,14 @@ test-trust: gokeyless
 .PHONY: benchmark-softhsm
 benchmark-softhsm:
 	go test -tags pkcs11 -v -race ./server -bench HSM -args -softhsm2
+
+# GORELEASER_GITHUB_TOKEN=X make release-github
+# token from https://github.com/settings/tokens/new
+.PHONY: release-github
+release-github:
+	docker run --rm --privileged -v $(PWD):/go/tmp \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-w /go/tmp \
+		--env GORELEASER_GITHUB_TOKEN \
+		neilotoole/xcgo:latest goreleaser --rm-dist
+
