@@ -1,0 +1,37 @@
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=1
+  - GOFLAGS=-mod=vendor
+  - GOPROXY=off
+builds:
+  - id: gokeyless-darwin
+    binary: gokeyless
+    env:
+      - CC=o64-clang
+      - CXX=o64-clang++
+    goos:
+      - darwin
+    goarch:
+      - amd64
+    main: ./cmd/gokeyless
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: gokeyless-linux
+    binary: gokeyless
+    goos:
+      - linux
+    goarch:
+      - amd64
+    main: ./cmd/gokeyless
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+      - -linkmode external -extldflags "-static"
+archives:
+  - format: binary
+release:
+  github:
+    owner: cloudflare
+    name: gokeyless
+  prerelease: auto
+changelog:
+  sort: asc
