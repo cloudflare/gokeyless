@@ -63,7 +63,7 @@ package-deb: | $(INSTALL_BIN)/$(NAME) install-config
 	--before-remove pkg/debian/before-remove.sh \
 	--after-install pkg/debian/after-install.sh \
 	--config-files /$(CONFIG_PATH)/gokeyless.yaml \
-	--deb-compression bzip2 \
+	--deb-compression gz \
 	--deb-user root --deb-group root \
 	.
 
