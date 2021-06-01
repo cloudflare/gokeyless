@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -39,7 +37,6 @@ import (
 
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server/internal/client"
-	buf_ecdsa "github.com/cloudflare/gokeyless/server/internal/ecdsa"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
@@ -337,12 +334,11 @@ func makeErrResponse(req request, err protocol.Error, requestBegin time.Time) re
 
 type keylessWorker struct {
 	s    *Server
-	buf  *buf_ecdsa.SyncRandBuffer
 	name string
 }
 
-func newKeylessWorker(s *Server, buf *buf_ecdsa.SyncRandBuffer, name string) *keylessWorker {
-	return &keylessWorker{s: s, buf: buf, name: name}
+func newKeylessWorker(s *Server, name string) *keylessWorker {
+	return &keylessWorker{s: s, name: name}
 }
 
 func (w *keylessWorker) Do(job interface{}) interface{} {
@@ -527,11 +523,7 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 	signSpan, _ := opentracing.StartSpanFromContext(ctx, "keylessWorker.Sign")
 	defer signSpan.Finish()
 	var sig []byte
-	if k, ok := key.(*ecdsa.PrivateKey); ok && k.Curve == elliptic.P256() {
-		sig, err = buf_ecdsa.Sign(rand.Reader, k, pkt.Operation.Payload, opts, w.buf)
-	} else {
-		sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
-	}
+	sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 	if err != nil {
 		tracing.LogError(span, err)
 		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
@@ -586,21 +578,6 @@ func (w *limitedWorker) Do(job interface{}) interface{} {
 		return makeRespondResponse(req, codec.response, requestBegin)
 	default:
 		return makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
-	}
-}
-
-type randGenWorker struct {
-	buf *buf_ecdsa.SyncRandBuffer
-}
-
-func newRandGenWorker(buf *buf_ecdsa.SyncRandBuffer) *randGenWorker {
-	return &randGenWorker{buf: buf}
-}
-
-func (w *randGenWorker) Do(ctx context.Context) {
-	err := w.buf.Fill(ctx, rand.Reader)
-	if err != nil {
-		panic(err)
 	}
 }
 
@@ -818,7 +795,6 @@ type ServeConfig struct {
 	ecdsaWorkers            int
 	otherWorkers            int
 	limitedWorkers          int
-	bgWorkers               int
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
 	customOpFunc            CustomOpFunction
@@ -835,7 +811,6 @@ const (
 //  - The number of ECDSA workers is max(2, runtime.NumCPU())
 //  - The number of RSA workers is max(2, runtime.NumCPU())
 //  - The number of other workers is 2
-//  - The number of background workers is 1
 //  - The TCP connection timeout is 30 seconds
 //  - The Unix connection timeout is 1 hour
 //  - All connections have full power
@@ -849,7 +824,6 @@ func DefaultServeConfig() *ServeConfig {
 		ecdsaWorkers:   n,
 		otherWorkers:   2,
 		limitedWorkers: 0,
-		bgWorkers:      1,
 		tcpTimeout:     defaultTCPTimeout,
 		unixTimeout:    defaultUnixTimeout,
 		isLimited:      func(state tls.ConnectionState) (bool, error) { return false, nil },
@@ -916,18 +890,6 @@ func (s *ServeConfig) WithOtherWorkers(n int) *ServeConfig {
 // OtherWorkers returns the number of other worker goroutines.
 func (s *ServeConfig) OtherWorkers() int {
 	return s.otherWorkers
-}
-
-// WithBackgroundWorkers specifies the number of background worker goroutines to
-// use.
-func (s *ServeConfig) WithBackgroundWorkers(n int) *ServeConfig {
-	s.bgWorkers = n
-	return s
-}
-
-// BackgroundWorkers returns the number of background worker goroutines.
-func (s *ServeConfig) BackgroundWorkers() int {
-	return s.bgWorkers
 }
 
 // WithLimitedWorkers specifies the number of limited worker goroutines to
