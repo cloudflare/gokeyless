@@ -110,7 +110,7 @@ import (
 // by the user, and once by this monitor goroutine.
 
 const (
-	maxOutstandingRequests = 1024
+	maxOutstandingRequests = 16384
 )
 
 // A note on using Destroy:

@@ -631,6 +631,8 @@ func (s *poolSelector) SelectPool(pkt *protocol.Packet) *worker.Pool {
 		return s.wp.RSA
 	case PoolECDSA:
 		return s.wp.ECDSA
+	case PoolRemote:
+		return s.wp.Remote
 	default:
 		return s.wp.Other
 	}
@@ -794,6 +796,7 @@ type ServeConfig struct {
 	rsaWorkers              int
 	ecdsaWorkers            int
 	otherWorkers            int
+	remoteWorkers           int
 	limitedWorkers          int
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
@@ -823,6 +826,7 @@ func DefaultServeConfig() *ServeConfig {
 		rsaWorkers:     n,
 		ecdsaWorkers:   n,
 		otherWorkers:   2,
+		remoteWorkers:  2,
 		limitedWorkers: 0,
 		tcpTimeout:     defaultTCPTimeout,
 		unixTimeout:    defaultUnixTimeout,
@@ -879,6 +883,17 @@ func (s *ServeConfig) WithECDSAWorkers(n int) *ServeConfig {
 // ECDSAWorkers returns the number of ECDSA worker goroutines.
 func (s *ServeConfig) ECDSAWorkers() int {
 	return s.ecdsaWorkers
+}
+
+// WithRemoteWorkers specifies the number of remote goroutines to use.
+func (s *ServeConfig) WithRemoteWorkers(n int) *ServeConfig {
+	s.remoteWorkers = n
+	return s
+}
+
+// RemoteWorkers returns the number of other worker goroutines.
+func (s *ServeConfig) RemoteWorkers() int {
+	return s.remoteWorkers
 }
 
 // WithOtherWorkers specifies the number of other worker goroutines to use.
