@@ -9,6 +9,8 @@ import (
 	"github.com/cloudflare/gokeyless/server/internal/worker"
 )
 
+const maxOutstandingRequests = 1024
+
 func TestBlocker(t *testing.T) {
 	b := newBlocker(1)
 	if b.Do() {
@@ -99,7 +101,7 @@ func (d *dummyWorker) Do(job interface{}) (result interface{}) { return job }
 func newConnSetup() (conn *dummyConn, handle *ConnHandle) {
 	pool := worker.NewPool(&dummyWorker{})
 	conn = newDummyConn(pool)
-	return conn, SpawnConn(conn)
+	return conn, SpawnConn(conn, maxOutstandingRequests)
 }
 
 func TestClientBasic(t *testing.T) {

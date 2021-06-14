@@ -691,7 +691,7 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		tconn.Close()
 		return
 	}
-	handle := client.SpawnConn(conn)
+	handle := client.SpawnConn(conn, s.config.maxConnPendingRequests)
 	s.listeners[l][handle] = struct{}{}
 	s.mtx.Unlock()
 	log.Debugf("%s: spawned", connStr)
@@ -798,6 +798,7 @@ type ServeConfig struct {
 	otherWorkers            int
 	remoteWorkers           int
 	limitedWorkers          int
+	maxConnPendingRequests  int
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
 	customOpFunc            CustomOpFunction
@@ -823,15 +824,16 @@ func DefaultServeConfig() *ServeConfig {
 		n = 2
 	}
 	return &ServeConfig{
-		rsaWorkers:     n,
-		ecdsaWorkers:   n,
-		otherWorkers:   2,
-		remoteWorkers:  2,
-		limitedWorkers: 0,
-		tcpTimeout:     defaultTCPTimeout,
-		unixTimeout:    defaultUnixTimeout,
-		isLimited:      func(state tls.ConnectionState) (bool, error) { return false, nil },
-		poolSelector:   defaultPoolSelector,
+		rsaWorkers:             n,
+		ecdsaWorkers:           n,
+		otherWorkers:           2,
+		remoteWorkers:          2,
+		limitedWorkers:         0,
+		tcpTimeout:             defaultTCPTimeout,
+		unixTimeout:            defaultUnixTimeout,
+		maxConnPendingRequests: 1024,
+		isLimited:              func(state tls.ConnectionState) (bool, error) { return false, nil },
+		poolSelector:           defaultPoolSelector,
 	}
 }
 
