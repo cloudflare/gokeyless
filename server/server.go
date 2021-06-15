@@ -631,6 +631,8 @@ func (s *poolSelector) SelectPool(pkt *protocol.Packet) *worker.Pool {
 		return s.wp.RSA
 	case PoolECDSA:
 		return s.wp.ECDSA
+	case PoolRemote:
+		return s.wp.Remote
 	default:
 		return s.wp.Other
 	}
@@ -689,7 +691,7 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		tconn.Close()
 		return
 	}
-	handle := client.SpawnConn(conn)
+	handle := client.SpawnConn(conn, s.config.maxConnPendingRequests)
 	s.listeners[l][handle] = struct{}{}
 	s.mtx.Unlock()
 	log.Debugf("%s: spawned", connStr)
@@ -794,7 +796,9 @@ type ServeConfig struct {
 	rsaWorkers              int
 	ecdsaWorkers            int
 	otherWorkers            int
+	remoteWorkers           int
 	limitedWorkers          int
+	maxConnPendingRequests  int
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
 	customOpFunc            CustomOpFunction
@@ -820,14 +824,16 @@ func DefaultServeConfig() *ServeConfig {
 		n = 2
 	}
 	return &ServeConfig{
-		rsaWorkers:     n,
-		ecdsaWorkers:   n,
-		otherWorkers:   2,
-		limitedWorkers: 0,
-		tcpTimeout:     defaultTCPTimeout,
-		unixTimeout:    defaultUnixTimeout,
-		isLimited:      func(state tls.ConnectionState) (bool, error) { return false, nil },
-		poolSelector:   defaultPoolSelector,
+		rsaWorkers:             n,
+		ecdsaWorkers:           n,
+		otherWorkers:           2,
+		remoteWorkers:          2,
+		limitedWorkers:         0,
+		tcpTimeout:             defaultTCPTimeout,
+		unixTimeout:            defaultUnixTimeout,
+		maxConnPendingRequests: 1024,
+		isLimited:              func(state tls.ConnectionState) (bool, error) { return false, nil },
+		poolSelector:           defaultPoolSelector,
 	}
 }
 
@@ -879,6 +885,17 @@ func (s *ServeConfig) WithECDSAWorkers(n int) *ServeConfig {
 // ECDSAWorkers returns the number of ECDSA worker goroutines.
 func (s *ServeConfig) ECDSAWorkers() int {
 	return s.ecdsaWorkers
+}
+
+// WithRemoteWorkers specifies the number of remote goroutines to use.
+func (s *ServeConfig) WithRemoteWorkers(n int) *ServeConfig {
+	s.remoteWorkers = n
+	return s
+}
+
+// RemoteWorkers returns the number of other worker goroutines.
+func (s *ServeConfig) RemoteWorkers() int {
+	return s.remoteWorkers
 }
 
 // WithOtherWorkers specifies the number of other worker goroutines to use.

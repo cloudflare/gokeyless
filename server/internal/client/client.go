@@ -109,10 +109,6 @@ import (
 // must be safe for the underlying destroy procedure to be invoked twice - once
 // by the user, and once by this monitor goroutine.
 
-const (
-	maxOutstandingRequests = 1024
-)
-
 // A note on using Destroy:
 //
 // We need some mechanism for the code to decide that it wants to kill an
@@ -184,12 +180,12 @@ type ConnHandle struct {
 // SpawnConn spawns a pair of goroutines to handle requests from the client. One
 // goroutine reads jobs from the client and submits them a worker pool, while
 // the other waits of the results of these jobs and writes them to the client.
-func SpawnConn(conn Conn) *ConnHandle {
+func SpawnConn(conn Conn, maxOutstanding int) *ConnHandle {
 	c := &ConnHandle{
 		conn:      conn,
-		responses: make(chan interface{}, maxOutstandingRequests),
+		responses: make(chan interface{}, maxOutstanding),
 		done:      make(chan struct{}),
-		blocker:   newBlocker(maxOutstandingRequests),
+		blocker:   newBlocker(maxOutstanding),
 	}
 	c.wg.Add(2)
 
