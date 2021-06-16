@@ -854,6 +854,17 @@ func defaultPoolSelector(pkt *protocol.Packet) WorkerPoolType {
 	}
 }
 
+// WithMaxConnPendingRequests allows customization of the limit on pending requests
+func (s *ServeConfig) WithMaxConnPendingRequests(n int) *ServeConfig {
+	s.maxConnPendingRequests = n
+	return s
+}
+
+// MaxConnPendingRequests returns the number of allowed pending requests
+func (s *ServeConfig) MaxConnPendingRequests() int {
+	return s.maxConnPendingRequests
+}
+
 // WithWorkerPoolSelector allows customization of the pool selector.
 func (s *ServeConfig) WithWorkerPoolSelector(selector WorkerPoolSelector) *ServeConfig {
 	s.poolSelector = selector
