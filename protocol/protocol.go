@@ -691,3 +691,12 @@ func (o *Operation) GetError() error {
 	}
 	return Error(o.Payload[0])
 }
+
+// ErrorVal extracts the error from an operation.
+func (o *Operation) ErrorVal() Error {
+	if o.Opcode != OpError {
+		return ErrNone
+	}
+	return Error(o.Payload[0])
+
+}

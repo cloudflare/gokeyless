@@ -15,172 +15,21 @@ import (
 	"io/ioutil"
 	"net"
 	"net/rpc"
-	"os"
-	"path/filepath"
-	"regexp"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/cloudflare/gokeyless/certmetrics"
-	"github.com/cloudflare/gokeyless/internal/azure"
-	"github.com/cloudflare/gokeyless/internal/google"
-	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 
-	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
-	"github.com/cloudflare/cfssl/log"
 	"golang.org/x/crypto/ed25519"
 
 	"github.com/cloudflare/gokeyless/protocol"
-	"github.com/cloudflare/gokeyless/server/internal/client"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
-	"github.com/cloudflare/gokeyless/server/internal/worker"
+
+	"github.com/cloudflare/cfssl/log"
 )
-
-var keyExt = regexp.MustCompile(`.+\.key`)
-
-// Keystore is an abstract container for a server's private keys, allowing
-// lookup of keys based on incoming `Operation` requests.
-type Keystore interface {
-	// Get retrieves a key for signing. The Sign method will be called directly on
-	// this key, so it's advisable to perform any precomputation on this key that
-	// may speed up signing over the course of multiple signatures (e.g.,
-	// crypto/rsa.PrivateKey's Precompute method).
-	Get(context.Context, *protocol.Operation) (crypto.Signer, error)
-}
-
-// DefaultKeystore is a simple in-memory Keystore.
-type DefaultKeystore struct {
-	mtx  sync.RWMutex
-	skis map[protocol.SKI]crypto.Signer
-}
-
-// NewDefaultKeystore returns a new DefaultKeystore.
-func NewDefaultKeystore() *DefaultKeystore {
-	return &DefaultKeystore{skis: make(map[protocol.SKI]crypto.Signer)}
-}
-
-// NewKeystoreFromDir creates a keystore populated from all of the ".key" files
-// in dir. For each ".key" file, LoadKey is called to parse the file's contents
-// into a crypto.Signer, which is stored in the Keystore.
-func NewKeystoreFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) (Keystore, error) {
-	keys := NewDefaultKeystore()
-	if err := keys.AddFromDir(dir, LoadKey); err != nil {
-		return nil, err
-	}
-	return keys, nil
-}
-
-// AddFromDir adds all of the ".key" files in dir to the keystore. For each
-// ".key" file, LoadKey is called to parse the file's contents into a
-// crypto.Signer, which is stored in the Keystore.
-func (keys *DefaultKeystore) AddFromDir(dir string, LoadKey func([]byte) (crypto.Signer, error)) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && keyExt.MatchString(info.Name()) {
-			return keys.AddFromFile(path, LoadKey)
-		}
-		return nil
-	})
-}
-
-// AddFromFile adds the key in the given file to the keystore. LoadKey is called
-// to parse the file's contents into a crypto.Signer, which is stored in the
-// Keystore.
-func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (crypto.Signer, error)) error {
-	log.Infof("loading %s...", path)
-
-	in, err := ioutil.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	priv, err := LoadKey(in)
-	if err != nil {
-		return err
-	}
-
-	return keys.Add(nil, priv)
-}
-
-// AddFromURI loads all keys matching the given PKCS#11 or Azure URI to the keystore. LoadPKCS11URI
-// is called to parse the URL, connect to the module, and populate a crypto.Signer,
-// which is stored in the Keystore.
-func (keys *DefaultKeystore) AddFromURI(uri string) error {
-	log.Infof("loading %s...", uri)
-	var priv crypto.Signer
-	var err error
-	if azure.IsKeyVaultURI(uri) {
-		priv, err = azure.New(uri)
-	} else if rfc7512.IsPKCS11URI(uri) {
-		priv, err = loadPKCS11URI(uri)
-	} else if google.IsKMSResource(uri) {
-		priv, err = google.New(uri)
-	} else {
-		return fmt.Errorf("unknown uri format: %s", uri)
-	}
-
-	if err != nil {
-		return err
-	}
-	return keys.Add(nil, priv)
-}
-
-// Add adds a new key to the server's internal store. Stores in maps by SKI and
-// (if possible) Digest, SNI, Server IP, and Client IP.
-func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) error {
-	ski, err := protocol.GetSKI(priv.Public())
-	if err != nil {
-		return err
-	}
-
-	keys.mtx.Lock()
-	defer keys.mtx.Unlock()
-
-	keys.skis[ski] = priv
-
-	log.Debugf("add signer with SKI: %v (https://crt.sh/?ski=%v)", ski, ski)
-	return nil
-}
-
-// DefaultLoadKey attempts to load a private key from PEM or DER.
-func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
-
-	return derhelpers.ParsePrivateKeyDER(in)
-}
-
-// Get returns a key from keys, mapped from SKI.
-func (keys *DefaultKeystore) Get(ctx context.Context, op *protocol.Operation) (crypto.Signer, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "DefaultKeystore.Get")
-	defer span.Finish()
-
-	keys.mtx.RLock()
-	defer keys.mtx.RUnlock()
-
-	ski := op.SKI
-	if !ski.Valid() {
-		return nil, fmt.Errorf("keyless: invalid SKI %s", ski)
-	}
-	priv, found := keys.skis[ski]
-	if found {
-		log.Infof("fetch key with SKI: %s", ski)
-		return priv, nil
-	}
-
-	log.Infof("no key with SKI: %s", ski)
-	return nil, nil
-}
 
 // Server is a Keyless Server capable of performing opaque key operations.
 type Server struct {
@@ -198,9 +47,8 @@ type Server struct {
 	// limitedDispatcher is an RPC server for APIs less trusted clients can be trusted with
 	limitedDispatcher *rpc.Server
 
-	listeners map[net.Listener]map[*client.ConnHandle]struct{}
+	listeners map[net.Listener]map[net.Conn]struct{}
 	shutdown  bool
-	wp        *workerPool
 	mtx       sync.Mutex
 }
 
@@ -223,13 +71,8 @@ func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPo
 		keys:              NewDefaultKeystore(),
 		dispatcher:        rpc.NewServer(),
 		limitedDispatcher: rpc.NewServer(),
-		listeners:         make(map[net.Listener]map[*client.ConnHandle]struct{}),
+		listeners:         make(map[net.Listener]map[net.Conn]struct{}),
 	}
-	wp, err := newWorkerPool(s)
-	if err != nil {
-		return nil, err
-	}
-	s.wp = wp
 
 	return s, nil
 }
@@ -301,189 +144,216 @@ type Sealer interface {
 	Unseal(*protocol.Operation) ([]byte, error)
 }
 
-type request struct {
-	pkt *protocol.Packet
-	// time just after the request was deserialized from the connection
-	reqBegin time.Time
-	connName string
+// handler is associated with a connection and contains bookkeeping
+// information used across goroutines. The channel tokens limits the
+// concurrency: before reading a request a token is extracted, when
+// writing the response a token is returned.
+type handler struct {
+	name     string
+	s        *Server
+	tokens   chan struct{}
+	mtx      sync.Mutex
+	limited  bool
+	listener net.Listener
+	conn     net.Conn
+}
+
+func (h *handler) handle(pkt *protocol.Packet) {
+	var resp response
+	start := time.Now()
+	if h.limited {
+		resp = h.s.limitedDo(pkt, h.name)
+	} else {
+		resp = h.s.unlimitedDo(pkt, h.name)
+	}
+	respPkt := protocol.Packet{
+		Header: protocol.Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			Length:    resp.op.Bytes(),
+			ID:        resp.id,
+		},
+		Operation: resp.op,
+	}
+	h.tokens <- struct{}{}
+	h.mtx.Lock()
+	_, err := respPkt.WriteTo(h.conn)
+	h.mtx.Unlock()
+	if err != nil {
+		log.Errorf("connection %v: error in writing response %v", h.name, err)
+		h.conn.Close() // ignoring error: what can we do?
+		h.s.mtx.Lock()
+		delete(h.s.listeners[h.listener], h.conn)
+		h.s.mtx.Unlock()
+		logConnFailure()
+	}
+	logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+	logRequestTotalDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+}
+
+func (h *handler) loop(tconn net.Conn) {
+	for {
+		pkt := new(protocol.Packet)
+		<-h.tokens
+		_, err := pkt.ReadFrom(tconn)
+		if err != nil {
+			break
+		}
+		go h.handle(pkt)
+
+	}
 }
 
 type response struct {
-	id        uint32
-	op        protocol.Operation
-	reqOpcode protocol.Op
-	err       protocol.Error
-	// time just after the request was deserialized from the connection
-	reqBegin time.Time
+	id uint32
+	op protocol.Operation
 }
 
-func makeRespondResponse(req request, payload []byte, requestBegin time.Time) response {
-	logRequestExecDuration(req.pkt.Opcode, requestBegin, protocol.ErrNone)
-	return response{id: req.pkt.ID, op: protocol.MakeRespondOp(payload), reqOpcode: req.pkt.Opcode, err: protocol.ErrNone, reqBegin: req.reqBegin}
+func makeRespondResponse(pkt *protocol.Packet, payload []byte) response {
+	return response{id: pkt.ID, op: protocol.MakeRespondOp(payload)}
 }
 
-func makePongResponse(req request, payload []byte, requestBegin time.Time) response {
-	logRequestExecDuration(req.pkt.Opcode, requestBegin, protocol.ErrNone)
-	return response{id: req.pkt.ID, op: protocol.MakePongOp(payload), reqOpcode: req.pkt.Opcode, err: protocol.ErrNone, reqBegin: req.reqBegin}
+func makePongResponse(pkt *protocol.Packet, payload []byte) response {
+	return response{id: pkt.ID, op: protocol.MakePongOp(payload)}
 }
 
-func makeErrResponse(req request, err protocol.Error, requestBegin time.Time) response {
-	logRequestExecDuration(req.pkt.Opcode, requestBegin, err)
-	return response{id: req.pkt.ID, op: protocol.MakeErrorOp(err), reqOpcode: req.pkt.Opcode, err: err, reqBegin: req.reqBegin}
+func makeErrResponse(pkt *protocol.Packet, err protocol.Error) response {
+	return response{id: pkt.ID, op: protocol.MakeErrorOp(err)}
 }
 
-type keylessWorker struct {
-	s    *Server
-	name string
-}
-
-func newKeylessWorker(s *Server, name string) *keylessWorker {
-	return &keylessWorker{s: s, name: name}
-}
-
-func (w *keylessWorker) Do(job interface{}) interface{} {
-	req := job.(request)
-	pkt := req.pkt
-
+func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
 	if err != nil {
 		log.Errorf("failed to extract span: %v", err)
 	}
-	span, ctx := opentracing.StartSpanFromContext(context.Background(), "keylessWorker.Do", ext.RPCServerOption(spanCtx))
+	span, ctx := opentracing.StartSpanFromContext(context.Background(), "operation execution", ext.RPCServerOption(spanCtx))
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &pkt.Operation)
-	span.SetTag("worker", w.name)
 
-	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
-		req.connName,
-		w.name,
+	log.Debugf("connection %s: limited=false  opcode=%s id=%d sni=%s ip=%s ski=%v",
+		connName,
 		pkt.Operation.Opcode,
 		pkt.Header.ID,
 		pkt.Operation.SNI,
 		pkt.Operation.ServerIP,
 		pkt.Operation.SKI)
 
-	requestBegin := time.Now()
 	var opts crypto.SignerOpts
 	switch pkt.Operation.Opcode {
 	case protocol.OpPing:
-		return makePongResponse(req, pkt.Operation.Payload, requestBegin)
+		return makePongResponse(pkt, pkt.Operation.Payload)
 
 	case protocol.OpSeal, protocol.OpUnseal:
-		if w.s.sealer == nil {
-			log.Errorf("Worker %v: Sealer is nil", w.name)
-			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		if s.sealer == nil {
+			log.Errorf("Sealer is nil")
+			return makeErrResponse(pkt, protocol.ErrInternal)
 		}
 
 		var res []byte
 		var err error
 		if pkt.Operation.Opcode == protocol.OpSeal {
-			res, err = w.s.sealer.Seal(&pkt.Operation)
+			res, err = s.sealer.Seal(&pkt.Operation)
 		} else {
-			res, err = w.s.sealer.Unseal(&pkt.Operation)
+			res, err = s.sealer.Unseal(&pkt.Operation)
 		}
 		if err != nil {
-			log.Errorf("Worker %v: Sealer: %v", w.name, err)
+			log.Errorf("Connection %s: Sealer: %v", connName, err)
 			code := protocol.ErrInternal
 			if err, ok := err.(protocol.Error); ok {
 				code = err
 			}
-			return makeErrResponse(req, code, requestBegin)
+			return makeErrResponse(pkt, code)
 		}
-		return makeRespondResponse(req, res, requestBegin)
+		return makeRespondResponse(pkt, res)
 
 	case protocol.OpRPC:
 		codec := newServerCodec(pkt.Payload)
 
-		err := w.s.dispatcher.ServeRequest(codec)
+		err := s.dispatcher.ServeRequest(codec)
 		if err != nil {
-			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
-			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+			log.Errorf("Connection %s: ServeRPC: %v", connName, err)
+			return makeErrResponse(pkt, protocol.ErrInternal)
 		}
-		return makeRespondResponse(req, codec.response, requestBegin)
+		return makeRespondResponse(pkt, codec.response)
 
 	case protocol.OpCustom:
-		customOpFunc := w.s.config.CustomOpFunc()
+		customOpFunc := s.config.CustomOpFunc()
 		if customOpFunc == nil {
-			log.Errorf("Worker %v: OpCustom is undefined", w.name)
-			return makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
+			log.Errorf("Connection %s: OpCustom is undefined", connName)
+			return makeErrResponse(pkt, protocol.ErrBadOpcode)
 		}
 
 		res, err := customOpFunc(ctx, pkt.Operation)
 		if err != nil {
-			log.Errorf("Worker %v: OpCustom returned error: %v", w.name, err)
+			log.Errorf("Connection %s: OpCustom returned error: %v", connName, err)
 			code := protocol.ErrInternal
 			if err, ok := err.(protocol.Error); ok {
 				code = err
 			}
-			return makeErrResponse(req, code, requestBegin)
+			return makeErrResponse(pkt, code)
 		}
-		return makeRespondResponse(req, res, requestBegin)
+		return makeRespondResponse(pkt, res)
 
 	case protocol.OpEd25519Sign:
-		keyLoadBegin := time.Now()
-		key, err := w.s.keys.Get(ctx, &pkt.Operation)
+		key, err := s.keys.Get(ctx, &pkt.Operation)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
-			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+			return makeErrResponse(pkt, protocol.ErrInternal)
 		} else if key == nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
-			return makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
+			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 		}
-		logKeyLoadDuration(keyLoadBegin)
 
 		if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
 			sig := ed25519.Sign(ed25519Key, pkt.Operation.Payload)
-			return makeRespondResponse(req, sig, requestBegin)
+			return makeRespondResponse(pkt, sig)
 		}
 
 		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
-			log.Errorf("Worker %v: %s: Signing error: %v", w.name, protocol.ErrCrypto, err)
-			return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+			log.Errorf("Connection: %s: Signing error: %v", connName, protocol.ErrCrypto, err)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
-		return makeRespondResponse(req, sig, requestBegin)
+		return makeRespondResponse(pkt, sig)
 
 	case protocol.OpRSADecrypt:
-		keyLoadBegin := time.Now()
-		key, err := w.s.keys.Get(ctx, &pkt.Operation)
+		key, err := s.keys.Get(ctx, &pkt.Operation)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
-			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+			return makeErrResponse(pkt, protocol.ErrInternal)
 		} else if key == nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
-			return makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
+			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 		}
-		logKeyLoadDuration(keyLoadBegin)
 
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
-			log.Errorf("Worker %v: %s: Key is not RSA", w.name, protocol.ErrCrypto)
-			return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+			log.Errorf("Connection %v: %s: Key is not RSA", connName, protocol.ErrCrypto)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
 		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
 			// Decrypt without removing padding; that's the client's responsibility.
 			ptxt, err := textbook_rsa.Decrypt(rsaKey, pkt.Operation.Payload)
 			if err != nil {
-				log.Errorf("Worker %v: %v", w.name, err)
-				return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+				log.Errorf("connection %v: %v", connName, err)
+				return makeErrResponse(pkt, protocol.ErrCrypto)
 			}
-			return makeRespondResponse(req, ptxt, requestBegin)
+			return makeRespondResponse(pkt, ptxt)
 		}
 
 		rsaKey, ok := key.(crypto.Decrypter)
 		if !ok {
-			log.Errorf("Worker %v: %s: Key is not Decrypter", w.name, protocol.ErrCrypto)
-			return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+			log.Errorf("Connection %v: %s: Key is not Decrypter", connName, protocol.ErrCrypto)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
 		ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
 		if err != nil {
-			log.Errorf("Worker %v: %s: Decryption error: %v", w.name, protocol.ErrCrypto, err)
-			return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+			log.Errorf("Connection %v: %s: Decryption error: %v", connName, protocol.ErrCrypto, err)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
-		return makeRespondResponse(req, ptxt, requestBegin)
+		return makeRespondResponse(pkt, ptxt)
 
 	case protocol.OpRSASignMD5SHA1, protocol.OpECDSASignMD5SHA1:
 		opts = crypto.MD5SHA1
@@ -498,10 +368,10 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 	case protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA512, protocol.OpECDSASignSHA512:
 		opts = crypto.SHA512
 	case protocol.OpPong, protocol.OpResponse, protocol.OpError:
-		log.Errorf("Worker %v: %s: %s is not a valid request Opcode\n", w.name, protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
-		return makeErrResponse(req, protocol.ErrUnexpectedOpcode, requestBegin)
+		log.Errorf("Connection  %v: %s: %s is not a valid request Opcode\n", connName, protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
+		return makeErrResponse(pkt, protocol.ErrUnexpectedOpcode)
 	default:
-		return makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
+		return makeErrResponse(pkt, protocol.ErrBadOpcode)
 	}
 
 	switch pkt.Operation.Opcode {
@@ -509,56 +379,40 @@ func (w *keylessWorker) Do(job interface{}) interface{} {
 		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 	}
 
-	keyLoadBegin := time.Now()
-	key, err := w.s.keys.Get(ctx, &pkt.Operation)
+	key, err := s.keys.Get(ctx, &pkt.Operation)
 	if err != nil {
 		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
-		return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+		return makeErrResponse(pkt, protocol.ErrInternal)
 	} else if key == nil {
 		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
-		return makeErrResponse(req, protocol.ErrKeyNotFound, requestBegin)
+		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 	}
-	logKeyLoadDuration(keyLoadBegin)
 
-	signSpan, _ := opentracing.StartSpanFromContext(ctx, "keylessWorker.Sign")
+	signSpan, _ := opentracing.StartSpanFromContext(ctx, "execute.Sign")
 	defer signSpan.Finish()
 	var sig []byte
 	sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 	if err != nil {
 		tracing.LogError(span, err)
-		log.Errorf("Worker %v: %s: Signing error: %v\n", w.name, protocol.ErrCrypto, err)
-		return makeErrResponse(req, protocol.ErrCrypto, requestBegin)
+		log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+		return makeErrResponse(pkt, protocol.ErrCrypto)
 	}
 
-	return makeRespondResponse(req, sig, requestBegin)
+	return makeRespondResponse(pkt, sig)
 }
 
-type limitedWorker struct {
-	s    *Server
-	name string
-}
-
-func newLimitedWorker(s *Server, name string) *limitedWorker {
-	return &limitedWorker{s: s, name: name}
-}
-
-func (w *limitedWorker) Do(job interface{}) interface{} {
-	req := job.(request)
-	pkt := req.pkt
-
+func (s *Server) limitedDo(pkt *protocol.Packet, connName string) response {
 	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
 	if err != nil {
 		log.Errorf("failed to extract span: %v", err)
 	}
-	span, _ := opentracing.StartSpanFromContext(context.Background(), "limitedWorker.Do", ext.RPCServerOption(spanCtx))
+	span, _ := opentracing.StartSpanFromContext(context.Background(), "limited.Do", ext.RPCServerOption(spanCtx))
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &pkt.Operation)
-	span.SetTag("worker", w.name)
+	span.SetTag("connection", connName)
 
-	requestBegin := time.Now()
-	log.Debugf("connection %s: worker=%v opcode=%s id=%d sni=%s ip=%s ski=%v",
-		req.connName,
-		w.name,
+	log.Debugf("connection %s: limited=true opcode=%s id=%d sni=%s ip=%s ski=%v",
+		connName,
 		pkt.Operation.Opcode,
 		pkt.Header.ID,
 		pkt.Operation.SNI,
@@ -566,18 +420,18 @@ func (w *limitedWorker) Do(job interface{}) interface{} {
 		pkt.Operation.SKI)
 	switch pkt.Operation.Opcode {
 	case protocol.OpPing:
-		return makePongResponse(req, pkt.Operation.Payload, requestBegin)
+		return makePongResponse(pkt, pkt.Operation.Payload)
 	case protocol.OpRPC:
 		codec := newServerCodec(pkt.Payload)
 
-		err := w.s.limitedDispatcher.ServeRequest(codec)
+		err := s.limitedDispatcher.ServeRequest(codec)
 		if err != nil {
-			log.Errorf("Worker %v: ServeRPC: %v", w.name, err)
-			return makeErrResponse(req, protocol.ErrInternal, requestBegin)
+			log.Errorf("Connection %s: ServeRPC: %v", connName, err)
+			return makeErrResponse(pkt, protocol.ErrInternal)
 		}
-		return makeRespondResponse(req, codec.response, requestBegin)
+		return makeRespondResponse(pkt, codec.response)
 	default:
-		return makeErrResponse(req, protocol.ErrBadOpcode, requestBegin)
+		return makeErrResponse(pkt, protocol.ErrBadOpcode)
 	}
 }
 
@@ -591,7 +445,7 @@ func (s *Server) addListener(l net.Listener) error {
 	if _, ok := s.listeners[l]; ok {
 		return fmt.Errorf("attempt to add duplicate listener: %s", l.Addr().String())
 	}
-	s.listeners[l] = make(map[*client.ConnHandle]struct{})
+	s.listeners[l] = make(map[net.Conn]struct{})
 	return nil
 }
 
@@ -614,27 +468,6 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 		go s.spawn(l, c)
-	}
-}
-
-type poolSelector struct {
-	limited bool
-	wp      *workerPool
-}
-
-func (s *poolSelector) SelectPool(pkt *protocol.Packet) *worker.Pool {
-	if s.limited {
-		return s.wp.Limited
-	}
-	switch s.wp.selector(pkt) {
-	case PoolRSA:
-		return s.wp.RSA
-	case PoolECDSA:
-		return s.wp.ECDSA
-	case PoolRemote:
-		return s.wp.Remote
-	default:
-		return s.wp.Other
 	}
 }
 
@@ -670,6 +503,7 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 	limited, err := s.config.isLimited(connState)
 	if err != nil {
 		log.Errorf("connection %v: could not determine if limited: %v", c.RemoteAddr(), err)
+		logConnFailure()
 		tconn.Close()
 		return
 	}
@@ -680,7 +514,6 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 	} else {
 		connStr = fmt.Sprintf("connection %v", c.RemoteAddr())
 	}
-	conn := newConn(c.RemoteAddr().String(), tconn, timeout, &poolSelector{limited, s.wp})
 
 	// Acquire the lock to atomically spawn the reader/writer goroutines for
 	// this connection and add it to the connections map.
@@ -691,19 +524,30 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		tconn.Close()
 		return
 	}
-	handle := client.SpawnConn(conn, s.config.maxConnPendingRequests)
-	s.listeners[l][handle] = struct{}{}
-	s.mtx.Unlock()
-	log.Debugf("%s: spawned", connStr)
 
-	// Block here until the connection and associated goroutines have completed.
-	handle.Wait()
+	s.listeners[l][tconn] = struct{}{}
+	s.mtx.Unlock()
+	log.Debugf("%s: serving", connStr)
+	handler := &handler{
+		name:     connStr,
+		s:        s,
+		tokens:   make(chan struct{}, s.config.maxConnPendingRequests),
+		limited:  limited,
+		conn:     tconn,
+		listener: l,
+	}
+	for len(handler.tokens) < cap(handler.tokens) {
+		handler.tokens <- struct{}{}
+	}
+
+	handler.loop(tconn)
+
 	log.Debugf("%s: closed", connStr)
 
 	// Acquire the lock again to remove the handle from the connections map. If
 	// we've shutdown in the meantime this is a safe no-op.
 	s.mtx.Lock()
-	delete(s.listeners[l], handle)
+	delete(s.listeners[l], tconn)
 	s.mtx.Unlock()
 	log.Debugf("%s: removed", connStr)
 }
@@ -781,10 +625,9 @@ func (s *Server) Close() error {
 		log.Debugf("Shutting down %v; closing %d active connections", l.Addr().String(), len(conns))
 		l.Close()
 		for conn := range conns {
-			conn.Destroy()
+			conn.Close()
 		}
 	}
-	s.wp.Destroy()
 
 	return nil
 }
@@ -793,16 +636,10 @@ func (s *Server) Close() error {
 // number of ECDSA worker goroutines, other worker goroutines, and background
 // worker goroutines to use. It also specifies the network connection timeout.
 type ServeConfig struct {
-	rsaWorkers              int
-	ecdsaWorkers            int
-	otherWorkers            int
-	remoteWorkers           int
-	limitedWorkers          int
 	maxConnPendingRequests  int
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
 	customOpFunc            CustomOpFunction
-	poolSelector            WorkerPoolSelector
 }
 
 const (
@@ -819,117 +656,12 @@ const (
 //  - The Unix connection timeout is 1 hour
 //  - All connections have full power
 func DefaultServeConfig() *ServeConfig {
-	n := runtime.NumCPU()
-	if runtime.NumCPU() < 2 {
-		n = 2
-	}
 	return &ServeConfig{
-		rsaWorkers:             n,
-		ecdsaWorkers:           n,
-		otherWorkers:           2,
-		remoteWorkers:          2,
-		limitedWorkers:         0,
 		tcpTimeout:             defaultTCPTimeout,
 		unixTimeout:            defaultUnixTimeout,
 		maxConnPendingRequests: 1024,
 		isLimited:              func(state tls.ConnectionState) (bool, error) { return false, nil },
-		poolSelector:           defaultPoolSelector,
 	}
-}
-
-func defaultPoolSelector(pkt *protocol.Packet) WorkerPoolType {
-	switch pkt.Operation.Opcode {
-	case protocol.OpRSADecrypt, protocol.OpRSASignMD5SHA1,
-		protocol.OpRSASignSHA1, protocol.OpRSASignSHA224,
-		protocol.OpRSASignSHA256, protocol.OpRSASignSHA384,
-		protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA256,
-		protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
-		return PoolRSA
-	case protocol.OpECDSASignMD5SHA1, protocol.OpECDSASignSHA1,
-		protocol.OpECDSASignSHA224, protocol.OpECDSASignSHA256,
-		protocol.OpECDSASignSHA384, protocol.OpECDSASignSHA512:
-		return PoolECDSA
-	default:
-		return PoolOther
-	}
-}
-
-// WithMaxConnPendingRequests allows customization of the limit on pending requests
-func (s *ServeConfig) WithMaxConnPendingRequests(n int) *ServeConfig {
-	s.maxConnPendingRequests = n
-	return s
-}
-
-// MaxConnPendingRequests returns the number of allowed pending requests
-func (s *ServeConfig) MaxConnPendingRequests() int {
-	return s.maxConnPendingRequests
-}
-
-// WithWorkerPoolSelector allows customization of the pool selector.
-func (s *ServeConfig) WithWorkerPoolSelector(selector WorkerPoolSelector) *ServeConfig {
-	s.poolSelector = selector
-	return s
-}
-
-// WorkerPoolSelector returns the pool selector.
-func (s *ServeConfig) WorkerPoolSelector() WorkerPoolSelector {
-	return s.poolSelector
-}
-
-// WithRSAWorkers specifies the number of RSA worker goroutines to use.
-func (s *ServeConfig) WithRSAWorkers(n int) *ServeConfig {
-	s.rsaWorkers = n
-	return s
-}
-
-// RSAWorkers returns the number of RSA worker goroutines.
-func (s *ServeConfig) RSAWorkers() int {
-	return s.rsaWorkers
-}
-
-// WithECDSAWorkers specifies the number of ECDSA worker goroutines to use.
-func (s *ServeConfig) WithECDSAWorkers(n int) *ServeConfig {
-	s.ecdsaWorkers = n
-	return s
-}
-
-// ECDSAWorkers returns the number of ECDSA worker goroutines.
-func (s *ServeConfig) ECDSAWorkers() int {
-	return s.ecdsaWorkers
-}
-
-// WithRemoteWorkers specifies the number of remote goroutines to use.
-func (s *ServeConfig) WithRemoteWorkers(n int) *ServeConfig {
-	s.remoteWorkers = n
-	return s
-}
-
-// RemoteWorkers returns the number of other worker goroutines.
-func (s *ServeConfig) RemoteWorkers() int {
-	return s.remoteWorkers
-}
-
-// WithOtherWorkers specifies the number of other worker goroutines to use.
-func (s *ServeConfig) WithOtherWorkers(n int) *ServeConfig {
-	s.otherWorkers = n
-	return s
-}
-
-// OtherWorkers returns the number of other worker goroutines.
-func (s *ServeConfig) OtherWorkers() int {
-	return s.otherWorkers
-}
-
-// WithLimitedWorkers specifies the number of limited worker goroutines to
-// use.
-func (s *ServeConfig) WithLimitedWorkers(n int) *ServeConfig {
-	s.limitedWorkers = n
-	return s
-}
-
-// LimitedWorkers returns the number of limited worker goroutines.
-func (s *ServeConfig) LimitedWorkers() int {
-	return s.limitedWorkers
 }
 
 // WithTCPTimeout specifies the network connection timeout to use for TCP
@@ -983,6 +715,17 @@ func (s *ServeConfig) WithCustomOpFunction(f CustomOpFunction) *ServeConfig {
 // CustomOpFunc returns the CustomOpFunc
 func (s *ServeConfig) CustomOpFunc() CustomOpFunction {
 	return s.customOpFunc
+}
+
+// WithMaxConnPendingRequests allows customization of the limit on pending requests
+func (s *ServeConfig) WithMaxConnPendingRequests(n int) *ServeConfig {
+	s.maxConnPendingRequests = n
+	return s
+}
+
+// MaxConnPendingRequests returns the number of allowed pending requests
+func (s *ServeConfig) MaxConnPendingRequests() int {
+	return s.maxConnPendingRequests
 }
 
 // serverCodec implements net/rpc.ServerCodec over the payload of a gokeyless

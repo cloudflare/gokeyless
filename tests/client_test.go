@@ -374,3 +374,24 @@ func (s *IntegrationTestSuite) TestShutdown() {
 
 	require.NoError(err)
 }
+
+func (s *IntegrationTestSuite) TestManyOps() {
+	require := require.New(s.T())
+	conn, err := s.remote.Dial(s.client)
+	require.NoError(err)
+	defer conn.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < s.server.Config().MaxConnPendingRequests()*2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := conn.DoOperation(context.Background(), protocol.Operation{
+				Opcode:  protocol.OpSeal,
+				Payload: []byte("fast"),
+			})
+			require.NoError(err)
+		}()
+
+	}
+	wg.Wait()
+}
