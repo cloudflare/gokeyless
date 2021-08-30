@@ -19,6 +19,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/google/certificate-transparency-go v1.0.10-0.20180222191210-5ab67e519c93 // indirect
 	github.com/google/go-cmp v0.5.5 // indirect
+	github.com/googleapis/gax-go/v2 v2.0.5
 	github.com/hashicorp/hcl v0.0.0-20180404174102-ef8a98b0bbce // indirect
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
