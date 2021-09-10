@@ -156,6 +156,16 @@ type handler struct {
 	limited  bool
 	listener net.Listener
 	conn     net.Conn
+	timeout  time.Duration
+}
+
+func (h *handler) closeWithWritingErr(err error) {
+	log.Errorf("connection %v: error in writing response %v", h.name, err)
+	h.conn.Close() // ignoring error: what can we do?
+	h.s.mtx.Lock()
+	delete(h.s.listeners[h.listener], h.conn)
+	h.s.mtx.Unlock()
+	logConnFailure()
 }
 
 func (h *handler) handle(pkt *protocol.Packet) {
@@ -177,27 +187,32 @@ func (h *handler) handle(pkt *protocol.Packet) {
 	}
 	h.tokens <- struct{}{}
 	h.mtx.Lock()
-	_, err := respPkt.WriteTo(h.conn)
-	h.mtx.Unlock()
+	defer h.mtx.Unlock()
+	defer func() {
+		logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+		logRequestTotalDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+	}()
+	err := h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
 	if err != nil {
-		log.Errorf("connection %v: error in writing response %v", h.name, err)
-		h.conn.Close() // ignoring error: what can we do?
-		h.s.mtx.Lock()
-		delete(h.s.listeners[h.listener], h.conn)
-		h.s.mtx.Unlock()
-		logConnFailure()
+		h.closeWithWritingErr(err)
 	}
-	logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
-	logRequestTotalDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+	_, err = respPkt.WriteTo(h.conn)
+	if err != nil {
+		h.closeWithWritingErr(err)
+	}
 }
 
-func (h *handler) loop(tconn net.Conn) {
+func (h *handler) loop() error {
 	for {
 		pkt := new(protocol.Packet)
 		<-h.tokens
-		_, err := pkt.ReadFrom(tconn)
+		err := h.conn.SetReadDeadline(time.Now().Add(h.timeout))
 		if err != nil {
-			break
+			return err
+		}
+		_, err = pkt.ReadFrom(h.conn)
+		if err != nil {
+			return err
 		}
 		go h.handle(pkt)
 
@@ -535,14 +550,15 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		limited:  limited,
 		conn:     tconn,
 		listener: l,
+		timeout:  timeout,
 	}
 	for len(handler.tokens) < cap(handler.tokens) {
 		handler.tokens <- struct{}{}
 	}
 
-	handler.loop(tconn)
+	err = handler.loop()
 
-	log.Debugf("%s: closed", connStr)
+	log.Debugf("%s: closed with err %v", connStr, err)
 
 	// Acquire the lock again to remove the handle from the connections map. If
 	// we've shutdown in the meantime this is a safe no-op.
