@@ -195,6 +195,7 @@ func (h *handler) handle(pkt *protocol.Packet) {
 	err := h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
 	if err != nil {
 		h.closeWithWritingErr(err)
+		return
 	}
 	_, err = respPkt.WriteTo(h.conn)
 	if err != nil {
