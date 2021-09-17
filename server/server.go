@@ -157,18 +157,22 @@ type handler struct {
 	listener net.Listener
 	conn     net.Conn
 	timeout  time.Duration
+	closed   bool
 }
 
 func (h *handler) closeWithWritingErr(err error) {
-	log.Errorf("connection %v: error in writing response %v", h.name, err)
-	h.conn.Close() // ignoring error: what can we do?
-	h.s.mtx.Lock()
-	delete(h.s.listeners[h.listener], h.conn)
-	h.s.mtx.Unlock()
-	logConnFailure()
+	if !h.closed {
+		log.Errorf("connection %v: error in writing response %v", h.name, err)
+		h.conn.Close() // ignoring error: what can we do?
+		h.s.mtx.Lock()
+		delete(h.s.listeners[h.listener], h.conn)
+		h.s.mtx.Unlock()
+		logConnFailure()
+		h.closed = true
+	}
 }
 
-func (h *handler) handle(pkt *protocol.Packet) {
+func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 	var resp response
 	start := time.Now()
 	if h.limited {
@@ -176,6 +180,7 @@ func (h *handler) handle(pkt *protocol.Packet) {
 	} else {
 		resp = h.s.unlimitedDo(pkt, h.name)
 	}
+	logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
 	respPkt := protocol.Packet{
 		Header: protocol.Header{
 			MajorVers: 0x01,
@@ -188,10 +193,7 @@ func (h *handler) handle(pkt *protocol.Packet) {
 	h.tokens <- struct{}{}
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
-	defer func() {
-		logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
-		logRequestTotalDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
-	}()
+	defer logRequestTotalDuration(pkt.Operation.Opcode, reqTime, resp.op.ErrorVal())
 	err := h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
 	if err != nil {
 		h.closeWithWritingErr(err)
@@ -215,7 +217,7 @@ func (h *handler) loop() error {
 		if err != nil {
 			return err
 		}
-		go h.handle(pkt)
+		go h.handle(pkt, time.Now())
 
 	}
 }
@@ -311,7 +313,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeRespondResponse(pkt, res)
 
 	case protocol.OpEd25519Sign:
+		loadStart := time.Now()
 		key, err := s.keys.Get(ctx, &pkt.Operation)
+		logKeyLoadDuration(loadStart)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 			return makeErrResponse(pkt, protocol.ErrInternal)
@@ -333,7 +337,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeRespondResponse(pkt, sig)
 
 	case protocol.OpRSADecrypt:
+		loadStart := time.Now()
 		key, err := s.keys.Get(ctx, &pkt.Operation)
+		logKeyLoadDuration(loadStart)
 		if err != nil {
 			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 			return makeErrResponse(pkt, protocol.ErrInternal)
@@ -394,8 +400,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
 		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 	}
-
+	loadStart := time.Now()
 	key, err := s.keys.Get(ctx, &pkt.Operation)
+	logKeyLoadDuration(loadStart)
 	if err != nil {
 		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
 		return makeErrResponse(pkt, protocol.ErrInternal)
