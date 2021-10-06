@@ -175,6 +175,7 @@ func (h *handler) closeWithWritingErr(err error) {
 func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 	var resp response
 	start := time.Now()
+	logRequest(pkt.Opcode)
 	if h.limited {
 		resp = h.s.limitedDo(pkt, h.name)
 	} else {
