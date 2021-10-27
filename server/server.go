@@ -24,6 +24,7 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 
 	"golang.org/x/crypto/ed25519"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/cloudflare/gokeyless/protocol"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
@@ -151,7 +152,7 @@ type Sealer interface {
 type handler struct {
 	name     string
 	s        *Server
-	tokens   chan struct{}
+	tokens   *semaphore.Weighted
 	mtx      sync.Mutex
 	limited  bool
 	listener net.Listener
@@ -160,15 +161,21 @@ type handler struct {
 	closed   bool
 }
 
-func (h *handler) closeWithWritingErr(err error) {
+func (h *handler) close() {
 	if !h.closed {
-		log.Errorf("connection %v: error in writing response %v", h.name, err)
 		h.conn.Close() // ignoring error: what can we do?
 		h.s.mtx.Lock()
 		delete(h.s.listeners[h.listener], h.conn)
 		h.s.mtx.Unlock()
 		logConnFailure()
 		h.closed = true
+	}
+}
+
+func (h *handler) closeWithWritingErr(err error) {
+	if !h.closed {
+		log.Errorf("connection %v: error in writing response %v", h.name, err)
+		h.close()
 	}
 }
 
@@ -191,7 +198,7 @@ func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 		},
 		Operation: resp.op,
 	}
-	h.tokens <- struct{}{}
+	h.tokens.Release(1)
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 	defer logRequestTotalDuration(pkt.Operation.Opcode, reqTime, resp.op.ErrorVal())
@@ -207,20 +214,42 @@ func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 }
 
 func (h *handler) loop() error {
+	var err error
 	for {
 		pkt := new(protocol.Packet)
-		<-h.tokens
-		err := h.conn.SetReadDeadline(time.Now().Add(h.timeout))
+		err = h.tokens.Acquire(context.Background(), 1)
 		if err != nil {
-			return err
+			break
+		}
+		err = h.conn.SetReadDeadline(time.Now().Add(h.timeout))
+		if err != nil {
+			h.tokens.Release(1)
+			break
 		}
 		_, err = pkt.ReadFrom(h.conn)
 		if err != nil {
-			return err
+			h.tokens.Release(1)
+			break
 		}
 		go h.handle(pkt, time.Now())
-
 	}
+	var neterr net.Error
+	ok := errors.As(err, &neterr)
+	if !ok || !neterr.Timeout() {
+		log.Errorf("closing connection %v: read error %s", h.name, err)
+		h.mtx.Lock()
+		defer h.mtx.Unlock()
+		h.close()
+		return err
+	}
+	// In the event of a read timeout, gracefully close
+	ctx, end := context.WithDeadline(context.Background(), time.Now().Add(5*time.Second))
+	defer end()
+	h.tokens.Acquire(ctx, int64(h.s.config.maxConnPendingRequests))
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	h.close()
+	return err
 }
 
 type response struct {
@@ -555,16 +584,12 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 	handler := &handler{
 		name:     connStr,
 		s:        s,
-		tokens:   make(chan struct{}, s.config.maxConnPendingRequests),
+		tokens:   semaphore.NewWeighted(int64(s.config.maxConnPendingRequests)),
 		limited:  limited,
 		conn:     tconn,
 		listener: l,
 		timeout:  timeout,
 	}
-	for len(handler.tokens) < cap(handler.tokens) {
-		handler.tokens <- struct{}{}
-	}
-
 	err = handler.loop()
 
 	log.Debugf("%s: closed with err %v", connStr, err)
