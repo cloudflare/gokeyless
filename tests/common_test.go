@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -95,15 +96,37 @@ func (dummySealer) Unseal(op *protocol.Operation) (res []byte, err error) {
 	return
 }
 
-type DummyRPC struct{}
+type DummyRPC struct {
+	pw *io.PipeWriter
+	pr *io.PipeReader
+}
 
 func (DummyRPC) Append(in string, out *string) error {
 	*out = in + " World"
 	return nil
 }
 
+func (DummyRPC) SleepAppend(in string, out *string) error {
+	fmt.Println("sleeping")
+	time.Sleep(20 * time.Second) // Longer than the default client operation timeout
+	fmt.Println("Sleep done")
+	*out = in + "World"
+	return nil
+}
+
 func (DummyRPC) Error(_ string, _ *string) error {
 	return errors.New("remote rpc error")
+}
+
+func (d DummyRPC) PipeWrite(in []byte, out *int) (err error) {
+	*out, err = d.pw.Write(in)
+	return
+}
+
+func (d DummyRPC) PipeRead(in int, out *[]byte) (err error) {
+	*out = make([]byte, in)
+	_, err = d.pr.Read(*out)
+	return
 }
 
 // helper function reads a pub key from a file and convert it to a signer
@@ -156,7 +179,9 @@ func (s *IntegrationTestSuite) SetupTest() {
 	}
 
 	s.server.SetSealer(dummySealer{})
-	err = s.server.RegisterRPC(DummyRPC{})
+	d := DummyRPC{}
+	d.pr, d.pw = io.Pipe()
+	err = s.server.RegisterRPC(d)
 	require.NoError(err)
 
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0") // let the OS assign a random port
