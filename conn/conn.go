@@ -6,11 +6,8 @@ package conn
 import (
 	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"net"
-	"net/rpc"
 	"sync"
 	"time"
 
@@ -106,6 +103,9 @@ var ErrClosed = fmt.Errorf("use of closed connection")
 
 // ErrNotFound is not really an error, since timeouts race responses
 var ErrNotFound = fmt.Errorf("connection removed")
+
+// ErrTimeout is a timeout error
+var ErrTimeout = fmt.Errorf("request timeout")
 
 // Conn represents an open keyless connection.
 type Conn struct {
@@ -219,15 +219,14 @@ func (c *Conn) timeoutRequest(id uint32, timeout time.Duration) {
 	if err != nil {
 		return // the process finished successfully first
 	}
-	place <- &result{err: fmt.Errorf("operation timed out")}
+	place <- &result{err: ErrTimeout}
 }
 
-// DoOperation executes an entire keyless operation, returning its result.
-func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protocol.Operation, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation")
+// sendOp sends operation, returning a channel to wait for results
+func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.sendOp")
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &op)
-
 	// NOTE: It's very important that this channel be buffered so that if we
 	// time out, but a reader finds this channel before we have a chance to delete
 	// it from the map, the reader doesn't block forever sending us a value that
@@ -273,15 +272,26 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 	if err != nil {
 		return nil, fmt.Errorf("could not write to connection: %v", err)
 	}
-	waitingSpan, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation.Waiting")
-
 	// Take into account how long we've already been waiting since the beginning
 	// of writing to the connection (which could have taken a while if the
 	// connection was backed up).
 	left := end.Sub(time.Now())
 	go c.timeoutRequest(id, left)
+	return response, nil
+
+}
+
+// DoOperation executes an entire keyless operation, returning its result.
+func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protocol.Operation, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation")
+	defer span.Finish()
+	tracing.SetOperationSpanTags(span, &op)
+	response, err := c.sendOp(ctx, op)
+	if err != nil {
+		span.SetTag("error", err)
+		return nil, err
+	}
 	res := <-response
-	waitingSpan.Finish()
 	if res == nil {
 		return nil, ErrClosed
 	}
@@ -316,66 +326,4 @@ func (c *Conn) Ping(ctx context.Context, data []byte) error {
 	default:
 		return fmt.Errorf("ping: got unexpected response opcode: %v", result.Opcode)
 	}
-}
-
-// RPC returns an RPC client which uses the connection. Closing the returned
-// *rpc.Client will cleanup any spawned goroutines, but will not close the
-// underlying connection.
-func (c *Conn) RPC() *rpc.Client {
-	pr, pw := io.Pipe()
-	codec := &clientCodec{c, pr, pw, nil}
-
-	return rpc.NewClientWithCodec(codec)
-}
-
-// clientCodec implements net/rpc.ClientCodec over a connection to a gokeyless
-// server.
-type clientCodec struct {
-	conn *Conn
-
-	pr  *io.PipeReader
-	pw  *io.PipeWriter
-	dec *gob.Decoder
-}
-
-func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
-	buff := &bytes.Buffer{}
-	enc := gob.NewEncoder(buff)
-
-	if err := enc.Encode(req); err != nil {
-		return err
-	} else if err := enc.Encode(body); err != nil {
-		return err
-	}
-
-	result, err := cc.conn.DoOperation(context.Background(), protocol.Operation{
-		Opcode:  protocol.OpRPC,
-		Payload: buff.Bytes(),
-	})
-	if err != nil {
-		return err
-	} else if result.Opcode == protocol.OpError {
-		return result.GetError()
-	} else if result.Opcode != protocol.OpResponse {
-		return fmt.Errorf("wrong response opcode: %v", result.Opcode)
-	} else if _, err = cc.pw.Write(result.Payload); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (cc *clientCodec) ReadResponseHeader(res *rpc.Response) error {
-	// gob decoders are stateful but we encode statelessly, so we need to reset
-	// the decoder after every full read.
-	cc.dec = gob.NewDecoder(cc.pr)
-	return cc.dec.Decode(res)
-}
-
-func (cc *clientCodec) ReadResponseBody(body interface{}) error {
-	return cc.dec.Decode(body)
-}
-
-func (cc *clientCodec) Close() error {
-	return cc.pr.Close()
 }
