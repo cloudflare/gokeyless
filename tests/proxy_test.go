@@ -105,4 +105,5 @@ func (s *IntegrationTestSuite) TestTLSProxy() {
 	require.NoError(err)
 
 	require.NoError(clientFunc(conn))
+
 }
