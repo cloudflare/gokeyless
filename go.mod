@@ -9,7 +9,6 @@ require (
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
-	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/ThalesIgnite/crypto11 v1.2.1
 	github.com/beorn7/perks v0.0.0-20160804104726-4c0e84591b9a // indirect
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
@@ -48,5 +47,5 @@ require (
 	google.golang.org/genproto v0.0.0-20210309190941-1aeedc14537d
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/square/go-jose.v2 v2.5.1
-	gopkg.in/yaml.v2 v2.2.2
+	gopkg.in/yaml.v2 v2.2.8
 )
