@@ -552,7 +552,7 @@ func (s *Server) spawn(l net.Listener, c net.Conn) {
 		return
 	}
 	connState := tconn.ConnectionState()
-	certmetrics.Observe(connState.PeerCertificates...)
+	certmetrics.Observe(certmetrics.CertSourceFromCerts(fmt.Sprintf("listener: %s", l.Addr().String()), connState.PeerCertificates)...)
 	limited, err := s.config.isLimited(connState)
 	if err != nil {
 		log.Errorf("connection %v: could not determine if limited: %v", c.RemoteAddr(), err)
