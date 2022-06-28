@@ -352,7 +352,7 @@ func NewPacket(id uint32, op Operation) Packet {
 func (p *Packet) MarshalBinary() ([]byte, error) {
 	hdr, err := p.Header.MarshalBinary()
 	if err != nil {
-		panic(fmt.Sprintf("unexpected internal error: %v", err))
+		panic(fmt.Errorf("unexpected internal error: %w", err))
 	}
 	body, err := p.Operation.MarshalBinary()
 	if err != nil {
@@ -365,7 +365,7 @@ func (p *Packet) MarshalBinary() ([]byte, error) {
 func (p *Packet) UnmarshalBinary(data []byte) error {
 	err := p.Header.UnmarshalBinary(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("UnmarshalBinary: %w", err)
 	}
 	// since h.Header.UnmarshalBinary succeeded, we know len(data) >= 8
 	return p.Operation.UnmarshalBinary(data[8:])
@@ -637,13 +637,13 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 		case TagClientIP:
 			ip, err := validateIP(data)
 			if err != nil {
-				return fmt.Errorf("malformed client IP: %v", err)
+				return fmt.Errorf("malformed client IP: %w", err)
 			}
 			o.ClientIP = ip
 		case TagServerIP:
 			ip, err := validateIP(data)
 			if err != nil {
-				return fmt.Errorf("malformed server IP: %v", err)
+				return fmt.Errorf("malformed server IP: %w", err)
 			}
 			o.ServerIP = ip
 		case TagServerName:

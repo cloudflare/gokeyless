@@ -511,14 +511,14 @@ func (s *Server) addListener(l net.Listener) error {
 // the server's config.
 func (s *Server) Serve(l net.Listener) error {
 	if err := s.addListener(l); err != nil {
-		return err
+		return fmt.Errorf("Serve: %w", err)
 	}
 
 	for {
 		c, err := accept(l)
 		if err != nil {
 			log.Errorf("Accept error: %v; shutting down server", err)
-			return err
+			return fmt.Errorf("Accept error: %w", err)
 		}
 		go s.spawn(l, c)
 	}
@@ -648,7 +648,7 @@ func (s *Server) UnixListenAndServe(path string) error {
 	if path != "" {
 		l, err := net.Listen("unix", path)
 		if err != nil {
-			return err
+			return fmt.Errorf("UnixListenAndServe: %w", err)
 		}
 
 		log.Infof("Listening at unix://%s\n", l.Addr())
@@ -803,9 +803,9 @@ func (sc *serverCodec) WriteResponse(res *rpc.Response, body interface{}) error 
 	enc := gob.NewEncoder(buff)
 
 	if err := enc.Encode(res); err != nil {
-		return err
+		return fmt.Errorf("WriteResponse: %w", err)
 	} else if err := enc.Encode(body); err != nil {
-		return err
+		return fmt.Errorf("WriteResponse: %w", err)
 	}
 
 	sc.response = buff.Bytes()

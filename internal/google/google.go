@@ -41,7 +41,7 @@ func New(name string) (*KMSSigner, error) {
 	ctx := context.Background()
 	client, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("google: failed to create kms client: %v", err)
+		return nil, fmt.Errorf("google: failed to create kms client: %w", err)
 	}
 	k := KMSSigner{
 		client: client,
@@ -87,7 +87,7 @@ func (k KMSSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (sig
 	// Call the API.
 	result, err := k.client.AsymmetricSign(context.Background(), req)
 	if err != nil {
-		return nil, fmt.Errorf("google: failed to sign digest: %v", err)
+		return nil, fmt.Errorf("google: failed to sign digest: %w", err)
 	}
 
 	// https://cloud.google.com/kms/docs/data-integrity-guidelines
@@ -112,13 +112,13 @@ func IsKMSResource(name string) bool {
 func (k *KMSSigner) getPublicKey(ctx context.Context) error {
 	response, err := k.client.GetPublicKey(ctx, &kmspb.GetPublicKeyRequest{Name: k.name})
 	if err != nil {
-		return fmt.Errorf("google: failed to get public key: %v", err)
+		return fmt.Errorf("google: failed to get public key: %w", err)
 	}
 
 	block, _ := pem.Decode([]byte(response.Pem))
 	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return fmt.Errorf("google: failed to parse public key: %v", err)
+		return fmt.Errorf("google: failed to parse public key: %w", err)
 	}
 
 	k.pub = publicKey
