@@ -265,12 +265,12 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 	err := c.conn.SetWriteDeadline(end)
 	if err != nil {
 		c.writeMtx.Unlock()
-		return nil, fmt.Errorf("could not set write deadline: %v", err)
+		return nil, fmt.Errorf("could not set write deadline: %w", err)
 	}
 	_, err = pkt.WriteTo(c.conn)
 	c.writeMtx.Unlock()
 	if err != nil {
-		return nil, fmt.Errorf("could not write to connection: %v", err)
+		return nil, fmt.Errorf("could not write to connection: %w", err)
 	}
 	// Take into account how long we've already been waiting since the beginning
 	// of writing to the connection (which could have taken a while if the
@@ -289,14 +289,15 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 	response, err := c.sendOp(ctx, op)
 	if err != nil {
 		span.SetTag("error", err)
-		return nil, err
+		return nil, fmt.Errorf("DoOperation: %w", err)
 	}
 	res := <-response
 	if res == nil {
 		return nil, ErrClosed
 	}
 	if res.err != nil {
-		return nil, res.err
+		span.SetTag("error", res.err)
+		return nil, fmt.Errorf("DoOperation: resp error: %w", res.err)
 	}
 	return res.op, nil
 }

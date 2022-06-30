@@ -36,9 +36,9 @@ func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
 	enc := gob.NewEncoder(buff)
 
 	if err := enc.Encode(req); err != nil {
-		return err
+		return fmt.Errorf("WriteRequest: %w", err)
 	} else if err := enc.Encode(body); err != nil {
-		return err
+		return fmt.Errorf("WriteRequest: %w", err)
 	}
 
 	result, err := cc.conn.sendOp(context.Background(), protocol.Operation{
@@ -46,7 +46,7 @@ func (cc *clientCodec) WriteRequest(req *rpc.Request, body interface{}) error {
 		Payload: buff.Bytes(),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("WriteRequest: %w", err)
 	}
 	go cc.processResponse(result, req)
 

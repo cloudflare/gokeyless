@@ -1,3 +1,4 @@
+//go:build pkcs11 && cgo
 // +build pkcs11,cgo
 
 // Package rfc7512 provides a parser for the PKCS #11 URI format as specified in
@@ -94,7 +95,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 
 		value, err := url.QueryUnescape(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %w", parts[0], err)
 		}
 
 		switch parts[0] {
@@ -127,7 +128,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		case "slot-id":
 			id, err := strconv.Atoi(value)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %w", parts[0], err)
 			}
 			pk11uri.SlotID = &id
 		default:
@@ -146,7 +147,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 
 		value, err := url.QueryUnescape(parts[1])
 		if err != nil {
-			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+			return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %w", parts[0], err)
 		}
 
 		switch parts[0] {
@@ -161,7 +162,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 		case "max-sessions":
 			maxSessions, err := strconv.Atoi(value)
 			if err != nil {
-				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %v", parts[0], err)
+				return nil, fmt.Errorf("error parsing pkcs11 attribute %q: %w", parts[0], err)
 			}
 			pk11uri.MaxSessions = maxSessions
 		default:
