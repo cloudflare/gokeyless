@@ -235,8 +235,15 @@ func (h *handler) loop() error {
 	}
 	var neterr net.Error
 	ok := errors.As(err, &neterr)
+	// unless there was a timeout, return on any error
 	if !ok || !neterr.Timeout() {
-		log.Errorf("closing connection %v: read error %s", h.name, err)
+		// an EOF possibly means the other end ungracefully closed, so log as debug
+		msg := fmt.Sprintf("closing connection %v: read error %s", h.name, err)
+		if errors.Is(err, io.EOF) {
+			log.Debug(msg)
+		} else {
+			log.Error(msg)
+		}
 		h.mtx.Lock()
 		defer h.mtx.Unlock()
 		h.close()
