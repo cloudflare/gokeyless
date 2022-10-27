@@ -60,9 +60,14 @@ The following tag values are possible for items:
     0x01 - Certificate Digest,
     0x02 - Server Name Indication,
     0x03 - Client's IP address,
+    0x04 - Subject Key Identifier for the requested key,
+    0x05 - Server's IP address,
+    0x06 - Certificate ID,
     0x11 - Opcode,
     0x12 - Payload,
     0x13 - CustomFuncName, (for use with opcode 0x24)
+    0x14 - Supplemental payload, whose meaning is not specified and must be predetermined between the server and client,
+    0x15 - Binary encoded Jaeger span (https://www.jaegertracing.io/docs/1.19/client-libraries/#value)
 
 A requests contains a header and the following items:
 
@@ -209,7 +214,7 @@ $ go install github.com/cloudflare/gokeyless/cmd/gokeyless/...
 
 ## Running
 
-The the keyserver for Keyless SSL consists of a single binary file, `gokeyless`. When you run the binary, it will first check for a `gokeyless.yaml` file in the current working directory, falling back to the system wide file located at `/etc/keyless/gokeyless.yaml` (the default configuration file will be placed there if you install via one of the `.deb` or `.rpm` packages).
+The keyserver for Keyless SSL consists of a single binary file, `gokeyless`. When you run the binary, it will first check for a `gokeyless.yaml` file in the current working directory, falling back to the system wide file located at `/etc/keyless/gokeyless.yaml` (the default configuration file will be placed there if you install via one of the `.deb` or `.rpm` packages).
 
 You should add your Cloudflare account details to the configuration file, and optionally customize the location of the private key directory. Most users should not need to modify the remaining defaults.
 
