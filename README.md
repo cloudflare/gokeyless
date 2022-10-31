@@ -102,7 +102,7 @@ Responses contain a header with a matching ID and only two items:
 The following opcodes are supported in the opcode item:
 
     0xF0 - operation: success, payload: modified payload
-    0xFF - operation: RSA decrypt payload, payload: 
+    0xFF - operation: error, payload: error payload (see immediately below)
 
 On an error, these are the possible 1-byte payloads:
 
