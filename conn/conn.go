@@ -222,6 +222,13 @@ func (c *Conn) timeoutRequest(id uint32, timeout time.Duration) {
 	place <- &result{err: ErrTimeout}
 }
 
+// IsClosed returns if the connection is closed
+func (c *Conn) IsClosed() bool {
+	c.mapMtx.Lock()
+	defer c.mapMtx.Unlock()
+	return c.closed
+}
+
 // sendOp sends operation, returning a channel to wait for results
 func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.sendOp")
