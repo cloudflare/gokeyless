@@ -229,11 +229,22 @@ func (c *Conn) IsClosed() bool {
 	return c.closed
 }
 
+// SetSpanTags adds info about the connection  into the provided span
+func (c *Conn) SetSpanTags(span opentracing.Span) {
+	c.readMtx.Lock()
+	defer c.readMtx.Unlock()
+	span.SetTag("closed", c.closed)
+	span.SetTag("local_addr", c.conn.LocalAddr().String())
+	span.SetTag("remote_addr", c.conn.RemoteAddr().String())
+
+}
+
 // sendOp sends operation, returning a channel to wait for results
 func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result, error) {
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.sendOp")
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &op)
+	c.SetSpanTags(span)
 	// NOTE: It's very important that this channel be buffered so that if we
 	// time out, but a reader finds this channel before we have a chance to delete
 	// it from the map, the reader doesn't block forever sending us a value that
@@ -293,6 +304,7 @@ func (c *Conn) DoOperation(ctx context.Context, op protocol.Operation) (*protoco
 	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.DoOperation")
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &op)
+	c.SetSpanTags(span)
 	response, err := c.sendOp(ctx, op)
 	if err != nil {
 		span.SetTag("error", err)
