@@ -121,3 +121,11 @@ release-github:
 		--env GORELEASER_GITHUB_TOKEN \
 		neilotoole/xcgo:latest goreleaser --rm-dist
 
+
+.PHONY: snapshot
+snapshot:
+	docker run --rm --privileged -v $(PWD):/go/tmp \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-w /go/tmp \
+		neilotoole/xcgo:latest goreleaser --snapshot --rm-dist
+
