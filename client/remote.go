@@ -137,6 +137,11 @@ func healthchecker(c *Conn) {
 	}
 }
 
+// GetConnPool allows other types of remotes to interact with the connection pool
+func GetConnPool() *connPoolType {
+	return connPool
+}
+
 // Get returns a Conn from the pool if there is any.
 func (p *connPoolType) Get(key string) *Conn {
 	if atomic.LoadUint32(&TestDisableConnectionPool) == 1 {
