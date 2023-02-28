@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/cloudflare/cfssl/csr"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/cloudflare-go"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 )
 

@@ -137,14 +137,10 @@ func TestMain(m *testing.M) {
 
 func TestRemoteGroup(t *testing.T) {
 	r, err := c.getRemote("")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	_, err = r.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// default remote group has one working remote and one that doesn't.
 	// PingAll should not hang.
@@ -155,16 +151,12 @@ func TestRemoteGroup(t *testing.T) {
 
 func TestUnixRemote(t *testing.T) {
 	r, err := UnixRemote(socketAddr, "localhost")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	// clear cached remotes and set a unix remote for the client
 	c.DefaultRemote = r
 
 	conn, err := r.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	conn.Close()
 }
@@ -183,15 +175,11 @@ func TestSlowServer(t *testing.T) {
 	// Setup a slow keyless server
 	cfg := server.DefaultServeConfig().WithTCPTimeout(time.Second * 30)
 	s2, err := server.NewServerFromFile(cfg, serverCert, serverKey, keylessCA)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	s2.TLSConfig().Time = fixedCurrentTime
 
 	l, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sl := slowListener{l}
 
 	errs := make(chan error, 1)
@@ -207,15 +195,11 @@ func TestSlowServer(t *testing.T) {
 	// clear cached remotes and set a remote group of normal and slow servers
 	host, p, _ := net.SplitHostPort(sAddr)
 	remote, err = c.LookupServerWithName("localhost", host, p)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	s2host, s2port, _ := net.SplitHostPort(sl.Addr().String())
 	slowRemote, err := c.LookupServerWithName("localhost", s2host, s2port)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Logf("slow server is at %s:%s", s2host, s2port)
 
 	g, _ := NewGroup([]Remote{remote, slowRemote})
@@ -227,9 +211,7 @@ func TestSlowServer(t *testing.T) {
 	// After ping checks, 1st remote must be the normal server.
 	firstRemote := g.remotes[0]
 	conn, err := firstRemote.Dial(c)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if conn.addr != sAddr {
 		t.Fatal("bad 1st remote addr:", conn.addr)
 	}

@@ -18,7 +18,7 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
       - run: go install github.com/ory/go-acc@latest
-      - run: go-acc -o coverage.txt ./... -- -race -tags integration
+      - run: go-acc -o coverage.txt ./... -- -race -tags integration -v
       - run: make test-trust
       - uses: codecov/codecov-action@v3
   test-hsm:
@@ -32,7 +32,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y softhsm2
       - run: sudo cp -r tests/testdata/tokens/* /var/lib/softhsm/tokens
       - run: go install github.com/ory/go-acc@latest
-      - run: go-acc -o coverage.txt ./... -- -race -tags pkcs11
+      - run: go-acc -o coverage.txt ./... -- -race -tags pkcs11 -v
         env:
           TEST_SOFT_HSM: true
       - uses: codecov/codecov-action@v3

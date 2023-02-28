@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/cloudflare/backoff"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/conn"
 	"github.com/lziest/ttlcache"
 	"github.com/miekg/dns"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -88,6 +88,7 @@ func NewStandaloneConn(addr string, conn *conn.Conn) *Conn {
 
 // Close closes a Conn and remove it from the conn pool
 func (conn *Conn) Close() error {
+	log.WithFields(conn.Conn.LogFields()).Debugf("closing remote conn to %s", conn.addr)
 	// TODO(joshlf): This function seems fishy because it's meant to interact with
 	// the pool, and thus could close a connection out from somebody else's feet.
 	connPool.Remove(conn.addr)

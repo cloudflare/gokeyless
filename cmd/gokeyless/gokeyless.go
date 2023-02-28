@@ -22,9 +22,9 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/certmetrics"
 	"github.com/cloudflare/gokeyless/server"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -102,7 +102,7 @@ func init() {
 		return pflag.NormalizedName(strings.Replace(name, "-", "_", -1))
 	})
 	flagset.IntP("loglevel", "l", 0, "Log level (0 = DEBUG, 5 = FATAL)")
-	viper.SetDefault("loglevel", log.LevelInfo)
+	viper.SetDefault("loglevel", log.InfoLevel)
 	flagset.String("hostname", "", "Hostname of this key server (must match configuration in Cloudflare dashboard)")
 	flagset.String("zone-id", "", "Cloudflare Zone ID")
 	flagset.String("origin_ca_api_key", "", "Cloudflare Origin CA API key")
@@ -222,9 +222,8 @@ func runMain() error {
 	if err := initConfig(); err != nil {
 		return err
 	}
-	log.Level = config.LogLevel
 	config.initializeWithDefaults()
-
+	log.SetLevel(parseLogrusLevel(config.LogLevel))
 	switch {
 	case helpMode:
 		pflag.Usage()
@@ -271,7 +270,7 @@ func runMain() error {
 		return nil
 
 	case keystoreDbgMode:
-		log.Level = log.LevelDebug
+		log.SetLevel(log.DebugLevel)
 
 		_, err := initKeyStore(config.PrivateKeyStores...)
 		return err
@@ -341,7 +340,7 @@ func runMain() error {
 	}
 	certmetrics.Observe(certs...)
 	go func() {
-		log.Critical(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
+		log.Error(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
 	}()
 	return s.ListenAndServe(net.JoinHostPort("", strconv.Itoa(config.Port)))
 }
@@ -459,4 +458,25 @@ func (config Config) verifyCSRAndKey() bool {
 	}
 
 	return true
+}
+func parseLogrusLevel(input int) log.Level {
+	// 0 = DEBUG, 5 = FATAL
+	switch input {
+	case 0:
+		return log.DebugLevel
+	case 1:
+		return log.InfoLevel
+	case 2:
+		return log.WarnLevel
+	case 3:
+		return log.ErrorLevel
+	case 4:
+		// old logger had a 'critical level' in between error and fatal that was unused
+		// this maintains backwards compatabiity of the log level numbers in existing configs
+		return log.FatalLevel
+	case 5:
+		return log.FatalLevel
+	default:
+		return log.InfoLevel
+	}
 }

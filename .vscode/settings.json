@@ -1,3 +1,5 @@
 {
-  "go.buildTags": "pkcs11"
+  "go.buildTags": "pkcs11",
+  "go.testFlags": ["-v", "-cover", "-race"],
+  "go.lintTool": "golangci-lint"
 }

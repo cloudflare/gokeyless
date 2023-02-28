@@ -16,11 +16,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/lziest/ttlcache"
 	"github.com/opentracing/opentracing-go"
+	log "github.com/sirupsen/logrus"
 )
 
 const (

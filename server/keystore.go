@@ -18,7 +18,7 @@ import (
 
 	"github.com/cloudflare/cfssl/helpers"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 var keyExt = regexp.MustCompile(`.+\.key`)
@@ -126,7 +126,7 @@ func (keys *DefaultKeystore) Add(op *protocol.Operation, priv crypto.Signer) err
 
 	keys.skis[ski] = priv
 
-	log.Debugf("add signer with SKI: %v (https://crt.sh/?ski=%v)", ski, ski)
+	log.Infof("add signer with SKI: %v (https://crt.sh/?ski=%v)", ski, ski)
 	return nil
 }
 

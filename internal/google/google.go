@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	kms "cloud.google.com/go/kms/apiv1"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/googleapis/gax-go/v2"
+	log "github.com/sirupsen/logrus"
 	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )

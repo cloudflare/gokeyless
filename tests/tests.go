@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
 	"github.com/cloudflare/gokeyless/client"
+	log "github.com/sirupsen/logrus"
 )
 
 // Results is a registry of metrics representing the success stats of an entire test suite.

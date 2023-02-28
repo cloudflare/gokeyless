@@ -1,13 +1,14 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/cloudflare/gokeyless/protocol"
 )
@@ -40,10 +41,6 @@ var (
 		Name: "keyless_failed_connection",
 		Help: "Number of connection/transport failure, in tls handshake and etc.",
 	})
-	serverUtilization = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "server_utilization",
-		Help: "The [0,1]-percentage utilization of the server's worker threads.",
-	}, []string{"type"})
 )
 
 func logRequest(opcode protocol.Op) {
@@ -60,12 +57,22 @@ func logKeyLoadDuration(loadBegin time.Time) {
 
 // logRequestExecDuration logs the time taken to execute an operation (not
 // including queueing).
-func logRequestExecDuration(opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
-	requestExecDuration.WithLabelValues(opcode.Type(), err.String()).Observe(time.Since(requestBegin).Seconds())
+func logRequestExecDuration(_ context.Context, opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
+	elapsed := time.Since(requestBegin)
+	log.WithField("op", opcode.String()).
+		WithField("elapsed", elapsed).
+		WithField("error", err.Error()).
+		Debugf("exec completed")
+	requestExecDuration.WithLabelValues(opcode.Type(), err.String()).Observe(elapsed.Seconds())
 }
 
-func logRequestTotalDuration(opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
-	requestTotalDuration.WithLabelValues(opcode.Type(), err.String()).Observe(time.Since(requestBegin).Seconds())
+func logRequestTotalDuration(_ context.Context, opcode protocol.Op, requestBegin time.Time, err protocol.Error) {
+	elapsed := time.Since(requestBegin)
+	log.WithField("op", opcode.String()).
+		WithField("elapsed", elapsed).
+		WithField("error", err.Error()).
+		Debugf("request completed")
+	requestTotalDuration.WithLabelValues(opcode.Type(), err.String()).Observe(elapsed.Seconds())
 }
 
 // MetricsListenAndServe serves Prometheus metrics at metricsAddr

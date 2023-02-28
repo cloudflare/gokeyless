@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/tests"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
+	logLevel           int
 	certFile           string
 	keyFile            string
 	caFile             string
@@ -26,7 +27,7 @@ var (
 )
 
 func init() {
-	flag.IntVar(&log.Level, "loglevel", log.LevelInfo, "Log level (0 = DEBUG, 5 = FATAL)")
+	flag.IntVar(&logLevel, "loglevel", int(log.InfoLevel), "Log level (0 = DEBUG, 5 = FATAL)")
 	flag.StringVar(&certFile, "cert", "client.pem", "Keyless server authentication certificate")
 	flag.StringVar(&keyFile, "key", "client-key.pem", "Keyless server authentication key")
 	flag.StringVar(&caFile, "ca-file", "keyserver_cacert.pem", "Keyless server certificate authority")
@@ -45,6 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.SetLevel(log.Level(logLevel))
 	c.Config.InsecureSkipVerify = insecureSkipVerify
 	privs, err := c.ScanDir(keyserver, certDir, nil)
 	if err != nil {

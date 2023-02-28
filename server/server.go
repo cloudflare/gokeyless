@@ -29,7 +29,7 @@ import (
 	"github.com/cloudflare/gokeyless/protocol"
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
 
-	"github.com/cloudflare/cfssl/log"
+	log "github.com/sirupsen/logrus"
 )
 
 // Server is a Keyless Server capable of performing opaque key operations.
@@ -179,16 +179,26 @@ func (h *handler) closeWithWritingErr(err error) {
 	}
 }
 
-func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
+func (h *handler) handle(ctx context.Context, pkt *protocol.Packet, reqTime time.Time) {
+
+	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
+	if err != nil {
+		log.Errorf("failed to extract span: %v", err)
+	}
+	span, ctx := opentracing.StartSpanFromContext(ctx, "handler.handle", ext.RPCServerOption(spanCtx))
+	defer span.Finish()
+	tracing.SetOperationSpanTags(span, &pkt.Operation)
+	span.SetTag("connection", h.name)
+
 	var resp response
 	start := time.Now()
 	logRequest(pkt.Opcode)
 	if h.limited {
-		resp = h.s.limitedDo(pkt, h.name)
+		resp = h.s.limitedDo(ctx, pkt, h.name)
 	} else {
-		resp = h.s.unlimitedDo(pkt, h.name)
+		resp = h.s.unlimitedDo(ctx, pkt, h.name)
 	}
-	logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+	logRequestExecDuration(ctx, pkt.Operation.Opcode, start, resp.op.ErrorVal())
 	respPkt := protocol.Packet{
 		Header: protocol.Header{
 			MajorVers: 0x01,
@@ -201,8 +211,8 @@ func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 	h.tokens.Release(1)
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
-	defer logRequestTotalDuration(pkt.Operation.Opcode, reqTime, resp.op.ErrorVal())
-	err := h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
+	defer logRequestTotalDuration(ctx, pkt.Operation.Opcode, reqTime, resp.op.ErrorVal())
+	err = h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
 	if err != nil {
 		h.closeWithWritingErr(err)
 		return
@@ -217,7 +227,8 @@ func (h *handler) loop() error {
 	var err error
 	for {
 		pkt := new(protocol.Packet)
-		err = h.tokens.Acquire(context.Background(), 1)
+		ctx := context.Background()
+		err = h.tokens.Acquire(ctx, 1)
 		if err != nil {
 			break
 		}
@@ -231,7 +242,7 @@ func (h *handler) loop() error {
 			h.tokens.Release(1)
 			break
 		}
-		go h.handle(pkt, time.Now())
+		go h.handle(ctx, pkt, time.Now())
 	}
 	var neterr net.Error
 	ok := errors.As(err, &neterr)
@@ -276,15 +287,9 @@ func makeErrResponse(pkt *protocol.Packet, err protocol.Error) response {
 	return response{id: pkt.ID, op: protocol.MakeErrorOp(err)}
 }
 
-func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
-	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
-	if err != nil {
-		log.Errorf("failed to extract span: %v", err)
-	}
-	span, ctx := opentracing.StartSpanFromContext(context.Background(), "operation execution", ext.RPCServerOption(spanCtx))
+func (s *Server) unlimitedDo(ctx context.Context, pkt *protocol.Packet, connName string) response {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "server.unlimitedDo")
 	defer span.Finish()
-	tracing.SetOperationSpanTags(span, &pkt.Operation)
-
 	log.Debugf("connection %s: limited=false  opcode=%s id=%d sni=%s ip=%s ski=%v",
 		connName,
 		pkt.Operation.Opcode,
@@ -368,7 +373,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 
 		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
-			log.Errorf("Connection: %s: Signing error: %v", connName, protocol.ErrCrypto, err)
+			log.Errorf("Connection: %s: Signing error: %v", connName, err)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 		return makeRespondResponse(pkt, sig)
@@ -461,16 +466,10 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	return makeRespondResponse(pkt, sig)
 }
 
-func (s *Server) limitedDo(pkt *protocol.Packet, connName string) response {
-	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
-	if err != nil {
-		log.Errorf("failed to extract span: %v", err)
-	}
-	span, _ := opentracing.StartSpanFromContext(context.Background(), "limited.Do", ext.RPCServerOption(spanCtx))
-	defer span.Finish()
-	tracing.SetOperationSpanTags(span, &pkt.Operation)
-	span.SetTag("connection", connName)
+func (s *Server) limitedDo(ctx context.Context, pkt *protocol.Packet, connName string) response {
 
+	span, ctx := opentracing.StartSpanFromContext(ctx, "server.limitedDo")
+	defer span.Finish()
 	log.Debugf("connection %s: limited=true opcode=%s id=%d sni=%s ip=%s ski=%v",
 		connName,
 		pkt.Operation.Opcode,

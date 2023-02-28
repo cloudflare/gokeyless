@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
-	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/cloudflare/gokeyless/protocol"
@@ -45,7 +44,6 @@ const (
 
 func init() {
 	flag.BoolVar(&testSoftHSM, "softhsm2", false, "whether to test against SoftHSM2")
-	flag.IntVar(&log.Level, "loglevel", log.LevelFatal, "Log level (0 = DEBUG, 5 = FATAL)")
 }
 
 func TestMain(m *testing.M) {

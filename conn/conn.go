@@ -14,6 +14,7 @@ import (
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
+	"github.com/sirupsen/logrus"
 )
 
 // The Conn type implemented here contains a single network connection to a
@@ -228,6 +229,24 @@ func (c *Conn) IsClosed() bool {
 	defer c.mapMtx.Unlock()
 	return c.closed
 }
+func (c *Conn) LogFields() logrus.Fields {
+	c.readMtx.Lock()
+	defer c.readMtx.Unlock()
+	c.mapMtx.Lock()
+	defer c.mapMtx.Unlock()
+	return logrus.Fields{
+		"conn":      c.conn.RemoteAddr(),
+		"closed":    c.closed,
+		"listeners": len(c.listeners),
+		"timeout":   c.opTimeout,
+	}
+}
+func (c *Conn) log(ctx context.Context) *logrus.Entry {
+	return logrus.
+		WithContext(ctx).
+		WithFields(c.LogFields())
+
+}
 
 // sendOp sends operation, returning a channel to wait for results
 func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result, error) {
@@ -240,6 +259,7 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 	// we will never receive.
 	response := make(chan *result, 1)
 
+	c.log(ctx).Debugf("sendOp %s", op.Opcode.String())
 	// Acquire the map mutex and only release it once we're done with the map.
 	c.mapMtx.Lock()
 	if c.closed {
@@ -282,7 +302,7 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 	// Take into account how long we've already been waiting since the beginning
 	// of writing to the connection (which could have taken a while if the
 	// connection was backed up).
-	left := end.Sub(time.Now())
+	left := time.Until(end)
 	go c.timeoutRequest(id, left)
 	return response, nil
 
@@ -325,7 +345,7 @@ func (c *Conn) Ping(ctx context.Context, data []byte) error {
 
 	switch result.Opcode {
 	case protocol.OpPong:
-		if bytes.Compare(data, result.Payload) != 0 {
+		if !bytes.Equal(data, result.Payload) {
 			return fmt.Errorf("ping: got mismatched response payload: 0x%x != 0x%x", result.Payload, data)
 		}
 		return nil

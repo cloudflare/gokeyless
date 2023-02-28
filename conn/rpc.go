@@ -9,6 +9,7 @@ import (
 	"net/rpc"
 
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/sirupsen/logrus"
 )
 
 // RPC returns an RPC client which uses the connection. Closing the returned
@@ -68,7 +69,9 @@ func (cc *clientCodec) processResponse(response chan *result, req *rpc.Request) 
 		synthesizeError(cc.pw, req, res.op.GetError())
 		return
 	}
-	cc.pw.Write(res.op.Payload)
+	if _, err := cc.pw.Write(res.op.Payload); err != nil {
+		logrus.Errorf("clientCodec.processResponse: %s", err)
+	}
 }
 
 func synthesizeError(w io.Writer, req *rpc.Request, err error) {
@@ -78,8 +81,12 @@ func synthesizeError(w io.Writer, req *rpc.Request, err error) {
 		Error:         err.Error(),
 	}
 	enc := gob.NewEncoder(w)
-	enc.Encode(resp)
-	enc.Encode(0) // Send empty value to feed the reader
+	if err := enc.Encode(resp); err != nil {
+		logrus.Errorf("synthesizeError: %s", err)
+	}
+	if err := enc.Encode(0); err != nil { // Send empty value to feed the reader
+		logrus.Errorf("synthesizeError: %s", err)
+	}
 }
 
 func (cc *clientCodec) ReadResponseHeader(res *rpc.Response) error {
