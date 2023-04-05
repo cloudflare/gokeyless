@@ -119,7 +119,7 @@ release-github:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		--env GORELEASER_GITHUB_TOKEN \
-		neilotoole/xcgo:latest goreleaser --rm-dist
+		neilotoole/xcgo:latest goreleaser release --rm-dist
 
 
 .PHONY: snapshot
@@ -128,4 +128,13 @@ snapshot:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		neilotoole/xcgo:latest goreleaser --snapshot --rm-dist
+
+# .PHONY: github-release-built-pkgs
+# github-release-built-pkgs:
+# 	python3 github_release.py --path $(PWD)/built_artifacts --release-version $(VERSION)
+
+
+# .PHONY: release-pkgs-linux
+# release-pkgs-linux:
+# 	python3 ./release_keyless_pkgs.py
 

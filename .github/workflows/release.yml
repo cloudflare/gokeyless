@@ -2,8 +2,8 @@ name: goreleaser
 
 on:
   push:
-    tags:
-      - "*"
+    # tags:
+    #   - "*"
 
 permissions:
   contents: write
@@ -19,5 +19,6 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
       - run: make release-github
+        uses: goreleaser/goreleaser-action@v2
         env:
           GORELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
