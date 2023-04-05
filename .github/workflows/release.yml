@@ -2,8 +2,9 @@ name: goreleaser
 
 on:
   push:
-    tags:
-      - "*"
+  workflow_dispatch:
+    # tags:
+    #   - "*"
 
 permissions:
   contents: write
@@ -18,6 +19,11 @@ jobs:
           fetch-depth: 0
       - name: Set up Go
         uses: actions/setup-go@v3
-      - run: make release-github
+      - name: Run Release
+        run: make release-github
+        # uses: goreleaser/goreleaser-action@v2
+        # with:
+        #   args: release --rm-dist
         env:
           GORELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

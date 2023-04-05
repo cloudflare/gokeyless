@@ -39,3 +39,15 @@ release:
   prerelease: auto
 changelog:
   sort: asc
+nfpms:
+  - id: keyless-nfpm
+    package_name: gokeyless
+    file_name_template: "gokeyless_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    homepage: https://github.com/cloudflare/gokeyless
+    maintainer: SSL Cloudflare <securityengineering@cloudflare.com>
+    description: Go implementation of keyless protocol
+    license: BSD 3-Clause
+    formats:
+      - deb
+      - rpm
+

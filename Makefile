@@ -113,14 +113,17 @@ benchmark-softhsm:
 
 # GORELEASER_GITHUB_TOKEN=X make release-github
 # token from https://github.com/settings/tokens/new
+# docker run -it $(docker build -q .)
+# docker build -f Dockerfile.goreleaser 
+#  goreleaser release --rm-dist
+# docker build -t foo -f Dockerfile.goreleaser . && \
 .PHONY: release-github
 release-github:
 	docker run --rm --privileged -v $(PWD):/go/tmp \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		--env GORELEASER_GITHUB_TOKEN \
-		neilotoole/xcgo:latest goreleaser --rm-dist
-
+		neilotoole/xcgo:latest goreleaser release --rm-dist
 
 .PHONY: snapshot
 snapshot:
@@ -128,4 +131,13 @@ snapshot:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		neilotoole/xcgo:latest goreleaser --snapshot --rm-dist
+
+# .PHONY: github-release-built-pkgs
+# github-release-built-pkgs:
+# 	python3 github_release.py --path $(PWD)/built_artifacts --release-version $(VERSION)
+
+
+# .PHONY: release-pkgs-linux
+# release-pkgs-linux:
+# 	python3 ./release_keyless_pkgs.py
 
