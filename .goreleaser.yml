@@ -70,10 +70,12 @@ nfpms:
         dst: /etc/init.d/gokeyless
         file_info:
           mode: 0755
+        type: config
       - src: pkg/keyless_cacert.pem
         dst: /etc/keyless/keyless_cacert.pem
         file_info:
           mode: 0644
+        type: config
       - src: pkg/gokeyless.yaml
         dst: /etc/keyless/gokeyless.yaml
         file_info:
