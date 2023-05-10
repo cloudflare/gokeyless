@@ -50,3 +50,34 @@ nfpms:
     formats:
       - deb
       - rpm
+    overrides:
+      deb:
+        scripts:
+          preinstall: pkg/debian/before-install.sh
+          postinstall: pkg/debian/after-install.sh
+          preremove: pkg/debian/before-remove.sh
+      rpm:
+        scripts:
+          preinstall: pkg/centos/before-install.sh
+          postinstall: pkg/centos/after-install.sh
+          preremove: pkg/centos/before-remove.sh
+    contents:
+      - src: pkg/gokeyless.service
+        dst: /lib/systemd/system/gokeyless.service
+        file_info:
+          mode: 0644
+      - src: pkg/gokeyless.sysv
+        dst: /etc/init.d/gokeyless
+        file_info:
+          mode: 0755
+        type: config
+      - src: pkg/keyless_cacert.pem
+        dst: /etc/keyless/keyless_cacert.pem
+        file_info:
+          mode: 0644
+        type: config
+      - src: pkg/gokeyless.yaml
+        dst: /etc/keyless/gokeyless.yaml
+        file_info:
+          mode: 0600
+        type: "config|noreplace"
