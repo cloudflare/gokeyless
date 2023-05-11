@@ -16,6 +16,7 @@ builds:
     main: ./cmd/gokeyless
     flags:
       - -tags=pkcs11,netgo
+      - -buildvcs=false
     ldflags:
       - -s -w -X main.version={{.Version}}
   - id: gokeyless-linux
@@ -27,6 +28,7 @@ builds:
     main: ./cmd/gokeyless
     flags:
       - -tags=pkcs11,netgo
+      - -buildvcs=false
     ldflags:
       - -s -w -X main.version={{.Version}}
       - -linkmode external -extldflags "-static"
