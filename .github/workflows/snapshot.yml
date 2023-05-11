@@ -9,6 +9,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: make snapshot
+      # latest snapshot looks like dist/gokeyless_0.0.0-SNAPSHOT-99d510e_linux_amd64.deb
+      - run: sudo dpkg -i dist/*.deb
+      - run: sudo gokeyless --version
+      - name: ensure systemd service can start
+        run: sudo systemctl start gokeyless
+      - name: ensure keyless user exists
+        run: sudo grep "keyless" /etc/passwd
+      - run: sudo dpkg -r gokeyless
+      - name: ensure keyless user was removed after uninstall
+        run: sudo grep -v "keyless" /etc/passwd
       - name: Archive snapshot artifacts
         uses: actions/upload-artifact@v3
         with:
