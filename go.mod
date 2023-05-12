@@ -14,7 +14,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.0.5
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
-	github.com/miekg/dns v1.1.29
+	github.com/miekg/dns v1.1.54
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.15.1
 	github.com/spf13/pflag v1.0.1
@@ -70,11 +70,12 @@ require (
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	go.opencensus.io v0.22.5 // indirect
 	go.uber.org/atomic v1.6.0 // indirect
+	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/oauth2 v0.5.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/tools v0.3.0 // indirect
 	google.golang.org/api v0.40.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/grpc v1.35.0 // indirect
