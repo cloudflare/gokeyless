@@ -5,7 +5,7 @@ go 1.19
 require (
 	cloud.google.com/go v0.78.0
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.11.17
+	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
 	github.com/ThalesIgnite/crypto11 v1.2.1
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
