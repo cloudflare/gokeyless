@@ -26,7 +26,7 @@ require (
 	golang.org/x/sync v0.1.0
 	google.golang.org/genproto v0.0.0-20210309190941-1aeedc14537d
 	google.golang.org/protobuf v1.30.0
-	gopkg.in/square/go-jose.v2 v2.5.1
+	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
