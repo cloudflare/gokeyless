@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - run: make snapshot
       # latest snapshot looks like dist/gokeyless_0.0.0-SNAPSHOT-99d510e_linux_amd64.deb
       - run: sudo dpkg -i dist/*.deb
