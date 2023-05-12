@@ -21,6 +21,7 @@ jobs:
           go-version: ${{ matrix.go }}
       - name: Go Test
         run: make test-nohsm test-trust
+      - uses: codecov/codecov-action@v3
   lint:
     runs-on: ubuntu-latest
     env:
