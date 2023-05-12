@@ -101,7 +101,7 @@ test:
 
 .PHONY: test-nohsm
 test-nohsm:
-	GODEBUG=cgocheck=2 go test -v -cover -race ./...
+	GODEBUG=cgocheck=2 go test -v -coverprofile=coverage.txt -covermode=atomic -race ./...
 
 .PHONY: test-trust
 test-trust: gokeyless
