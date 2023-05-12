@@ -9,14 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.19", "1.18"]
+        go: [stable, oldstable]
     env:
       GOFLAGS: "-mod=vendor"
     steps:
       - uses: actions/checkout@v2
 
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
       - name: Go Test
@@ -28,9 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
-          go-version: 1.18
+          go-version: ${{ matrix.go }}
       - name: Install golint
         run: go install ./vendor/golang.org/x/lint/golint
       - name: Go Lint
