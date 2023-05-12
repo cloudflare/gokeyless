@@ -199,7 +199,7 @@ github.com/stretchr/testify/suite
 # github.com/thales-e-security/pool v0.0.1
 ## explicit; go 1.12
 github.com/thales-e-security/pool
-# github.com/uber/jaeger-client-go v2.25.0+incompatible
+# github.com/uber/jaeger-client-go v2.30.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
 github.com/uber/jaeger-client-go/internal/baggage
