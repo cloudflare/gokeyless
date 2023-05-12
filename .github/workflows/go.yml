@@ -13,7 +13,7 @@ jobs:
     env:
       GOFLAGS: "-mod=vendor"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -26,7 +26,7 @@ jobs:
     env:
       GOFLAGS: "-mod=vendor"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
