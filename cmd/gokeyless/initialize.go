@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 
@@ -65,7 +64,7 @@ func initAPICall(token, hostname, zoneID, csr string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("certificate API returned an invalid response body for HTTP %d", resp.StatusCode)
 	}
@@ -120,12 +119,12 @@ func initializeServerCertAndKey() {
 		log.Fatal("failed to generate csr and key: ", err)
 	}
 
-	if err := ioutil.WriteFile(config.KeyFile, key, 0600); err != nil {
+	if err := os.WriteFile(config.KeyFile, key, 0600); err != nil {
 		log.Fatal("failed to write to key file: ", err)
 	}
 	log.Infof("key is generated and saved to %s", config.KeyFile)
 
-	if err := ioutil.WriteFile(config.CSRFile, csr, 0600); err != nil {
+	if err := os.WriteFile(config.CSRFile, csr, 0600); err != nil {
 		log.Fatal("failed to write to csr file:", err)
 	}
 	log.Infof("csr is generated and saved to %s", config.CSRFile)
@@ -141,12 +140,11 @@ func initializeServerCertAndKey() {
 		log.Fatal("couldn't remove old certificate file: ", err)
 	}
 
-	if err := ioutil.WriteFile(config.CertFile, cert, 0644); err != nil {
+	if err := os.WriteFile(config.CertFile, cert, 0644); err != nil {
 		log.Fatal("couldn't write to certificate file: ", err)
 	}
 	log.Infof("certificate saved to %s", config.CertFile)
 
-	return
 }
 
 // generateCSR generates a private key and a CSR for the given host. The
@@ -155,7 +153,7 @@ func generateCSR(host string) ([]byte, []byte, error) {
 	csr, key, err := csr.ParseRequest(&csr.CertificateRequest{
 		CN:    "Keyless Server Authentication Certificate",
 		Hosts: []string{host},
-		KeyRequest: &csr.BasicKeyRequest{
+		KeyRequest: &csr.KeyRequest{
 			A: "ecdsa",
 			S: 384,
 		},
@@ -173,12 +171,12 @@ func manualActivation() {
 		log.Fatal("failed to generate csr and key: ", err)
 	}
 
-	if err := ioutil.WriteFile(config.KeyFile, key, 0600); err != nil {
+	if err := os.WriteFile(config.KeyFile, key, 0600); err != nil {
 		log.Fatal("failed to write to key file:", err)
 	}
 	log.Infof("key is generated and saved to %s", config.KeyFile)
 
-	if err := ioutil.WriteFile(config.CSRFile, csr, 0600); err != nil {
+	if err := os.WriteFile(config.CSRFile, csr, 0600); err != nil {
 		log.Fatal("failed to write to csr file:", err)
 	}
 	log.Infof("csr is generated and saved to %s", config.CSRFile)

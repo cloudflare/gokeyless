@@ -12,9 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/rpc"
+	"os"
 	"sync"
 	"time"
 
@@ -85,7 +85,7 @@ func NewServerFromFile(config *ServeConfig, certFile, keyFile, caFile string) (*
 		return nil, err
 	}
 
-	pemCerts, err := ioutil.ReadFile(caFile)
+	pemCerts, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
 	}
@@ -706,12 +706,12 @@ const (
 
 // DefaultServeConfig constructs a default ServeConfig with the following
 // values:
-//  - The number of ECDSA workers is max(2, runtime.NumCPU())
-//  - The number of RSA workers is max(2, runtime.NumCPU())
-//  - The number of other workers is 2
-//  - The TCP connection timeout is 30 seconds
-//  - The Unix connection timeout is 1 hour
-//  - All connections have full power
+//   - The number of ECDSA workers is max(2, runtime.NumCPU())
+//   - The number of RSA workers is max(2, runtime.NumCPU())
+//   - The number of other workers is 2
+//   - The TCP connection timeout is 30 seconds
+//   - The Unix connection timeout is 1 hour
+//   - All connections have full power
 func DefaultServeConfig() *ServeConfig {
 	return &ServeConfig{
 		tcpTimeout:             defaultTCPTimeout,

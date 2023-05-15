@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"strconv"
@@ -131,7 +130,7 @@ func (d DummyRPC) PipeRead(in int, out *[]byte) (err error) {
 
 // helper function reads a pub key from a file and convert it to a signer
 func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
-	pemBytes, err := ioutil.ReadFile(filepath)
+	pemBytes, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}

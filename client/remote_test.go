@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -243,7 +242,7 @@ func TestSlowServer(t *testing.T) {
 
 // helper function reads a cert from a file and convert it to a signer
 func NewRemoteSignerByCertFile(filepath string) (crypto.Signer, error) {
-	pemBytes, err := ioutil.ReadFile(filepath)
+	pemBytes, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}
