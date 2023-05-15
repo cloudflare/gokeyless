@@ -23,7 +23,7 @@ package crypto11
 
 import (
 	"crypto"
-
+	"crypto/x509"
 	"github.com/miekg/pkcs11"
 	"github.com/pkg/errors"
 )
@@ -105,14 +105,14 @@ func findKey(session *pkcs11Session, id []byte, label []byte, keyclass *uint, ke
 
 // Takes a handles to the private half of a keypair, locates the public half with the matching CKA_ID and CKA_LABEL
 // values and constructs a keypair object from them both.
-func (c *Context) makeKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectHandle) (signer Signer, err error) {
+func (c *Context) makeKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectHandle) (signer Signer, certificate *x509.Certificate, err error) {
 	attributes := []*pkcs11.Attribute{
 		pkcs11.NewAttribute(pkcs11.CKA_ID, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_LABEL, nil),
 		pkcs11.NewAttribute(pkcs11.CKA_KEY_TYPE, 0),
 	}
 	if attributes, err = session.ctx.GetAttributeValue(session.handle, *privHandle, attributes); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	id := attributes[0].Value
 	label := attributes[1].Value
@@ -120,7 +120,7 @@ func (c *Context) makeKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectH
 
 	// Ensure the private key actually has a non-empty CKA_ID to match on
 	if id == nil || len(id) == 0 {
-		return nil, errNoCkaId
+		return nil, nil, errNoCkaId
 	}
 
 	var pubHandle *pkcs11.ObjectHandle
@@ -137,14 +137,14 @@ func (c *Context) makeKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectH
 
 			pubHandles, err := findKeys(session, id, nil, uintPtr(pkcs11.CKO_PUBLIC_KEY), &keyType)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			for _, handle := range pubHandles {
 				template := []*pkcs11.Attribute{pkcs11.NewAttribute(pkcs11.CKA_LABEL, nil)}
 				template, err = session.ctx.GetAttributeValue(session.handle, handle, template)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				if len(template[0].Value) == 0 {
 					pubHandle = &handle
@@ -152,61 +152,72 @@ func (c *Context) makeKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectH
 				}
 			}
 		} else {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if pubHandle == nil {
-		// We can't return a Signer if we don't have private and public key. Treat it as an error.
-		return nil, errNoPublicHalf
+		// Try harder to find a matching public key, based on CKA_ID alone
+		pubHandle, err = findKey(session, id, nil, uintPtr(pkcs11.CKO_PUBLIC_KEY), &keyType)
+	}
+
+	resultPkcs11PrivateKey := pkcs11PrivateKey{
+		pkcs11Object: pkcs11Object{
+			handle:  *privHandle,
+			context: c,
+		},
 	}
 
 	var pub crypto.PublicKey
+	certificate, _ = findCertificate(session, id, nil, nil)
+	if certificate != nil && pubHandle == nil {
+		pub = certificate.PublicKey
+	}
+
+	if pub == nil && pubHandle == nil {
+		// We can't return a Signer if we don't have private and public key. Treat it as an error.
+		return nil, nil, errNoPublicHalf
+	}
+
 	switch keyType {
 	case pkcs11.CKK_DSA:
-		if pub, err = exportDSAPublicKey(session, *pubHandle); err != nil {
-			return nil, err
+		result := &pkcs11PrivateKeyDSA{pkcs11PrivateKey: resultPkcs11PrivateKey}
+		if pubHandle != nil {
+			if pub, err = exportDSAPublicKey(session, *pubHandle); err != nil {
+				return nil, nil, err
+			}
+			result.pkcs11PrivateKey.pubKeyHandle = *pubHandle
 		}
-		return &pkcs11PrivateKeyDSA{
-			pkcs11PrivateKey: pkcs11PrivateKey{
-				pkcs11Object: pkcs11Object{
-					handle:  *privHandle,
-					context: c,
-				},
-				pubKeyHandle: *pubHandle,
-				pubKey:       pub,
-			}}, nil
+
+		result.pkcs11PrivateKey.pubKey = pub
+		return result, certificate, nil
 
 	case pkcs11.CKK_RSA:
-		if pub, err = exportRSAPublicKey(session, *pubHandle); err != nil {
-			return nil, err
+		result := &pkcs11PrivateKeyRSA{pkcs11PrivateKey: resultPkcs11PrivateKey}
+		if pubHandle != nil {
+			if pub, err = exportRSAPublicKey(session, *pubHandle); err != nil {
+				return nil, nil, err
+			}
+			result.pkcs11PrivateKey.pubKeyHandle = *pubHandle
 		}
-		return &pkcs11PrivateKeyRSA{
-			pkcs11PrivateKey: pkcs11PrivateKey{
-				pkcs11Object: pkcs11Object{
-					handle:  *privHandle,
-					context: c,
-				},
-				pubKeyHandle: *pubHandle,
-				pubKey:       pub,
-			}}, nil
+
+		result.pkcs11PrivateKey.pubKey = pub
+		return result, certificate, nil
 
 	case pkcs11.CKK_ECDSA:
-		if pub, err = exportECDSAPublicKey(session, *pubHandle); err != nil {
-			return nil, err
+		result := &pkcs11PrivateKeyECDSA{pkcs11PrivateKey: resultPkcs11PrivateKey}
+		if pubHandle != nil {
+			if pub, err = exportECDSAPublicKey(session, *pubHandle); err != nil {
+				return nil, nil, err
+			}
+			result.pkcs11PrivateKey.pubKeyHandle = *pubHandle
 		}
-		return &pkcs11PrivateKeyECDSA{
-			pkcs11PrivateKey: pkcs11PrivateKey{
-				pkcs11Object: pkcs11Object{
-					handle:  *privHandle,
-					context: c,
-				},
-				pubKeyHandle: *pubHandle,
-				pubKey:       pub,
-			}}, nil
+
+		result.pkcs11PrivateKey.pubKey = pub
+		return result, certificate, nil
 
 	default:
-		return nil, errors.Errorf("unsupported key type: %X", keyType)
+		return nil, nil, errors.Errorf("unsupported key type: %X", keyType)
 	}
 }
 
@@ -322,7 +333,7 @@ func (c *Context) FindKeyPairsWithAttributes(attributes AttributeSet) (signer []
 		}
 
 		for _, privHandle := range privHandles {
-			k, err := c.makeKeyPair(session, &privHandle)
+			k, _, err := c.makeKeyPair(session, &privHandle)
 
 			if err == errNoCkaId || err == errNoPublicHalf {
 				continue

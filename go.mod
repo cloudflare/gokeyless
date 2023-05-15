@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
-	github.com/ThalesIgnite/crypto11 v1.2.1
+	github.com/ThalesIgnite/crypto11 v1.2.5
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
 	github.com/cloudflare/cfssl v0.0.0-20180724182639-74781550e7f0
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
@@ -66,7 +66,7 @@ require (
 	github.com/spf13/afero v1.1.0 // indirect
 	github.com/spf13/cast v1.2.0 // indirect
 	github.com/spf13/jwalterweatherman v0.0.0-20180109140146-7c0cea34c8ec // indirect
-	github.com/thales-e-security/pool v0.0.1 // indirect
+	github.com/thales-e-security/pool v0.0.2 // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
 	go.opencensus.io v0.22.5 // indirect
 	go.uber.org/atomic v1.6.0 // indirect

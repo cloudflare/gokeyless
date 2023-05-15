@@ -71,6 +71,12 @@ list of the following options:
 in some crypto libraries). Needed for AWS CloudHSM.
 *  `DSA` - disables DSA tests. Needed for AWS CloudHSM (and any other tokens not supporting DSA).
 
+Testing with Thales Luna HSM
+----------------------------
+
+
+
+
 Testing with AWS CloudHSM
 -------------------------
 
