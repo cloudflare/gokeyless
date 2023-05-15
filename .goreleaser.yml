@@ -52,6 +52,7 @@ nfpms:
     formats:
       - deb
       - rpm
+    bindir: /usr/bin # explicitly defining the default
     overrides:
       deb:
         scripts:
