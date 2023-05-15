@@ -3,15 +3,15 @@ module github.com/cloudflare/gokeyless
 go 1.19
 
 require (
-	cloud.google.com/go v0.78.0
+	cloud.google.com/go/kms v1.10.2
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.12
 	github.com/ThalesIgnite/crypto11 v1.2.5
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
-	github.com/cloudflare/cfssl v0.0.0-20180724182639-74781550e7f0
+	github.com/cloudflare/cfssl v1.6.4
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
-	github.com/googleapis/gax-go/v2 v2.0.5
+	github.com/googleapis/gax-go/v2 v2.8.0
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
 	github.com/miekg/dns v1.1.54
@@ -21,16 +21,19 @@ require (
 	github.com/spf13/viper v1.0.2
 	github.com/stretchr/testify v1.8.2
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	golang.org/x/crypto v0.6.0
-	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5
+	golang.org/x/crypto v0.7.0
+	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/sync v0.2.0
-	google.golang.org/genproto v0.0.0-20210309190941-1aeedc14537d
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
+	cloud.google.com/go/compute v1.19.0 // indirect
+	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	cloud.google.com/go/iam v0.13.0 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest/adal v0.9.23 // indirect
 	github.com/Azure/go-autorest/autorest/azure/cli v0.4.5 // indirect
@@ -46,10 +49,12 @@ require (
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.4.7 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
-	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/certificate-transparency-go v1.0.10-0.20180222191210-5ab67e519c93 // indirect
+	github.com/google/certificate-transparency-go v1.1.4 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/s2a-go v0.1.0 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
 	github.com/hashicorp/hcl v0.0.0-20180404174102-ef8a98b0bbce // indirect
 	github.com/magiconair/properties v1.7.6 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
@@ -68,16 +73,16 @@ require (
 	github.com/spf13/jwalterweatherman v0.0.0-20180109140146-7c0cea34c8ec // indirect
 	github.com/thales-e-security/pool v0.0.2 // indirect
 	github.com/uber/jaeger-lib v2.2.0+incompatible // indirect
-	go.opencensus.io v0.22.5 // indirect
-	go.uber.org/atomic v1.6.0 // indirect
-	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/oauth2 v0.5.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
-	golang.org/x/tools v0.3.0 // indirect
-	google.golang.org/api v0.40.0 // indirect
+	go.opencensus.io v0.24.0 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/net v0.9.0 // indirect
+	golang.org/x/oauth2 v0.7.0 // indirect
+	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
+	google.golang.org/api v0.118.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/grpc v1.35.0 // indirect
+	google.golang.org/grpc v1.55.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

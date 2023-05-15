@@ -15,14 +15,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
-
-	"github.com/google/certificate-transparency-go"
-	cttls "github.com/google/certificate-transparency-go/tls"
-	ctx509 "github.com/google/certificate-transparency-go/x509"
-	"golang.org/x/crypto/ocsp"
-
 	"strings"
 	"time"
 
@@ -30,6 +23,11 @@ import (
 	cferr "github.com/cloudflare/cfssl/errors"
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/cfssl/log"
+
+	ct "github.com/google/certificate-transparency-go"
+	cttls "github.com/google/certificate-transparency-go/tls"
+	ctx509 "github.com/google/certificate-transparency-go/x509"
+	"golang.org/x/crypto/ocsp"
 	"golang.org/x/crypto/pkcs12"
 )
 
@@ -38,6 +36,16 @@ const OneYear = 8760 * time.Hour
 
 // OneDay is a time.Duration representing a day's worth of seconds.
 const OneDay = 24 * time.Hour
+
+// DelegationUsage  is the OID for the DelegationUseage extensions
+var DelegationUsage = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 44363, 44}
+
+// DelegationExtension
+var DelegationExtension = pkix.Extension{
+	Id:       DelegationUsage,
+	Critical: false,
+	Value:    []byte{0x05, 0x00}, // ASN.1 NULL
+}
 
 // InclusiveDate returns the time.Time representation of a date - 1
 // nanosecond. This allows time.After to be used inclusively.
@@ -335,7 +343,7 @@ func LoadPEMCertPool(certsFile string) (*x509.CertPool, error) {
 	if certsFile == "" {
 		return nil, nil
 	}
-	pemCerts, err := ioutil.ReadFile(certsFile)
+	pemCerts, err := os.ReadFile(certsFile)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +386,15 @@ func ParsePrivateKeyPEMWithPassword(keyPEM []byte, password []byte) (key crypto.
 
 // GetKeyDERFromPEM parses a PEM-encoded private key and returns DER-format key bytes.
 func GetKeyDERFromPEM(in []byte, password []byte) ([]byte, error) {
-	keyDER, _ := pem.Decode(in)
+	// Ignore any EC PARAMETERS blocks when looking for a key (openssl includes
+	// them by default).
+	var keyDER *pem.Block
+	for {
+		keyDER, in = pem.Decode(in)
+		if keyDER == nil || keyDER.Type != "EC PARAMETERS" {
+			break
+		}
+	}
 	if keyDER != nil {
 		if procType, ok := keyDER.Headers["Proc-Type"]; ok {
 			if strings.Contains(procType, "ENCRYPTED") {
@@ -473,7 +489,7 @@ func LoadClientCertificate(certFile string, keyFile string) (*tls.Certificate, e
 	if certFile != "" && keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			log.Critical("Unable to read client certificate from file: %s or key from file: %s", certFile, keyFile)
+			log.Criticalf("Unable to read client certificate from file: %s or key from file: %s", certFile, keyFile)
 			return nil, err
 		}
 		log.Debug("Client certificate loaded ")
@@ -573,13 +589,13 @@ func SCTListFromOCSPResponse(response *ocsp.Response) ([]ct.SignedCertificateTim
 func ReadBytes(valFile string) ([]byte, error) {
 	switch splitVal := strings.SplitN(valFile, ":", 2); len(splitVal) {
 	case 1:
-		return ioutil.ReadFile(valFile)
+		return os.ReadFile(valFile)
 	case 2:
 		switch splitVal[0] {
 		case "env":
 			return []byte(os.Getenv(splitVal[1])), nil
 		case "file":
-			return ioutil.ReadFile(splitVal[1])
+			return os.ReadFile(splitVal[1])
 		default:
 			return nil, fmt.Errorf("unknown prefix: %s", splitVal[0])
 		}
