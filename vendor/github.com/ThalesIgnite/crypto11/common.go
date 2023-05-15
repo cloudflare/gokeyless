@@ -36,7 +36,23 @@ func ulongToBytes(n uint) []byte {
 }
 
 func bytesToUlong(bs []byte) (n uint) {
-	return *(*uint)(unsafe.Pointer(&bs[0])) // ugh
+	sliceSize := len(bs)
+	if sliceSize == 0 {
+		return 0
+	}
+
+	value := *(*uint)(unsafe.Pointer(&bs[0]))
+	if sliceSize > C.sizeof_ulong {
+		return value
+	}
+
+	// truncate the value to the # of bits present in the byte slice since
+	// the unsafe pointer will always grab/convert ULONG # of bytes
+	var mask uint
+	for i := 0; i < sliceSize; i++ {
+		mask |= 0xff << uint(i * 8)
+	}
+	return value & mask
 }
 
 func concat(slices ...[]byte) []byte {

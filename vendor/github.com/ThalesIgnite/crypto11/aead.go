@@ -53,7 +53,7 @@ type genericAead struct {
 
 	// Note - if the GCMParams result is non-nil, the caller must call Free() on the params when
 	// finished.
-	makeMech func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error)
+	makeMech func(nonce []byte, additionalData []byte, encrypt bool) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error)
 }
 
 // NewGCM returns a given cipher wrapped in Galois Counter Mode, with the standard
@@ -69,9 +69,17 @@ func (key *SecretKey) NewGCM() (cipher.AEAD, error) {
 	g := genericAead{
 		key:       key,
 		overhead:  16,
-		nonceSize: 12,
-		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
-			params := pkcs11.NewGCMParams(nonce, additionalData, 16*8 /*bits*/)
+		nonceSize: key.context.cfg.GCMIVLength,
+		makeMech: func(nonce []byte, additionalData []byte, encrypt bool) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
+			var params *pkcs11.GCMParams
+
+			if (encrypt && key.context.cfg.UseGCMIVFromHSM &&
+				!key.context.cfg.GCMIVFromHSMControl.SupplyIvForHSMGCMEncrypt) || (!encrypt &&
+				key.context.cfg.UseGCMIVFromHSM && !key.context.cfg.GCMIVFromHSMControl.SupplyIvForHSMGCMDecrypt) {
+				params = pkcs11.NewGCMParams(nil, additionalData, 16*8 /*bits*/)
+			} else {
+				params = pkcs11.NewGCMParams(nonce, additionalData, 16*8 /*bits*/)
+			}
 			return []*pkcs11.Mechanism{pkcs11.NewMechanism(key.Cipher.GCMMech, params)}, params, nil
 		},
 	}
@@ -100,7 +108,7 @@ func (key *SecretKey) NewCBC(paddingMode PaddingMode) (cipher.AEAD, error) {
 		key:       key,
 		overhead:  0,
 		nonceSize: key.BlockSize(),
-		makeMech: func(nonce []byte, additionalData []byte) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
+		makeMech: func(nonce []byte, additionalData []byte, encrypt bool) ([]*pkcs11.Mechanism, *pkcs11.GCMParams, error) {
 			if len(additionalData) > 0 {
 				return nil, nil, errors.New("additional data not supported for CBC mode")
 			}
@@ -124,7 +132,8 @@ func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 
 	var result []byte
 	if err := g.key.context.withSession(func(session *pkcs11Session) (err error) {
-		mech, params, err := g.makeMech(nonce, additionalData)
+		mech, params, err := g.makeMech(nonce, additionalData, true)
+
 		if err != nil {
 			return err
 		}
@@ -139,12 +148,10 @@ func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 			return
 		}
 
-		if g.key.context.cfg.UseGCMIVFromHSM {
+		if g.key.context.cfg.UseGCMIVFromHSM && g.key.context.cfg.GCMIVFromHSMControl.SupplyIvForHSMGCMEncrypt {
 			if len(nonce) != len(params.IV()) {
 				return errBadGCMNonceSize
 			}
-
-			copy(nonce, params.IV())
 		}
 
 		return
@@ -159,7 +166,7 @@ func (g genericAead) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 func (g genericAead) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error) {
 	var result []byte
 	if err := g.key.context.withSession(func(session *pkcs11Session) (err error) {
-		mech, params, err := g.makeMech(nonce, additionalData)
+		mech, params, err := g.makeMech(nonce, additionalData, false)
 		if err != nil {
 			return
 		}

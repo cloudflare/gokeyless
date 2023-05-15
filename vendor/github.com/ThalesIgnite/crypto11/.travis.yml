@@ -2,8 +2,7 @@ dist: xenial
 language: go
 
 go:
- - "1.11.x"
- - "master"
+ - "1.13.x"
 
 # Xenial comes with v2.0.0 SoftHSM2, which seems to have issues with ECDSA
 # code points

@@ -40,8 +40,8 @@ github.com/Azure/go-autorest/logger
 # github.com/Azure/go-autorest/tracing v0.6.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/tracing
-# github.com/ThalesIgnite/crypto11 v1.2.1
-## explicit; go 1.12
+# github.com/ThalesIgnite/crypto11 v1.2.5
+## explicit; go 1.13
 github.com/ThalesIgnite/crypto11
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
@@ -196,7 +196,7 @@ github.com/spf13/viper
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 github.com/stretchr/testify/suite
-# github.com/thales-e-security/pool v0.0.1
+# github.com/thales-e-security/pool v0.0.2
 ## explicit; go 1.12
 github.com/thales-e-security/pool
 # github.com/uber/jaeger-client-go v2.30.0+incompatible
