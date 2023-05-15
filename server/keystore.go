@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -78,7 +77,7 @@ func (keys *DefaultKeystore) AddFromDir(dir string, LoadKey func([]byte) (crypto
 func (keys *DefaultKeystore) AddFromFile(path string, LoadKey func([]byte) (crypto.Signer, error)) error {
 	log.Infof("loading %s...", path)
 
-	in, err := ioutil.ReadFile(path)
+	in, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}

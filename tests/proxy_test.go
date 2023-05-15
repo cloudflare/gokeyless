@@ -7,7 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
-	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -41,7 +41,7 @@ func clientFunc(conn *tls.Conn) error {
 		return err
 	}
 
-	output, err := ioutil.ReadAll(conn)
+	output, err := io.ReadAll(conn)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s *IntegrationTestSuite) TestTLSProxy() {
 
 	keys := server.NewDefaultKeystore()
 	s.server.SetKeystore(keys)
-	pemKey, err := ioutil.ReadFile(tlsKey)
+	pemKey, err := os.ReadFile(tlsKey)
 	require.NoError(err)
 	p, _ := pem.Decode(pemKey)
 	rsaKey, err := x509.ParseECPrivateKey(p.Bytes)
@@ -97,7 +97,7 @@ func (s *IntegrationTestSuite) TestTLSProxy() {
 		RootCAs:    x509.NewCertPool(),
 	}
 
-	caBytes, err := ioutil.ReadFile(caCert)
+	caBytes, err := os.ReadFile(caCert)
 	require.NoError(err)
 	clientConfig.RootCAs.AppendCertsFromPEM(caBytes)
 

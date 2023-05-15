@@ -3,7 +3,7 @@ package certmetrics
 
 import (
 	"crypto/x509"
-	"io/ioutil"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -34,7 +34,7 @@ func certSourceFromFile(path string) ([]CertSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	pemData, err := ioutil.ReadAll(file)
+	pemData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}

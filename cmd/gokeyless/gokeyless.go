@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"strconv"
@@ -366,7 +365,7 @@ func needNewCertAndKey() bool {
 	}
 
 	// error is ignore because tls.LoadX509KeyPair already verify the existence of the file
-	certBytes, _ := ioutil.ReadFile(config.CertFile)
+	certBytes, _ := os.ReadFile(config.CertFile)
 	// error is ignore because tls.LoadX509KeyPair already verify the file can be parsed
 	cert, _ := helpers.ParseCertificatePEM(certBytes)
 	// verify the leaf certificate
@@ -380,7 +379,7 @@ func needNewCertAndKey() bool {
 
 // verifyCSRAndKey checks if csr and key files exist and if they match
 func verifyCSRAndKey() bool {
-	csrBytes, err := ioutil.ReadFile(config.CSRFile)
+	csrBytes, err := os.ReadFile(config.CSRFile)
 	if err != nil {
 		log.Errorf("cannot read csr file: %v", err)
 		return false
@@ -403,7 +402,7 @@ func verifyCSRAndKey() bool {
 		return false
 	}
 
-	keyBytes, err := ioutil.ReadFile(config.KeyFile)
+	keyBytes, err := os.ReadFile(config.KeyFile)
 	if err != nil {
 		log.Errorf("cannot read private key file: %v", err)
 		return false

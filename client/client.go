@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -71,7 +70,7 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 		return nil, err
 	}
 
-	pemCerts, err := ioutil.ReadFile(caFile)
+	pemCerts, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +320,7 @@ func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.Pub
 		if !info.IsDir() && (isPubKey || isCert) {
 			log.Infof("Loading %s...\n", path)
 
-			in, err := ioutil.ReadFile(path)
+			in, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
@@ -358,7 +357,7 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 	var certPEMBlock []byte
 	var certDERBlock *pem.Block
 
-	if certPEMBlock, err = ioutil.ReadFile(certFile); err != nil {
+	if certPEMBlock, err = os.ReadFile(certFile); err != nil {
 		return fail(err)
 	}
 
