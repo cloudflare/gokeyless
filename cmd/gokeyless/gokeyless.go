@@ -143,7 +143,6 @@ func initConfig() error {
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("KEYLESS")
 
-	viper.SetConfigType("yaml")
 	if configFile != "" {
 		viper.SetConfigFile(configFile)
 	} else {
