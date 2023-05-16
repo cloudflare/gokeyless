@@ -10,8 +10,6 @@ jobs:
     strategy:
       matrix:
         go: [stable, oldstable]
-    env:
-      GOFLAGS: "-mod=vendor"
     steps:
       - uses: actions/checkout@v3
 
@@ -19,13 +17,13 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
+      - run: go install github.com/ory/go-acc@latest
+      - run: go-acc -o coverage.txt ./... -- -race -tags integration
       - name: Go Test
-        run: make test-nohsm test-trust
+        run: make test-trust
       - uses: codecov/codecov-action@v3
   lint:
     runs-on: ubuntu-latest
-    env:
-      GOFLAGS: "-mod=vendor"
     steps:
       - uses: actions/checkout@v3
       - name: Set up Go

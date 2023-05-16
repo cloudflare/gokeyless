@@ -1,6 +1,7 @@
 # Go Keyless
 [![Go Test](https://github.com/cloudflare/gokeyless/actions/workflows/go.yml/badge.svg)](https://github.com/cloudflare/gokeyless/actions/workflows/go.yml)
 [![GoDoc](https://pkg.go.dev/badge/github.com/cloudflare/gokeyless)](https://pkg.go.dev/github.com/cloudflare/gokeyless)
+[![codecov](https://codecov.io/github/cloudflare/gokeyless/branch/master/graph/badge.svg?token=kcha1ub1Ju)](https://codecov.io/github/cloudflare/gokeyless)
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
