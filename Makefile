@@ -7,7 +7,7 @@ VERSION := $(shell git describe --tags --abbrev=0 | tr -d '[:alpha:]')
 LDFLAGS := "-X main.version=$(VERSION)"
 
 DESTDIR                      := build
-PREFIX                       := usr/local
+PREFIX                       := usr
 INSTALL_BIN                  := $(DESTDIR)/$(PREFIX)/bin
 INIT_PREFIX                  := $(DESTDIR)/etc/init.d
 SYSTEMD_PREFIX               := $(DESTDIR)/lib/systemd/system

@@ -22,7 +22,7 @@ if [ `id -u` -ne 0 ]; then
 fi
 
 name=gokeyless
-program=/usr/local/bin/gokeyless
+program=/usr/bin/gokeyless
 pidfile="/var/run/$name.pid"
 
 # Optional

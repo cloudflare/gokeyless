@@ -7,7 +7,7 @@ Type=simple
 User=keyless
 Group=keyless
 WorkingDirectory=/etc/keyless
-ExecStart=/usr/local/bin/gokeyless
+ExecStart=/usr/bin/gokeyless
 
 [Install]
 WantedBy=multi-user.target
