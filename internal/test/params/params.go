@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rsa"
+	"os"
 
 	"github.com/cloudflare/gokeyless/protocol"
 )
@@ -51,13 +52,21 @@ var (
 	ECDSASHA512Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA512, Curve: elliptic.P521(), Opts: crypto.SHA512, PayloadSize: 64}
 )
 
-const (
+func getSoftHSMModulePath() string {
+	if override := os.Getenv("SOFTHSM_MODULE_DIR"); override != "" {
+		return override
+	}
+	return "/usr/lib/softhsm/libsofthsm2.so"
+
+}
+
+var (
 	// RSAURI and ECDSAURI are sample PKCS #11 URIs used for testing HSM
 	// Compatibility. Before running tests, copy the contents of the
 	// testdata/tokens/ directory to your SoftHSM2 token directory, usually
 	// located at /var/lib/softhsm/tokens/, and run `make test-softhsm`
-	RSAURI   = "pkcs11:token=SoftHSM2%20Token;id=%03?module-path=/usr/local/lib/softhsm/libsofthsm2.so&pin-value=1234"
-	ECDSAURI = "pkcs11:token=SoftHSM2%20Token;id=%02?module-path=/usr/local/lib/softhsm/libsofthsm2.so&pin-value=1234"
+	RSAURI   = "pkcs11:token=SoftHSM2%20Token;id=%03?module-path=" + getSoftHSMModulePath() + "&pin-value=1234"
+	ECDSAURI = "pkcs11:token=SoftHSM2%20Token;id=%02?module-path=" + getSoftHSMModulePath() + "&pin-value=1234"
 )
 
 // HSMSignParams represents a set of parameters to a HSM signing operation.

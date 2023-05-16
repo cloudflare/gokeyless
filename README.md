@@ -225,17 +225,15 @@ Each option can optionally be overridden via environment variables or command-li
 
 Unit tests and benchmarks have been implemented for various parts of Go Keyless via `go test`. Most of the tests run out of the box, but some setup is necessary to run the HSM-related tests:
 
-1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2
+1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2. On MacOS, the easiest is `brew isntall softhsm`
 1. Copy the test tokens to the location of your SoftHSM2 token directory (commonly `/var/lib/softhsm/tokens`, but may vary):
+```
+cp -r tests/testdata/tokens/* /opt/homebrew/var/lib/softhsm/tokens/
+```
+1. The tests currently assume the SoftHSM2 library will be installed at `/usr/lib/softhsm/libsofthsm2.so`. If your system differs, `SOFTHSM_MODULE_DIR` env var can override that. 
 
-        $ cp -r tests/testdata/tokens/* /path/to/token/directory/
-
-1. The tests currently assume the SoftHSM2 library will be installed at `/usr/local/lib/softhsm/libsofthsm2.so`. If your system differs, you must create a symlink (sudo may be required):
-
-        $ mkdir -p /usr/local/lib/softhsm
-        $ ln -s /path/to/libsofthsm2.so /usr/local/lib/softhsm/libsofthsm2.so
-
-Then simply run `make test` to execute the test suite.
+e.g. on MacOS with softhsm from brew:
+`SOFTHSM_MODULE_DIR=/opt/homebrew/opt/softhsm/lib/softhsm/libsofthsm2.so make test`
 
 Note that if you need to run the tests without first configuring SoftHSM2 for some reason, you can use the `test-nohsm` target.
 

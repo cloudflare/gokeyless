@@ -17,12 +17,12 @@ func DefaultLoadURI(uri string) (crypto.Signer, error) {
 	// as waiting for network to be up.
 	pk11uri, err := rfc7512.ParsePKCS11URI(uri)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse pkcs11: %w", err)
+		return nil, fmt.Errorf("failed to parse pkcs11 from %s: %w", uri, err)
 	}
 
 	signer, err := rfc7512.LoadPKCS11Signer(pk11uri)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load pkcs11: %w", err)
+		return nil, fmt.Errorf("failed to load pkcs11 from %s: %w", uri, err)
 	}
 	return signer, nil
 }

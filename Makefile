@@ -96,8 +96,8 @@ lint:
 
 .PHONY: test
 test:
-	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race ./...
-	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -cover -race ./tests -args -softhsm2
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -coverprofile=coverage.txt -covermode=atomic -race ./...
+	GODEBUG=cgocheck=2 go test -tags pkcs11 -v -coverprofile=coverage.txt -covermode=atomic -race ./tests -args -softhsm2
 
 .PHONY: test-nohsm
 test-nohsm:
