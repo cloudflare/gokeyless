@@ -205,12 +205,12 @@ func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 
 	context, err := crypto11.Configure(config)
 	if err != nil {
-		return nil, fmt.Errorf("pkcs11 FindKeyPair: %w", err)
+		return nil, fmt.Errorf("pkcs11 Configure: %w", err)
 	}
 
 	signer, err := context.FindKeyPair(pk11uri.ID, pk11uri.Object)
 	if err != nil {
-		return nil, fmt.Errorf("pkcs11 Configure: %w", err)
+		return nil, fmt.Errorf("pkcs11 FindKeyPair: %w", err)
 	} else if signer == nil {
 		return nil, fmt.Errorf("not found")
 	}
