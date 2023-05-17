@@ -76,6 +76,7 @@ var (
 	versionMode      bool
 	helpMode         bool
 	outputConfigMode bool
+	keystoreDbgMode  bool
 
 	version = "dev"
 )
@@ -128,6 +129,7 @@ func init() {
 	flagset.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
 	flagset.BoolVarP(&versionMode, "version", "v", false, "Print version and exit")
 	flagset.BoolVarP(&helpMode, "help", "h", false, "Print usage exit")
+	flagset.BoolVarP(&keystoreDbgMode, "keystore-debug", "d", false, "try to connect to the defined keystores")
 	// Temporary option to demo config overrides.
 	flagset.BoolVarP(&outputConfigMode, "output-config", "o", false, "Print usage exit")
 	flagset.MarkHidden("output_config")
@@ -135,7 +137,9 @@ func init() {
 
 func initConfig() error {
 	pflag.Parse()
-	viper.BindPFlags(pflag.CommandLine)
+	if err := viper.BindPFlags(pflag.CommandLine); err != nil {
+		return err
+	}
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("KEYLESS")
 
@@ -200,22 +204,26 @@ func initConfig() error {
 
 	return nil
 }
-
 func main() {
-	if err := initConfig(); err != nil {
+	if err := runMain(); err != nil {
 		log.Fatal(err)
+	}
+}
+func runMain() error {
+	if err := initConfig(); err != nil {
+		return err
 	}
 	log.Level = config.LogLevel
 
 	switch {
 	case helpMode:
 		pflag.Usage()
-		os.Exit(0)
+		return nil
 	case versionMode:
 		fmt.Println("gokeyless version", version)
-		os.Exit(0)
+		return nil
 	case manualMode && configMode:
-		log.Fatal("can't specify both --manual-activation and --config-only!")
+		return fmt.Errorf("can't specify both --manual-activation and --config-only!")
 	case manualMode:
 		// Allow manual activation (requires the CSR to be manually signed).
 		// manual activation won't proceed to start the server
@@ -230,22 +238,30 @@ func main() {
 			log.Infof("csr at %q and private key at %q are already generated and verified correctly, please contact Cloudflare for manual signing",
 				config.CSRFile, config.KeyFile)
 		}
-		os.Exit(0)
+		return nil
 	case configMode:
 		if needNewCertAndKey() {
 			initializeServerCertAndKey()
 		} else {
 			log.Info("already configured; exiting")
 		}
-		os.Exit(0)
+		return nil
 	case outputConfigMode:
 		b, err := yaml.Marshal(config)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		fmt.Print(string(b))
-		os.Exit(0)
+		return nil
+
+	case keystoreDbgMode:
+		log.Level = log.LevelDebug
+
+		_, err := initKeyStore(config.PrivateKeyStores...)
+		return err
+
 	}
+
 	if config.TracingEnabled {
 		// jaeger failing to connect to the agent / initializing shouldn't prevent keyless from starting,
 		// so if we encounter an error we should log it but move on.
@@ -269,8 +285,7 @@ func main() {
 	// daemon blocked waiting on input can be hard to debug.
 	if needNewCertAndKey() {
 		if needInteractivePrompt() {
-			log.Error("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
-			os.Exit(1)
+			return fmt.Errorf("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
 		}
 		initializeServerCertAndKey()
 	}
@@ -278,16 +293,16 @@ func main() {
 	cfg := server.DefaultServeConfig()
 	s, err := server.NewServerFromFile(cfg, config.CertFile, config.KeyFile, config.CACertFile)
 	if err != nil {
-		log.Fatal("cannot start server:", err)
+		return fmt.Errorf("cannot start server: %w", err)
 	}
 
 	if !currentTime.IsZero() {
 		s.TLSConfig().Time = func() time.Time { return currentTime }
 	}
 
-	keys, err := initKeyStore()
+	keys, err := initKeyStore(config.PrivateKeyStores...)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	s.SetKeystore(keys)
 
@@ -304,18 +319,18 @@ func main() {
 		config.CACertFile,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	certmetrics.Observe(certs...)
 	go func() {
 		log.Critical(s.MetricsListenAndServe(net.JoinHostPort("", strconv.Itoa(config.MetricsPort))))
 	}()
-	log.Fatal(s.ListenAndServe(net.JoinHostPort("", strconv.Itoa(config.Port))))
+	return s.ListenAndServe(net.JoinHostPort("", strconv.Itoa(config.Port)))
 }
 
-func initKeyStore() (server.Keystore, error) {
+func initKeyStore(privateKeyStores ...PrivateKeyStoreConfig) (server.Keystore, error) {
 	keys := server.NewDefaultKeystore()
-	for _, store := range config.PrivateKeyStores {
+	for _, store := range privateKeyStores {
 		switch {
 		case store.Dir != "":
 			if err := keys.AddFromDir(store.Dir, server.DefaultLoadKey); err != nil {
