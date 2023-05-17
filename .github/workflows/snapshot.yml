@@ -9,14 +9,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: sudo apt-get update && sudo apt-get install -y softhsm2
-      - run: sudo cp -r tests/testdata/tokens/* /var/lib/softhsm/token
+      - run: sudo cp -r tests/testdata/tokens/* /var/lib/softhsm/tokens
       - run: make snapshot
       # latest snapshot looks like dist/gokeyless_0.0.0-SNAPSHOT-99d510e_linux_amd64.deb
       - run: sudo dpkg -i dist/*.deb
       - run: sudo gokeyless --version
       - run: gokeyless --keystore-debug -c tests/testdata/keystoredebug-dir.yaml
-      # this line reproduces behavior in #324
-      # - run: sudo gokeyless --keystore-debug -c tests/testdata/keystoredebug-softhsm.yaml
+      # test for  #324
+      - run: sudo ./dist/gokeyless-linux_linux_amd64_v1/gokeyless --keystore-debug -c tests/testdata/keystoredebug-softhsm.yaml
+      - run: sudo gokeyless --keystore-debug -c tests/testdata/keystoredebug-softhsm.yaml
       - name: ensure systemd service can start
         run: sudo systemctl start gokeyless
       - name: ensure keyless user exists

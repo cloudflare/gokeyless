@@ -31,7 +31,6 @@ builds:
       - -buildvcs=false
     ldflags:
       - -s -w -X main.version={{.Version}}
-      - -linkmode external -extldflags "-static"
 archives:
   - format: binary
 release:
