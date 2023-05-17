@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber/jaeger-client-go"
 
+	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
@@ -28,6 +30,11 @@ const (
 	defaultEndpoint = "https://api.cloudflare.com/client/v4/certificates/"
 )
 
+func (c *Config) initializeWithDefaults() {
+	c.fs = afero.NewOsFs()
+	c.reader = os.Stdin
+}
+
 // Config represents the gokeyless configuration file.
 type Config struct {
 	LogLevel int `yaml:"loglevel" mapstructure:"loglevel"`
@@ -37,6 +44,8 @@ type Config struct {
 	OriginCAKey  string `yaml:"origin_ca_api_key" mapstructure:"origin_ca_api_key"`
 	InitEndpoint string `yaml:"init_endpoint" mapstructure:"init_endpoint"`
 
+	fs         afero.Fs
+	reader     io.Reader
 	CertFile   string `yaml:"auth_cert" mapstructure:"auth_cert"`
 	KeyFile    string `yaml:"auth_key" mapstructure:"auth_key"`
 	CSRFile    string `yaml:"auth_csr" mapstructure:"auth_csr"`
@@ -213,6 +222,7 @@ func runMain() error {
 		return err
 	}
 	log.Level = config.LogLevel
+	config.initializeWithDefaults()
 
 	switch {
 	case helpMode:
@@ -227,9 +237,9 @@ func runMain() error {
 		// Allow manual activation (requires the CSR to be manually signed).
 		// manual activation won't proceed to start the server
 		log.Info("now check server csr and key")
-		if !verifyCSRAndKey() {
+		if !config.verifyCSRAndKey() {
 			log.Info("csr and key are not usable. generating server csr and key")
-			manualActivation()
+			config.manualActivation()
 
 			log.Infof("contact Cloudflare for manual signing of csr in %q",
 				config.CSRFile)
@@ -239,8 +249,10 @@ func runMain() error {
 		}
 		return nil
 	case configMode:
-		if needNewCertAndKey() {
-			initializeServerCertAndKey()
+		if config.needNewCertAndKey() {
+			if err := config.initializeServerCertAndKey(); err != nil {
+				log.Fatalf("failed to initialize: %s", err)
+			}
 		} else {
 			log.Info("already configured; exiting")
 		}
@@ -282,11 +294,13 @@ func runMain() error {
 	// and log an error instead (in case the server is running as a daemon).
 	// Failing hard with an error message makes the problem obvious, whereas a
 	// daemon blocked waiting on input can be hard to debug.
-	if needNewCertAndKey() {
-		if needInteractivePrompt() {
+	if config.needNewCertAndKey() {
+		if config.needInteractivePrompt() {
 			return fmt.Errorf("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
 		}
-		initializeServerCertAndKey()
+		if err := config.initializeServerCertAndKey(); err != nil {
+			log.Fatalf("failed to initialize: %s", err)
+		}
 	}
 
 	cfg := server.DefaultServeConfig()
@@ -371,7 +385,7 @@ func validCertExpiry(cert *x509.Certificate) bool {
 }
 
 // needNewCertAndKey checks the validity of certificate and key
-func needNewCertAndKey() bool {
+func (config Config) needNewCertAndKey() bool {
 	_, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
 	if err != nil {
 		log.Errorf("cannot load server cert/key: %v", err)
@@ -392,7 +406,7 @@ func needNewCertAndKey() bool {
 }
 
 // verifyCSRAndKey checks if csr and key files exist and if they match
-func verifyCSRAndKey() bool {
+func (config Config) verifyCSRAndKey() bool {
 	csrBytes, err := os.ReadFile(config.CSRFile)
 	if err != nil {
 		log.Errorf("cannot read csr file: %v", err)
