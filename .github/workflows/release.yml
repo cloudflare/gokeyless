@@ -20,4 +20,4 @@ jobs:
         uses: actions/setup-go@v3
       - run: make release-github
         env:
-          GORELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
