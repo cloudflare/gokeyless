@@ -119,7 +119,7 @@ release-github:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		--env GITHUB_TOKEN \
-		ghcr.io/gythialy/golang-cross:latest --clean
+		ghcr.io/goreleaser/goreleaser-cross:latest --clean
 
 
 .PHONY: snapshot
@@ -127,5 +127,5 @@ snapshot:
 	docker run --rm --privileged -v $(PWD):/go/tmp \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
-		ghcr.io/gythialy/golang-cross:latest --clean --snapshot --skip-publish
+		ghcr.io/goreleaser/goreleaser-cross:latest --clean --snapshot --skip-publish
 
