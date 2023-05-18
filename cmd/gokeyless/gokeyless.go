@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -230,6 +231,10 @@ func runMain() error {
 		return nil
 	case versionMode:
 		fmt.Println("gokeyless version", version)
+		if info, ok := debug.ReadBuildInfo(); ok {
+			fmt.Printf("%s built with %s\n", info.Path, info.GoVersion)
+		}
+
 		return nil
 	case manualMode && configMode:
 		return fmt.Errorf("can't specify both --manual-activation and --config-only!")
