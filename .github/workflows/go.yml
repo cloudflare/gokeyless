@@ -36,15 +36,13 @@ jobs:
         env:
           TEST_SOFT_HSM: true
       - uses: codecov/codecov-action@v3
-  lint:
+  golangci:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/setup-go@v4
         with:
-          go-version: ${{ matrix.go }}
-      - name: Install golint
-        run: go install ./vendor/golang.org/x/lint/golint
-      - name: Go Lint
-        run: make gokeyless vet lint
+          go-version: "stable"
+      - uses: actions/checkout@v3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3

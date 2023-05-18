@@ -128,4 +128,3 @@ snapshot:
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
 		ghcr.io/gythialy/golang-cross:latest --clean --snapshot --skip-publish
-

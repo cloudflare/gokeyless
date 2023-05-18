@@ -39,8 +39,6 @@ type Server struct {
 	tlsConfig *tls.Config
 	// keys contains the private keys and certificates for the server.
 	keys Keystore
-	// getCert is used for loading certificates.
-	getCert GetCert
 	// sealer is called for Seal and Unseal operations.
 	sealer Sealer
 	// dispatcher is an RPC server that exposes arbitrary APIs to the client.
@@ -92,7 +90,7 @@ func NewServerFromFile(config *ServeConfig, certFile, keyFile, caFile string) (*
 
 	keylessCA := x509.NewCertPool()
 	if !keylessCA.AppendCertsFromPEM(pemCerts) {
-		return nil, errors.New("gokeyless: failed to read keyless CA from PEM")
+		return nil, fmt.Errorf("gokeyless: failed to read keyless CA from PEM")
 	}
 	return NewServer(config, cert, keylessCA)
 }
@@ -252,7 +250,7 @@ func (h *handler) loop() error {
 	// In the event of a read timeout, gracefully close
 	ctx, end := context.WithDeadline(context.Background(), time.Now().Add(5*time.Second))
 	defer end()
-	h.tokens.Acquire(ctx, int64(h.s.config.maxConnPendingRequests))
+	err = h.tokens.Acquire(ctx, int64(h.s.config.maxConnPendingRequests))
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 	h.close()
@@ -646,7 +644,7 @@ func (s *Server) ListenAndServe(addr string) error {
 		log.Infof("Listening at tcp://%s\n", l.Addr())
 		return s.Serve(l)
 	}
-	return errors.New("can't listen on empty address")
+	return fmt.Errorf("can't listen on empty address")
 }
 
 // UnixListenAndServe listens on the Unix socket address and handles
@@ -661,7 +659,7 @@ func (s *Server) UnixListenAndServe(path string) error {
 		log.Infof("Listening at unix://%s\n", l.Addr())
 		return s.Serve(l)
 	}
-	return errors.New("can't listen on empty path")
+	return fmt.Errorf("can't listen on empty path")
 }
 
 // Close shuts down the listeners and their active connections.
@@ -820,5 +818,5 @@ func (sc *serverCodec) WriteResponse(res *rpc.Response, body interface{}) error 
 }
 
 func (sc *serverCodec) Close() error {
-	return errors.New("an rpc server codec cannot be closed")
+	return fmt.Errorf("an rpc server codec cannot be closed")
 }

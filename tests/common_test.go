@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -114,7 +113,7 @@ func (DummyRPC) SleepAppend(in string, out *string) error {
 }
 
 func (DummyRPC) Error(_ string, _ *string) error {
-	return errors.New("remote rpc error")
+	return fmt.Errorf("remote rpc error")
 }
 
 func (d DummyRPC) PipeWrite(in []byte, out *int) (err error) {

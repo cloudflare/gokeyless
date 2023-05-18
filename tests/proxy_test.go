@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -33,7 +33,7 @@ func serverFunc(conn *tls.Conn) {
 func clientFunc(conn *tls.Conn) error {
 	defer conn.Close()
 	if !conn.ConnectionState().HandshakeComplete {
-		return errors.New("handshake didn't complete")
+		return fmt.Errorf("handshake didn't complete")
 	}
 
 	input := []byte("Hello World!")
@@ -46,7 +46,7 @@ func clientFunc(conn *tls.Conn) error {
 		return err
 	}
 	if bytes.Compare(input, output) != 0 {
-		return errors.New("input and output do not match")
+		return fmt.Errorf("input and output do not match")
 	}
 	return nil
 }

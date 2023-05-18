@@ -9,7 +9,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/asn1"
-	"errors"
 	"fmt"
 	"math/big"
 	"runtime"
@@ -81,14 +80,14 @@ func checkSignature(pub crypto.PublicKey, h crypto.Hash, sig []byte) error {
 		ecdsaSig := new(struct{ R, S *big.Int })
 		asn1.Unmarshal(sig, ecdsaSig)
 		if !ecdsa.Verify(ecdsaPub, hashMsg(h), ecdsaSig.R, ecdsaSig.S) {
-			return errors.New("failed to verify")
+			return fmt.Errorf("failed to verify")
 		}
 		return nil
 	}
 
 	if ed25519Pub, ok := pub.(ed25519.PublicKey); ok {
 		if !ed25519.Verify(ed25519Pub, testEd25519Msg, sig) {
-			return errors.New("failed to verify")
+			return fmt.Errorf("failed to verify")
 		}
 		return nil
 	}
@@ -269,7 +268,7 @@ func (s *IntegrationTestSuite) TestConcurrency() {
 		if err != nil {
 			err1 = err
 		} else if time.Since(start) < time.Second {
-			err1 = errors.New("slow request came back too quickly")
+			err1 = fmt.Errorf("slow request came back too quickly")
 		}
 
 		wg.Done()
@@ -288,7 +287,7 @@ func (s *IntegrationTestSuite) TestConcurrency() {
 			err2 = err
 		} else if time.Since(start) > time.Second {
 			// Verify fast request came back before slow request did.
-			err2 = errors.New("fast request took too long")
+			err2 = fmt.Errorf("fast request took too long")
 		}
 
 		wg.Done()

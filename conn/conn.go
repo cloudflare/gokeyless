@@ -231,7 +231,7 @@ func (c *Conn) IsClosed() bool {
 
 // sendOp sends operation, returning a channel to wait for results
 func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "Conn.sendOp")
+	span, _ := opentracing.StartSpanFromContext(ctx, "Conn.sendOp")
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &op)
 	// NOTE: It's very important that this channel be buffered so that if we
@@ -282,7 +282,7 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 	// Take into account how long we've already been waiting since the beginning
 	// of writing to the connection (which could have taken a while if the
 	// connection was backed up).
-	left := end.Sub(time.Now())
+	left := time.Until(end)
 	go c.timeoutRequest(id, left)
 	return response, nil
 
@@ -325,7 +325,7 @@ func (c *Conn) Ping(ctx context.Context, data []byte) error {
 
 	switch result.Opcode {
 	case protocol.OpPong:
-		if bytes.Compare(data, result.Payload) != 0 {
+		if !bytes.Equal(data, result.Payload) {
 			return fmt.Errorf("ping: got mismatched response payload: 0x%x != 0x%x", result.Payload, data)
 		}
 		return nil

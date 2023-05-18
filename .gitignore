@@ -3,3 +3,5 @@ build/
 *.swp
 dist/
 coverage.txt
+*.key
+!/**/testdata/*.key

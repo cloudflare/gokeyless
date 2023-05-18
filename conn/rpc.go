@@ -68,7 +68,7 @@ func (cc *clientCodec) processResponse(response chan *result, req *rpc.Request) 
 		synthesizeError(cc.pw, req, res.op.GetError())
 		return
 	}
-	cc.pw.Write(res.op.Payload)
+	_, _ = cc.pw.Write(res.op.Payload)
 }
 
 func synthesizeError(w io.Writer, req *rpc.Request, err error) {
@@ -78,8 +78,8 @@ func synthesizeError(w io.Writer, req *rpc.Request, err error) {
 		Error:         err.Error(),
 	}
 	enc := gob.NewEncoder(w)
-	enc.Encode(resp)
-	enc.Encode(0) // Send empty value to feed the reader
+	_ = enc.Encode(resp)
+	_ = enc.Encode(0) // Send empty value to feed the reader
 }
 
 func (cc *clientCodec) ReadResponseHeader(res *rpc.Response) error {

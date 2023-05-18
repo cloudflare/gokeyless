@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/cloudflare/cfssl/log"
 	"github.com/googleapis/gax-go/v2"
-	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -91,7 +91,7 @@ func (k KMSSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (sig
 	}
 
 	// https://cloud.google.com/kms/docs/data-integrity-guidelines
-	if result.VerifiedDigestCrc32C == false {
+	if !result.VerifiedDigestCrc32C {
 		return nil, fmt.Errorf("google: digest CRC32 not verified")
 	}
 	if int64(crc32c(result.Signature)) != result.SignatureCrc32C.Value {

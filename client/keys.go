@@ -6,7 +6,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/subtle"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -155,7 +154,7 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 	}
 
 	if len(result.Payload) == 0 {
-		return nil, errors.New("empty payload")
+		return nil, fmt.Errorf("empty payload")
 	}
 
 	return result.Payload, nil
@@ -173,12 +172,12 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	// If opts specifies a hash function, then the message is expected to be the
 	// length of the output of that hash function.
 	if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
-		return nil, errors.New("input must be hashed message")
+		return nil, fmt.Errorf("input must be hashed message")
 	}
 
 	op := signOpFromSignerOpts(key, opts)
 	if op == protocol.OpError {
-		return nil, errors.New("invalid key type, hash or options")
+		return nil, fmt.Errorf("invalid key type, hash or options")
 	}
 	return key.execute(ctx, op, msg)
 }
@@ -198,7 +197,7 @@ func (key *Decrypter) Decrypt(rand io.Reader, msg []byte, opts crypto.DecrypterO
 	defer span.Finish()
 	opts1v15, ok := opts.(*rsa.PKCS1v15DecryptOptions)
 	if opts != nil && !ok {
-		return nil, errors.New("invalid options for Decrypt")
+		return nil, fmt.Errorf("invalid options for Decrypt")
 	}
 
 	ptxt, err := key.execute(ctx, protocol.OpRSADecrypt, msg)

@@ -8,7 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/asn1"
-	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -195,10 +195,10 @@ func NewSignTests(priv crypto.Signer) map[string]TestFunc {
 					ecdsaSig := new(struct{ R, S *big.Int })
 					asn1.Unmarshal(sig, ecdsaSig)
 					if !ecdsa.Verify(pub, msg, ecdsaSig.R, ecdsaSig.S) {
-						return errors.New("ecdsa verify failed")
+						return fmt.Errorf("ecdsa verify failed")
 					}
 				default:
-					return errors.New("unknown public key type")
+					return fmt.Errorf("unknown public key type")
 				}
 
 				return nil
@@ -223,21 +223,21 @@ func NewDecryptTest(decrypter crypto.Decrypter) TestFunc {
 			return
 		}
 		if bytes.Compare(ptxt, m) != 0 {
-			return errors.New("rsa decrypt failed")
+			return fmt.Errorf("rsa decrypt failed")
 		}
 
 		if m, err = decrypter.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt)}); err != nil {
 			return
 		}
 		if bytes.Compare(ptxt, m) != 0 {
-			return errors.New("rsa decrypt failed")
+			return fmt.Errorf("rsa decrypt failed")
 		}
 
 		if m, err = decrypter.Decrypt(r, c, &rsa.PKCS1v15DecryptOptions{SessionKeyLen: len(ptxt) + 1}); err != nil {
 			return
 		}
 		if bytes.Compare(ptxt, m) == 0 {
-			return errors.New("rsa decrypt succeeded despite incorrect SessionKeyLen")
+			return fmt.Errorf("rsa decrypt succeeded despite incorrect SessionKeyLen")
 		}
 		return nil
 	}

@@ -11,7 +11,6 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -271,7 +270,7 @@ func GetDigest(pub crypto.PublicKey) (Digest, error) {
 		return sha256.Sum256([]byte(fmt.Sprintf("%X", rsaPub.N))), nil
 	}
 
-	return nilDigest, errors.New("can't compute digest for non-RSA public key")
+	return nilDigest, fmt.Errorf("can't compute digest for non-RSA public key")
 }
 
 // Header represents the header of a Keyless protocol message.
@@ -687,7 +686,7 @@ func (o *Operation) WriteTo(w io.Writer) (n int64, err error) {
 // GetError returns string errors associated with error response codes.
 func (o *Operation) GetError() error {
 	if o.Opcode != OpError || len(o.Payload) != 1 {
-		return errors.New("keyless: no error")
+		return fmt.Errorf("keyless: no error")
 	}
 	return Error(o.Payload[0])
 }

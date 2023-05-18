@@ -55,7 +55,7 @@ func SetOperationSpanTags(span opentracing.Span, op *protocol.Operation) {
 
 // CallRPC wraps rpc.Call with a trace
 func CallRPC(ctx context.Context, rpc *rpc.Client, serviceMethod string, args interface{}, reply interface{}) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("rpc: %s", serviceMethod))
+	span, _ := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("rpc: %s", serviceMethod))
 	defer span.Finish()
 	ext.SpanKind.Set(span, ext.SpanKindRPCClientEnum)
 	return rpc.Call(serviceMethod, args, reply)

@@ -40,10 +40,6 @@ var (
 		Name: "keyless_failed_connection",
 		Help: "Number of connection/transport failure, in tls handshake and etc.",
 	})
-	serverUtilization = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "server_utilization",
-		Help: "The [0,1]-percentage utilization of the server's worker threads.",
-	}, []string{"type"})
 )
 
 func logRequest(opcode protocol.Op) {

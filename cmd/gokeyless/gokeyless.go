@@ -107,7 +107,7 @@ func init() {
 	flagset.String("origin_ca_api_key", "", "Cloudflare Origin CA API key")
 	flagset.String("init-endpoint", "", "Cloudflare API endpoint for server initialization")
 	viper.SetDefault("init_endpoint", defaultEndpoint)
-	flagset.MarkHidden("init-endpoint") // users should not need this
+	_ = flagset.MarkHidden("init-endpoint") // users should not need this
 	flagset.String("auth-cert", "", "Key server authentication certificate")
 	viper.SetDefault("auth_cert", "server.pem")
 	flagset.String("auth-key", "", "Key server authentication key")
@@ -134,14 +134,14 @@ func init() {
 	// counterparts.
 	flagset.StringVarP(&configFile, "config-file", "c", "", "Configuration file path")
 	flagset.BoolVar(&manualMode, "manual-activation", false, "The keyserver generates key and CSR, and exits. Use the CSR to get server certificate issued manually.")
-	flagset.MarkHidden("manual-activation") // users should not need this
+	_ = flagset.MarkHidden("manual-activation") // users should not need this
 	flagset.BoolVar(&configMode, "config-only", false, "Perform interactive configuration, but do not run server")
 	flagset.BoolVarP(&versionMode, "version", "v", false, "Print version and exit")
 	flagset.BoolVarP(&helpMode, "help", "h", false, "Print usage exit")
 	flagset.BoolVarP(&keystoreDbgMode, "keystore-debug", "d", false, "try to connect to the defined keystores")
 	// Temporary option to demo config overrides.
 	flagset.BoolVarP(&outputConfigMode, "output-config", "o", false, "Print usage exit")
-	flagset.MarkHidden("output_config")
+	_ = flagset.MarkHidden("output_config")
 }
 
 func initConfig() error {

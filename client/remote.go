@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -332,13 +331,13 @@ type ewmaLatency struct {
 	measured bool
 }
 
-func (l ewmaLatency) Update(val time.Duration) {
+func (l *ewmaLatency) Update(val time.Duration) {
 	l.measured = true
 	l.val /= 2
 	l.val += (val / 2)
 }
 
-func (l ewmaLatency) Reset() {
+func (l *ewmaLatency) Reset() {
 	l.val = 0
 	l.measured = false
 }
@@ -377,7 +376,7 @@ type Group struct {
 // NewGroup creates a new group from a set of remotes.
 func NewGroup(remotes []Remote) (*Group, error) {
 	if len(remotes) == 0 {
-		return nil, errors.New("attempted to create empty remote group")
+		return nil, fmt.Errorf("attempted to create empty remote group")
 	}
 	g := new(Group)
 
@@ -392,7 +391,7 @@ func NewGroup(remotes []Remote) (*Group, error) {
 func (g *Group) Dial(c *Client) (conn *Conn, err error) {
 	g.RLock()
 	if len(g.remotes) == 0 {
-		err = errors.New("remote group empty")
+		err = fmt.Errorf("remote group empty")
 		return nil, err
 	}
 	// n is the number of trials.

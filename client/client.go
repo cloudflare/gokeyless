@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -77,7 +76,7 @@ func NewClientFromFile(certFile, keyFile, caFile string) (*Client, error) {
 
 	keyserverCA := x509.NewCertPool()
 	if !keyserverCA.AppendCertsFromPEM(pemCerts) {
-		return nil, errors.New("gokeyless/client: failed to read keyserver CA from PEM")
+		return nil, fmt.Errorf("gokeyless/client: failed to read keyserver CA from PEM")
 	}
 
 	return NewClient(cert, keyserverCA), nil
@@ -275,13 +274,13 @@ func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserve
 }
 
 // NewRemoteSignerByPublicKey returns a remote keyserver based signer
-// with the the public key.
+// with the public key.
 func (c *Client) NewRemoteSignerByPublicKey(ctx context.Context, server string, pub crypto.PublicKey) (crypto.Signer, error) {
 	return c.NewRemoteSignerTemplate(ctx, server, pub, "", nil)
 }
 
 // NewRemoteSignerByCert returns a remote keyserver based signer
-// with the the public key contained in a x509.Certificate.
+// with the public key contained in a x509.Certificate.
 func (c *Client) NewRemoteSignerByCert(ctx context.Context, server string, cert *x509.Certificate) (crypto.Signer, error) {
 	return c.NewRemoteSignerTemplate(ctx, server, cert.PublicKey, "", nil)
 }
@@ -292,7 +291,7 @@ func (c *Client) NewRemoteSignerByCert(ctx context.Context, server string, cert 
 func (c *Client) NewRemoteSignerByCertPEM(ctx context.Context, server string, certsPEM []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(certsPEM)
 	if block == nil {
-		return nil, errors.New("couldn't parse PEM bytes")
+		return nil, fmt.Errorf("couldn't parse PEM bytes")
 	}
 
 	cert, err := x509.ParseCertificate(block.Bytes)
@@ -373,7 +372,7 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 	}
 
 	if len(cert.Certificate) == 0 {
-		return fail(errors.New("crypto/tls: failed to parse certificate PEM data"))
+		return fail(fmt.Errorf("crypto/tls: failed to parse certificate PEM data"))
 	}
 
 	if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
@@ -391,18 +390,18 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 func DefaultLoadPubKey(in []byte) (crypto.PublicKey, error) {
 	block, _ := pem.Decode(in)
 	if block == nil {
-		return nil, errors.New("failed to parse PEM block containing the public key")
+		return nil, fmt.Errorf("failed to parse PEM block containing the public key")
 	}
 
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil, errors.New("failed to parse DER encoded public key: " + err.Error())
+		return nil, fmt.Errorf("failed to parse DER encoded public key: " + err.Error())
 	}
 
 	switch pub := pub.(type) {
 	case *rsa.PublicKey, *ecdsa.PublicKey:
 		return pub, nil
 	default:
-		return nil, errors.New("unknown/unsupported type of public key")
+		return nil, fmt.Errorf("unknown/unsupported type of public key")
 	}
 }

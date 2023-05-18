@@ -1,0 +1,13 @@
+run:
+  tests: false
+  skip-dirs:
+    - tests
+linters:
+  enable:
+    - revive
+linters-settings:
+  revive:
+    severity: warning
+    rules:
+      - name: exported
+        arguments: ["checkPrivateReceivers", "sayRepetitiveInsteadOfStutters"]
