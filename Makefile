@@ -118,7 +118,7 @@ release-github:
 	docker run --rm --privileged -v $(PWD):/go/tmp \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
-		--env GORELEASER_GITHUB_TOKEN \
+		--env GITHUB_TOKEN \
 		ghcr.io/gythialy/golang-cross:latest --clean
 
 
