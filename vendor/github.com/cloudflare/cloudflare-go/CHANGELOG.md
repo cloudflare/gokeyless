@@ -1,4 +1,57 @@
-## 0.68.0 (Unreleased)
+## 0.70.0 (Unreleased)
+
+## 0.69.0 (June 7th, 2023)
+
+BREAKING CHANGES:
+
+* stream: StreamVideo.Duration has changed from int to float64. ([#1190](https://github.com/cloudflare/cloudflare-go/issues/1190))
+
+ENHANCEMENTS:
+
+* access: Added `self_hosted_domains` support to access applications ([#1281](https://github.com/cloudflare/cloudflare-go/issues/1281))
+* custom_hostname: add support for `bundle_method` TLS configuration ([#1298](https://github.com/cloudflare/cloudflare-go/issues/1298))
+* devices_policy: Add missing description field to policy ([#1294](https://github.com/cloudflare/cloudflare-go/issues/1294))
+* stream: added metadata support ([#1088](https://github.com/cloudflare/cloudflare-go/issues/1088))
+
+BUG FIXES:
+
+* email_routing_destination: return encountered error, not `ErrMissingAccountID` all the time ([#1297](https://github.com/cloudflare/cloudflare-go/issues/1297))
+* stream: Fix a bug that cannot unmarshal video duration number. ([#1190](https://github.com/cloudflare/cloudflare-go/issues/1190))
+
+DEPENDENCIES:
+
+* deps: bumps dependabot/fetch-metadata from 1.5.0 to 1.5.1 ([#1292](https://github.com/cloudflare/cloudflare-go/issues/1292))
+* deps: bumps github.com/hashicorp/go-retryablehttp from 0.7.2 to 0.7.3 ([#1300](https://github.com/cloudflare/cloudflare-go/issues/1300))
+* deps: bumps github.com/stretchr/testify from 1.8.3 to 1.8.4 ([#1296](https://github.com/cloudflare/cloudflare-go/issues/1296))
+* deps: bumps github.com/urfave/cli/v2 from 2.25.3 to 2.25.5 ([#1295](https://github.com/cloudflare/cloudflare-go/issues/1295))
+
+## 0.68.0 (May 24th, 2023)
+
+BREAKING CHANGES:
+
+* r2_bucket: change creation time from string to *time.Time ([#1265](https://github.com/cloudflare/cloudflare-go/issues/1265))
+
+ENHANCEMENTS:
+
+* adds OriginRequest field to UnvalidatedIngressRule struct. ([#1138](https://github.com/cloudflare/cloudflare-go/issues/1138))
+* lists: add support for hostname and ASN lists. ([#1288](https://github.com/cloudflare/cloudflare-go/issues/1288))
+* pages: add support for Smart Placement. Added `Placement` in `PagesProjectDeploymentConfigEnvironment`. ([#1279](https://github.com/cloudflare/cloudflare-go/issues/1279))
+* r2_bucket: add support for getting a bucket ([#1265](https://github.com/cloudflare/cloudflare-go/issues/1265))
+* tunnels: add support for `access` and `http2Origin` keys ([#1291](https://github.com/cloudflare/cloudflare-go/issues/1291))
+* workers: add support for Smart Placement. Added `Placement` in `CreateWorkerParams`. ([#1279](https://github.com/cloudflare/cloudflare-go/issues/1279))
+* zone: Added `GetCacheReserve` and `UpdateacheReserve` to allow setting Cache Reserve for a zone. ([#1278](https://github.com/cloudflare/cloudflare-go/issues/1278))
+
+BUG FIXES:
+
+* dns: fix MX record priority not set by UpdateDNSRecord ([#1290](https://github.com/cloudflare/cloudflare-go/issues/1290))
+* flarectl/dns: ensure MX priority value is dereferenced ([#1289](https://github.com/cloudflare/cloudflare-go/issues/1289))
+* turnstile: remove `SiteKey` being sent in rotate secret's request body ([#1285](https://github.com/cloudflare/cloudflare-go/issues/1285))
+* turnstile: remove `SiteKey`/`Secret` being sent in update request body ([#1284](https://github.com/cloudflare/cloudflare-go/issues/1284))
+
+DEPENDENCIES:
+
+* deps: bumps dependabot/fetch-metadata from 1.4.0 to 1.5.0 ([#1287](https://github.com/cloudflare/cloudflare-go/issues/1287))
+* deps: bumps github.com/stretchr/testify from 1.8.2 to 1.8.3 ([#1286](https://github.com/cloudflare/cloudflare-go/issues/1286))
 
 ## 0.67.0 (May 10th, 2023)
 
