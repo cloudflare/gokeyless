@@ -64,6 +64,9 @@ type Config struct {
 	TracingEnabled    bool    `yaml:"tracing_enabled" mapstructure:"tracing_enabled"`
 	TracingAddress    string  `yaml:"tracing_address" mapstructure:"tracing_address"`
 	TracingSampleRate float64 `yaml:"tracing_sample_rate" mapstructure:"tracing_sample_rate"` // between 0 and 1
+
+	SignTimeout    string `yaml:"sign_timeout" mapstructure:"sign_timeout"`
+	SignRetryCount int    `yaml:"sign_retry_count" mapstructure:"sign_retry_count"`
 }
 
 // PrivateKeyStoreConfig defines a key store.
@@ -309,6 +312,16 @@ func runMain() error {
 	}
 
 	cfg := server.DefaultServeConfig()
+	if config.SignTimeout != "" {
+		signTimeoutDuration, err := time.ParseDuration(config.SignTimeout)
+		if err != nil {
+			log.Fatalf("failed to parse signTimeout: %s", err)
+		}
+		cfg = cfg.WithSignTimeout(signTimeoutDuration)
+	}
+	if config.SignRetryCount > 0 {
+		cfg = cfg.WithSignRetryCount(config.SignRetryCount)
+	}
 	s, err := server.NewServerFromFile(cfg, config.CertFile, config.KeyFile, config.CACertFile)
 	if err != nil {
 		return fmt.Errorf("cannot start server: %w", err)
