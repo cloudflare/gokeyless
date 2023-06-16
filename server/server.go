@@ -456,7 +456,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	signSpan, _ := opentracing.StartSpanFromContext(ctx, "execute.Sign")
 	defer signSpan.Finish()
 	var sig []byte
-	for attempts := s.signRetryCount; attempts > 0; attempts-- {
+	for attempts := 1 + s.signRetryCount; attempts > 0; attempts-- {
 		var err error
 		// If signTimeout is not set, the value will be zero
 		if s.signTimeout == 0 {
@@ -478,8 +478,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		}
 		if err != nil {
 			if attempts > 1 {
-				log.Debugf("Connection %v: failed sign attempt: %s", connName, err)
-				log.Debugf("Connection %v: retry sign connection", connName)
+				log.Debugf("Connection %v: failed sign attempt: %s, %d attempt(s) left", connName, err, attempts-1)
 				continue
 			} else {
 				tracing.LogError(span, err)
