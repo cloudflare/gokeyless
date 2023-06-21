@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/gokeyless/certmetrics"
+	"github.com/cloudflare/gokeyless/signer"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -361,12 +362,12 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 		}
 
-		if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
+		if ed25519Key, ok := key.(*signer.WrappedSigner).Inner.(ed25519.PrivateKey); ok {
 			sig := ed25519.Sign(ed25519Key, pkt.Operation.Payload)
 			return makeRespondResponse(pkt, sig)
 		}
 
-		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
+		sig, err := key.Sign(ctx, rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
 			log.Errorf("Connection: %s: Signing error: %v", connName, protocol.ErrCrypto, err)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
@@ -389,8 +390,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			log.Errorf("Connection %v: %s: Key is not RSA", connName, protocol.ErrCrypto)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
-
-		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+		if rsaKey, ok := key.(*signer.WrappedSigner).Inner.(*rsa.PrivateKey); ok {
 			// Decrypt without removing padding; that's the client's responsibility.
 			ptxt, err := textbook_rsa.Decrypt(rsaKey, pkt.Operation.Payload)
 			if err != nil {
@@ -448,10 +448,10 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 	}
 
-	signSpan, _ := opentracing.StartSpanFromContext(ctx, "execute.Sign")
+	signSpan, ctx := opentracing.StartSpanFromContext(ctx, "execute.Sign")
 	defer signSpan.Finish()
 	var sig []byte
-	sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
+	sig, err = key.Sign(ctx, rand.Reader, pkt.Operation.Payload, opts)
 	if err != nil {
 		tracing.LogError(span, err)
 		log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)

@@ -12,6 +12,7 @@ import (
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/signer"
 	"github.com/googleapis/gax-go/v2"
 	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -22,7 +23,7 @@ type kmsClient interface {
 	GetPublicKey(ctx context.Context, req *kmspb.GetPublicKeyRequest, opts ...gax.CallOption) (*kmspb.PublicKey, error)
 }
 
-// KMSSigner is a crypto.Signer for Google Cloud KMS
+// KMSSigner is a signer.CtxSigner for Google Cloud KMS
 type KMSSigner struct {
 	client kmsClient
 	name   string
@@ -34,7 +35,7 @@ type KMSSigner struct {
 }
 
 // must conform to the interface
-var _ crypto.Signer = KMSSigner{}
+var _ signer.CtxSigner = KMSSigner{}
 
 // New creates a new signer with the given KMS key resource name
 func New(name string) (*KMSSigner, error) {
@@ -58,8 +59,8 @@ func (k KMSSigner) Public() crypto.PublicKey {
 	return k.pub
 }
 
-// Sign makes an API call to sign the provided bytes, mapping the hash in `crypto.SignerOps` to a JWK Signature Algorithm
-func (k KMSSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+// Sign makes an API call to sign the provided bytes, mapping the hash in `signer.CtxSignerOps` to a JWK Signature Algorithm
+func (k KMSSigner) Sign(ctx context.Context, _ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	var payload kmspb.Digest
 	switch opts {
 	case crypto.SHA256: // for OpECDSASignSHA256 and OpRSASignSHA256
@@ -85,7 +86,7 @@ func (k KMSSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (sig
 	}
 
 	// Call the API.
-	result, err := k.client.AsymmetricSign(context.Background(), req)
+	result, err := k.client.AsymmetricSign(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("google: failed to sign digest: %w", err)
 	}

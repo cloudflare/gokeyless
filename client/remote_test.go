@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"log"
@@ -11,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudflare/cfssl/helpers"
-	"github.com/cloudflare/cfssl/helpers/derhelpers"
 	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/signer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,8 +35,8 @@ var (
 	sAddr       string
 	s           *server.Server
 	c           *Client
-	rsaSigner   crypto.Signer
-	ecdsaSigner crypto.Signer
+	rsaSigner   signer.CtxSigner
+	ecdsaSigner signer.CtxSigner
 	remote      Remote
 	deadRemote  Remote
 )
@@ -48,15 +46,15 @@ func fixedCurrentTime() time.Time {
 	return time.Date(2019, time.March, 1, 0, 0, 0, 0, time.UTC)
 }
 
-// LoadKey attempts to load a private key from PEM or DER.
-func LoadKey(in []byte) (priv crypto.Signer, err error) {
-	priv, err = helpers.ParsePrivateKeyPEM(in)
-	if err == nil {
-		return priv, nil
-	}
+// // LoadKey attempts to load a private key from PEM or DER.
+// func LoadKey(in []byte) (priv crypto.Signer, err error) {
+// 	priv, err = helpers.ParsePrivateKeyPEM(in)
+// 	if err == nil {
+// 		return priv, nil
+// 	}
 
-	return derhelpers.ParsePrivateKeyDER(in)
-}
+// 	return derhelpers.ParsePrivateKeyDER(in)
+// }
 
 // Set up compatible server and client for use by tests.
 func TestMain(m *testing.M) {
@@ -68,7 +66,7 @@ func TestMain(m *testing.M) {
 	}
 	s.TLSConfig().Time = fixedCurrentTime
 
-	keys, err := server.NewKeystoreFromDir("testdata", LoadKey)
+	keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -241,7 +239,7 @@ func TestSlowServer(t *testing.T) {
 }
 
 // helper function reads a cert from a file and convert it to a signer
-func NewRemoteSignerByCertFile(filepath string) (crypto.Signer, error) {
+func NewRemoteSignerByCertFile(filepath string) (signer.CtxSigner, error) {
 	pemBytes, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err

@@ -67,7 +67,7 @@ func TestSmoke(t *testing.T) {
 	require.Equal(alg, keyvault.RS384)
 	require.NoError(err)
 
-	sig, err := k.Sign(nil, []byte("digest"), crypto.SHA384)
+	sig, err := k.Sign(context.Background(), nil, []byte("digest"), crypto.SHA384)
 	require.Equal(sig, []byte("digest"))
 	require.NoError(err)
 

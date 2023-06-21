@@ -4,6 +4,7 @@
 package server
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/cloudflare/gokeyless/internal/rfc7512"
 	"github.com/cloudflare/gokeyless/internal/test/params"
+	"github.com/cloudflare/gokeyless/signer"
 	"github.com/joshlf/testutil"
 )
 
@@ -42,15 +44,15 @@ func mustReadFull(tb testutil.TB, r io.Reader, b []byte) {
 	testutil.MustPrefix(tb, "could not perform full read", err)
 }
 
-func benchSign(b *testing.B, key crypto.Signer, rnd io.Reader, payload []byte, opts crypto.SignerOpts) {
+func benchSign(b *testing.B, key signer.CtxSigner, rnd io.Reader, payload []byte, opts crypto.SignerOpts) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := key.Sign(rnd, payload, opts)
+		_, err := key.Sign(context.Background(), rnd, payload, opts)
 		testutil.MustPrefix(b, "could not create signature", err)
 	}
 }
 
-func benchSignParallel(b *testing.B, key crypto.Signer, rnd io.Reader, payload []byte, opts crypto.SignerOpts) {
+func benchSignParallel(b *testing.B, key signer.CtxSigner, rnd io.Reader, payload []byte, opts crypto.SignerOpts) {
 	// The barrier is used to ensure that goroutines only start running once we
 	// release them.
 	var barrier, wg sync.WaitGroup
@@ -60,7 +62,7 @@ func benchSignParallel(b *testing.B, key crypto.Signer, rnd io.Reader, payload [
 		go func() {
 			barrier.Wait()
 			for i := 0; i < b.N; i++ {
-				_, err := key.Sign(rnd, payload, opts)
+				_, err := key.Sign(context.Background(), rnd, payload, opts)
 				testutil.MustPrefix(b, "could not create signature", err)
 			}
 			wg.Done()
@@ -134,7 +136,7 @@ func benchRandParallelFor(b *testing.B, op func(rnd io.Reader)) {
 // benchRandForSignRSA is an RSA signature-specific wrapper around benchRandFor.
 func benchRandForSignRSA(b *testing.B, params params.RSASignParams) {
 	key, payload := prepareRSASigner(b, 2, 2048, params.PayloadSize, true)
-	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
+	op := func(rnd io.Reader) { key.Sign(context.Background(), rnd, payload, params.Opts) }
 	benchRandFor(b, op)
 }
 
@@ -142,7 +144,7 @@ func benchRandForSignRSA(b *testing.B, params params.RSASignParams) {
 // benchRandFor.
 func benchRandParallelForSignRSA(b *testing.B, params params.RSASignParams) {
 	key, payload := prepareRSASigner(b, 2, 2048, params.PayloadSize, true)
-	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
+	op := func(rnd io.Reader) { key.Sign(context.Background(), rnd, payload, params.Opts) }
 	benchRandParallelFor(b, op)
 }
 
@@ -158,7 +160,7 @@ func benchSignParallelRSA(b *testing.B, params params.RSASignParams) {
 
 // prepareRSASigner performs the boilerplate of generating values needed to
 // benchmark RSA signatures.
-func prepareRSASigner(b *testing.B, primes, bits int, payloadsize int, precompute bool) (key crypto.Signer, payload []byte) {
+func prepareRSASigner(b *testing.B, primes, bits int, payloadsize int, precompute bool) (key signer.CtxSigner, payload []byte) {
 	k, err := rsa.GenerateMultiPrimeKey(rand.Reader, primes, bits)
 	testutil.MustPrefix(b, "could not generate RSA key", err)
 	if !precompute {
@@ -166,13 +168,13 @@ func prepareRSASigner(b *testing.B, primes, bits int, payloadsize int, precomput
 	}
 	payload = make([]byte, payloadsize)
 	mustReadFull(b, rand.Reader, payload[:])
-	return k, payload
+	return signer.WrapSigner(k), payload
 }
 
 // benchRandForSignECDSA is an ECDSA signature-specific wrapper around benchRandFor.
 func benchRandForSignECDSA(b *testing.B, params params.ECDSASignParams) {
 	key, payload := prepareECDSASigner(b, params.Curve, params.PayloadSize)
-	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
+	op := func(rnd io.Reader) { key.Sign(context.Background(), rnd, payload, params.Opts) }
 	benchRandFor(b, op)
 }
 
@@ -180,7 +182,7 @@ func benchRandForSignECDSA(b *testing.B, params params.ECDSASignParams) {
 // benchRandParallelFor.
 func benchRandParallelForSignECDSA(b *testing.B, params params.ECDSASignParams) {
 	key, payload := prepareECDSASigner(b, params.Curve, params.PayloadSize)
-	op := func(rnd io.Reader) { key.Sign(rnd, payload, params.Opts) }
+	op := func(rnd io.Reader) { key.Sign(context.Background(), rnd, payload, params.Opts) }
 	benchRandParallelFor(b, op)
 }
 
@@ -196,12 +198,12 @@ func benchSignParallelECDSA(b *testing.B, params params.ECDSASignParams) {
 
 // prepareECDSASigner performs the boilerplate of generating values needed to
 // benchmark ECDSA signatures.
-func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (key crypto.Signer, payload []byte) {
+func prepareECDSASigner(b *testing.B, curve elliptic.Curve, payloadsize int) (key signer.CtxSigner, payload []byte) {
 	k, err := ecdsa.GenerateKey(curve, rand.Reader)
 	testutil.MustPrefix(b, "could not generate ECDSA key", err)
 	payload = make([]byte, payloadsize)
 	mustReadFull(b, rand.Reader, payload[:])
-	return k, payload
+	return signer.WrapSigner(k), payload
 }
 
 func benchHSMSign(b *testing.B, params params.HSMSignParams) {
@@ -218,7 +220,7 @@ func benchHSMSignParallel(b *testing.B, params params.HSMSignParams) {
 
 // prepareHSMSigner performs the boilerplate of generating values needed to
 // benchmark signatures on a Hardware Security Module.
-func prepareHSMSigner(b *testing.B, pk11uri *rfc7512.PKCS11URI, payloadsize int) (key crypto.Signer, payload []byte) {
+func prepareHSMSigner(b *testing.B, pk11uri *rfc7512.PKCS11URI, payloadsize int) (key signer.CtxSigner, payload []byte) {
 	k, err := rfc7512.LoadPKCS11Signer(pk11uri)
 	testutil.MustPrefix(b, "could not load PKCS11 key", err)
 	payload = make([]byte, payloadsize)

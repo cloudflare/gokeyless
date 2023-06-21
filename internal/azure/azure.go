@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/cloudflare/cfssl/log"
+	"github.com/cloudflare/gokeyless/signer"
 	jose "gopkg.in/square/go-jose.v2"
 )
 
@@ -37,9 +38,9 @@ type KeyVaultSigner struct {
 }
 
 // must conform to the interface
-var _ crypto.Signer = KeyVaultSigner{}
+var _ signer.CtxSigner = KeyVaultSigner{}
 
-// New creates a client that implements `crypto.Signer` backed by Azure Key Vault or Azure Managed HSM at the given uri
+// New creates a client that implements `signer.CtxSigner` backed by Azure Key Vault or Azure Managed HSM at the given uri
 // The URL should be contain the key version (i.e. `https://vault-name.vault.azure.net/keys/key-name/abc`)
 // Required roles are `/keys/read/action` and `/keys/sign/action`, the minimum built in Role that fuffils these is `Crypto User`
 // RBAC reference: https://docs.microsoft.com/en-us/azure/key-vault/managed-hsm/built-in-roles#permitted-operations
@@ -77,8 +78,8 @@ func (k KeyVaultSigner) Public() crypto.PublicKey {
 	return k.pub
 }
 
-// Sign makes an API call to sign the provided bytes, mapping the hash in `crypto.SignerOps` to a JWK Signature Algorithm
-func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+// Sign makes an API call to sign the provided bytes, mapping the hash in `signer.CtxSignerOps` to a JWK Signature Algorithm
+func (k KeyVaultSigner) Sign(ctx context.Context, _ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 
 	// base64url required as per https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#data-types
 	payload := base64.RawURLEncoding.EncodeToString(digest)
@@ -88,7 +89,7 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 		return nil, err
 	}
 
-	signed, err := k.client.Sign(context.Background(), k.baseURL, k.keyName, k.keyVersion, keyvault.KeySignParameters{Algorithm: algo, Value: &payload})
+	signed, err := k.client.Sign(ctx, k.baseURL, k.keyName, k.keyVersion, keyvault.KeySignParameters{Algorithm: algo, Value: &payload})
 	if err != nil {
 		return nil, fmt.Errorf("azure: failed to sign: %w", err)
 	}
@@ -107,7 +108,8 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 	return convert1363ToAsn1(res)
 }
 
-//  map the signature algirthm to the relevant JWK one
+//	map the signature algirthm to the relevant JWK one
+//
 // see https://tools.ietf.org/html/rfc7518#section-3.1
 func (k KeyVaultSigner) determineSigAlg(opts crypto.SignerOpts) (algo keyvault.JSONWebKeySignatureAlgorithm, err error) {
 	switch {
@@ -133,7 +135,7 @@ func (k KeyVaultSigner) determineSigAlg(opts crypto.SignerOpts) (algo keyvault.J
 // 1. fetch the specified version of the key
 // 2. Ensure that the key type supports a signing operation that is also supported by keyless.
 // 3. marshals the JWK into json, so that it can be unmarshalled into jose's JWK format
-// 4. extract the public key from the JWK (crypto.Signer's `Public()` must be implemented so keyless can calculate the SKI)
+// 4. extract the public key from the JWK (signer.CtxSigner's `Public()` must be implemented so keyless can calculate the SKI)
 //
 // note: other similar codebases directly massage the public key out of the keyvault.KeyBundle
 // see:

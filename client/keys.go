@@ -93,7 +93,7 @@ type PrivateKey struct {
 	certID    string
 
 	// We have shove the span context inside PrivateKey because
-	// it's used by calling functions on the `crypto.Signer` interface, which don't take ctx as a parameter.
+	// it's used by calling functions on the `signer.CtxSigner` interface, which don't take ctx as a parameter.
 	JaegerSpan []byte
 }
 
@@ -161,8 +161,8 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 	return result.Payload, nil
 }
 
-// Sign implements the crypto.Signer operation for the given key.
-func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
+// Sign implements the signer.CtxSigner operation for the given key.
+func (key *PrivateKey) Sign(ctx context.Context, r io.Reader, msg []byte, opts crypto.SignerOpts) ([]byte, error) {
 	spanCtx, err := tracing.SpanContextFromBinary(key.JaegerSpan)
 	if err != nil {
 		log.Errorf("failed to extract span: %v", err)

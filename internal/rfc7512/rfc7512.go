@@ -3,11 +3,10 @@
 
 // Package rfc7512 provides a parser for the PKCS #11 URI format as specified in
 // RFC 7512: The PKCS #11 URI Scheme. Additionally, it provides a wrapper around
-// the crypto11 package for loading a key pair as a crypto.Signer object.
+// the crypto11 package for loading a key pair as a signer.CtxSigner object.
 package rfc7512
 
 import (
-	"crypto"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ThalesIgnite/crypto11"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 // PKCS11URI contains the information for accessing a PKCS #11 storage object,
@@ -187,7 +187,7 @@ func ParsePKCS11URI(uri string) (*PKCS11URI, error) {
 //
 // An error is returned if the crypto11 module cannot find the module, token,
 // or the specified object.
-func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
+func LoadPKCS11Signer(pk11uri *PKCS11URI) (signer.CtxSigner, error) {
 	config := &crypto11.Config{
 		Path:            pk11uri.ModulePath,
 		TokenSerial:     pk11uri.Serial,
@@ -208,12 +208,12 @@ func LoadPKCS11Signer(pk11uri *PKCS11URI) (crypto.Signer, error) {
 		return nil, fmt.Errorf("pkcs11 Configure: %w", err)
 	}
 
-	signer, err := context.FindKeyPair(pk11uri.ID, pk11uri.Object)
+	s, err := context.FindKeyPair(pk11uri.ID, pk11uri.Object)
 	if err != nil {
 		return nil, fmt.Errorf("pkcs11 FindKeyPair: %w", err)
-	} else if signer == nil {
+	} else if s == nil {
 		return nil, fmt.Errorf("not found")
 	}
 
-	return signer, nil
+	return signer.WrapSigner(s), nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/go-metrics"
 	"github.com/cloudflare/gokeyless/client"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 // Results is a registry of metrics representing the success stats of an entire test suite.
@@ -160,7 +161,7 @@ func NewPingTest(c *client.Client, server string) TestFunc {
 }
 
 // NewSignTests generates a map of test name to TestFunc that performs an opaque sign and verify.
-func NewSignTests(priv crypto.Signer) map[string]TestFunc {
+func NewSignTests(priv signer.CtxSigner) map[string]TestFunc {
 	tests := make(map[string]TestFunc)
 	ptxt := []byte("Test Plaintext")
 	r := rand.Reader
@@ -183,7 +184,7 @@ func NewSignTests(priv crypto.Signer) map[string]TestFunc {
 
 		tests[hashName] = func(h crypto.Hash) TestFunc {
 			return func() error {
-				sig, err := priv.Sign(r, msg, h)
+				sig, err := priv.Sign(context.Background(), r, msg, h)
 				if err != nil {
 					return err
 				}

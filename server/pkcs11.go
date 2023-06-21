@@ -4,14 +4,14 @@
 package server
 
 import (
-	"crypto"
 	"fmt"
 
 	"github.com/cloudflare/gokeyless/internal/rfc7512"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 // DefaultLoadURI attempts to load a signer from a PKCS#11 URI.
-func DefaultLoadURI(uri string) (crypto.Signer, error) {
+func DefaultLoadURI(uri string) (signer.CtxSigner, error) {
 	// This wrapper is here in case we want to parse vendor specific values
 	// based on the parameters in the URI or perform side operations, such
 	// as waiting for network to be up.
@@ -27,6 +27,6 @@ func DefaultLoadURI(uri string) (crypto.Signer, error) {
 	return signer, nil
 }
 
-func loadPKCS11URI(uri string) (crypto.Signer, error) {
+func loadPKCS11URI(uri string) (signer.CtxSigner, error) {
 	return DefaultLoadURI(uri)
 }

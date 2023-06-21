@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 const (
@@ -88,7 +89,7 @@ func (s *IntegrationTestSuite) TestTLSProxy() {
 	p, _ := pem.Decode(pemKey)
 	rsaKey, err := x509.ParseECPrivateKey(p.Bytes)
 	require.NoError(err)
-	err = keys.Add(nil, rsaKey)
+	err = keys.Add(nil, signer.WrapSigner(rsaKey))
 	require.NoError(err)
 
 	clientConfig := &tls.Config{

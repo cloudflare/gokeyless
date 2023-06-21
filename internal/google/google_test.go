@@ -40,7 +40,7 @@ func TestSmoke(t *testing.T) {
 	}
 	require.Equal(k.Public(), pub)
 
-	sig, err := k.Sign(nil, []byte("digest"), crypto.SHA256)
+	sig, err := k.Sign(context.Background(), nil, []byte("digest"), crypto.SHA256)
 	require.NoError(err)
 	require.Equal(sig, []byte("digest"))
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/signer"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/lziest/ttlcache"
 	"github.com/opentracing/opentracing-go"
@@ -189,11 +190,11 @@ func (c *Client) getRemote(server string) (Remote, error) {
 	return r, nil
 }
 
-// NewRemoteSignerWithCertID returns a remote keyserver based crypto.Signer
+// NewRemoteSignerWithCertID returns a remote keyserver based signer.CtxSigner
 // ski, sni, serverIP, and certID are used to identify the key by the remote
 // keyserver.
 func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
-	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (crypto.Signer, error) {
+	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (signer.CtxSigner, error) {
 	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
 	defer span.Finish()
 	priv := PrivateKey{
@@ -219,11 +220,11 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 	return &priv, nil
 }
 
-// NewRemoteSigner returns a remote keyserver based crypto.Signer,
+// NewRemoteSigner returns a remote keyserver based signer.CtxSigner,
 // ski, sni, and serverIP are used to identified the key by the remote
 // keyserver.
 func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
-	pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+	pub crypto.PublicKey, sni string, serverIP net.IP) (signer.CtxSigner, error) {
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
 	defer span.Finish()
@@ -250,11 +251,11 @@ func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski proto
 }
 
 // NewRemoteSignerTemplate returns a remote keyserver
-// based crypto.Signer with the public key.
+// based signer.CtxSigner with the public key.
 // SKI is computed from the public key and along with sni and serverIP,
 // the remote Signer uses those key identification info to contact the
 // remote keyserver for keyless operations.
-func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (signer.CtxSigner, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
@@ -263,10 +264,10 @@ func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, 
 }
 
 // NewRemoteSignerTemplateWithCertID returns a remote keyserver
-// based crypto.Signer with the public key.
+// based signer.CtxSigner with the public key.
 // SKI is computed from public key, and along with sni, serverIP, and
 // certID the remote signer uses these to contact the remote keyserver.
-func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (signer.CtxSigner, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
@@ -276,20 +277,20 @@ func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserve
 
 // NewRemoteSignerByPublicKey returns a remote keyserver based signer
 // with the the public key.
-func (c *Client) NewRemoteSignerByPublicKey(ctx context.Context, server string, pub crypto.PublicKey) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerByPublicKey(ctx context.Context, server string, pub crypto.PublicKey) (signer.CtxSigner, error) {
 	return c.NewRemoteSignerTemplate(ctx, server, pub, "", nil)
 }
 
 // NewRemoteSignerByCert returns a remote keyserver based signer
 // with the the public key contained in a x509.Certificate.
-func (c *Client) NewRemoteSignerByCert(ctx context.Context, server string, cert *x509.Certificate) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerByCert(ctx context.Context, server string, cert *x509.Certificate) (signer.CtxSigner, error) {
 	return c.NewRemoteSignerTemplate(ctx, server, cert.PublicKey, "", nil)
 }
 
 // NewRemoteSignerByCertPEM returns a remote keyserver based signer
 // with the public key extracted from  a single PEM cert
 // (possibly the leaf of a chain of certs).
-func (c *Client) NewRemoteSignerByCertPEM(ctx context.Context, server string, certsPEM []byte) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerByCertPEM(ctx context.Context, server string, certsPEM []byte) (signer.CtxSigner, error) {
 	block, _ := pem.Decode(certsPEM)
 	if block == nil {
 		return nil, errors.New("couldn't parse PEM bytes")
@@ -309,7 +310,7 @@ var (
 )
 
 // ScanDir reads all .pubkey and .crt files from a directory and returns associated PublicKey structs.
-func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []crypto.Signer, err error) {
+func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.PublicKey, error)) (privkeys []signer.CtxSigner, err error) {
 	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -325,7 +326,7 @@ func (c *Client) ScanDir(server, dir string, LoadPubKey func([]byte) (crypto.Pub
 				return err
 			}
 
-			var priv crypto.Signer
+			var priv signer.CtxSigner
 			if LoadPubKey == nil {
 				LoadPubKey = DefaultLoadPubKey
 			}

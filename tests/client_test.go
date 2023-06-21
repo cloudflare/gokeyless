@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 func (s *IntegrationTestSuite) TestConnect() {
@@ -103,7 +104,7 @@ func (s *IntegrationTestSuite) TestSign() {
 
 	tests := []struct {
 		name string
-		s    crypto.Signer
+		s    signer.CtxSigner
 		h    crypto.Hash
 	}{
 		{"rsa-SHA1", s.rsaKey, crypto.SHA1},
@@ -119,7 +120,7 @@ func (s *IntegrationTestSuite) TestSign() {
 		s.T().Run(test.name, func(t *testing.T) {
 			require := require.New(t)
 
-			b, err := test.s.Sign(rand.Reader, hashMsg(test.h), test.h)
+			b, err := test.s.Sign(context.Background(), rand.Reader, hashMsg(test.h), test.h)
 			require.NoError(err)
 			require.NoError(checkSignature(test.s.Public(), test.h, b))
 		})
@@ -162,7 +163,7 @@ func (s *IntegrationTestSuite) TestEd25519Sign() {
 		s.T().Skip("skipping test")
 	}
 
-	b, err := s.ed25519Key.Sign(rand.Reader, testEd25519Msg, crypto.Hash(0))
+	b, err := s.ed25519Key.Sign(context.Background(), rand.Reader, testEd25519Msg, crypto.Hash(0))
 	require.NoError(err)
 	require.NoError(checkSignature(s.ed25519Key.Public(), crypto.Hash(0), b))
 }

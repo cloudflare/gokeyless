@@ -1,12 +1,14 @@
+//go:build !pkcs11 || !cgo
 // +build !pkcs11 !cgo
 
 package server
 
 import (
-	"crypto"
 	"fmt"
+
+	"github.com/cloudflare/gokeyless/signer"
 )
 
-func loadPKCS11URI(uri string) (crypto.Signer, error) {
+func loadPKCS11URI(uri string) (signer.CtxSigner, error) {
 	return nil, fmt.Errorf("pkcs#11 support is not enabled")
 }

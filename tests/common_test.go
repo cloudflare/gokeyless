@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -25,6 +24,7 @@ import (
 	"github.com/cloudflare/gokeyless/internal/test/params"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
+	"github.com/cloudflare/gokeyless/signer"
 )
 
 const (
@@ -129,7 +129,7 @@ func (d DummyRPC) PipeRead(in int, out *[]byte) (err error) {
 }
 
 // helper function reads a pub key from a file and convert it to a signer
-func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (crypto.Signer, error) {
+func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (signer.CtxSigner, error) {
 	pemBytes, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
