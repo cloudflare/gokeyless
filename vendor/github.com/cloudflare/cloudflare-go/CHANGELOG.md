@@ -1,4 +1,29 @@
-## 0.70.0 (Unreleased)
+## 0.71.0 (Unreleased)
+
+## 0.70.0 (June 21st, 2023)
+
+BREAKING CHANGES:
+
+* cloudflare: remove `UsingAccount` in favour of resource specific attributes ([#1315](https://github.com/cloudflare/cloudflare-go/issues/1315))
+* cloudflare: remove `api.AccountID` from client struct ([#1315](https://github.com/cloudflare/cloudflare-go/issues/1315))
+* dns_firewall: modernise method signatures and conventions to align with the experimental client ([#1313](https://github.com/cloudflare/cloudflare-go/issues/1313))
+* railgun: remove support for railgun ([#1312](https://github.com/cloudflare/cloudflare-go/issues/1312))
+* tunnel: swap `ConnectTimeout`, `TLSTimeout`, `TCPKeepAlive` and `KeepAliveTimeout` to `TunnelDuration` instead of `time.Duration` ([#1303](https://github.com/cloudflare/cloudflare-go/issues/1303))
+* virtualdns: remove support in favour of newer DNS firewall methods ([#1313](https://github.com/cloudflare/cloudflare-go/issues/1313))
+
+ENHANCEMENTS:
+
+* custom_nameservers: add support for managing custom nameservers ([#1304](https://github.com/cloudflare/cloudflare-go/issues/1304))
+* load_balancing: extend documentation for least_outstanding_requests steering policy ([#1293](https://github.com/cloudflare/cloudflare-go/issues/1293))
+* waiting_room: add support for `additional_routes` and `cookie_suffix` ([#1311](https://github.com/cloudflare/cloudflare-go/issues/1311))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/hashicorp/go-retryablehttp from 0.7.3 to 0.7.4 ([#1301](https://github.com/cloudflare/cloudflare-go/issues/1301))
+* deps: bumps github.com/urfave/cli/v2 from 2.25.5 to 2.25.6 ([#1305](https://github.com/cloudflare/cloudflare-go/issues/1305))
+* deps: bumps github.com/urfave/cli/v2 from 2.25.6 to 2.25.7 ([#1314](https://github.com/cloudflare/cloudflare-go/issues/1314))
+* deps: bumps golang.org/x/net from 0.10.0 to 0.11.0 ([#1307](https://github.com/cloudflare/cloudflare-go/issues/1307))
+* deps: bumps goreleaser/goreleaser-action from 4.2.0 to 4.3.0 ([#1306](https://github.com/cloudflare/cloudflare-go/issues/1306))
 
 ## 0.69.0 (June 7th, 2023)
 
