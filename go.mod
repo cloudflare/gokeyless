@@ -13,7 +13,7 @@ require (
 	github.com/cloudflare/cloudflare-go v0.70.0
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
 	github.com/davecgh/go-spew v1.1.1
-	github.com/googleapis/gax-go/v2 v2.11.0
+	github.com/googleapis/gax-go/v2 v2.12.0
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
 	github.com/miekg/dns v1.1.55
@@ -57,7 +57,7 @@ require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/s2a-go v0.1.4 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.2.4 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -87,11 +87,11 @@ require (
 	golang.org/x/text v0.11.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.6.0 // indirect
-	google.golang.org/api v0.126.0 // indirect
+	google.golang.org/api v0.128.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
-	google.golang.org/grpc v1.55.0 // indirect
+	google.golang.org/grpc v1.56.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
