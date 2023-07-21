@@ -453,9 +453,10 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 	}
 
-	signSpan, _ := opentracing.StartSpanFromContext(ctx, "execute.Sign")
+	signSpan, ctx := opentracing.StartSpanFromContext(ctx, "execute.Sign")
 	defer signSpan.Finish()
 	var sig []byte
+	// By default, we only try the request once, unless retry count is configured
 	for attempts := 1 + s.signRetryCount; attempts > 0; attempts-- {
 		var err error
 		// If signTimeout is not set, the value will be zero
@@ -463,7 +464,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
 		} else {
 			ch := make(chan signWithTimeoutWrapper, 1)
-			ctxTimeout, cancel := context.WithTimeout(context.Background(), s.signTimeout)
+			ctxTimeout, cancel := context.WithTimeout(ctx, s.signTimeout)
 			defer cancel()
 
 			go signWithTimeout(ctxTimeout, ch, key, rand.Reader, pkt.Operation.Payload, opts)

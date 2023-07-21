@@ -64,6 +64,9 @@ type IntegrationTestSuite struct {
 	ecdsaKey   *client.PrivateKey
 	ed25519Key *client.PrivateKey
 	remote     client.Remote
+
+	retryCount int
+	timeout    time.Duration
 }
 
 func fixedCurrentTime() time.Time {
@@ -148,6 +151,11 @@ func (s *IntegrationTestSuite) NewRemoteSignerByPubKeyFile(filepath string) (cry
 func TestSuite(t *testing.T) {
 	s := &IntegrationTestSuite{}
 	suite.Run(t, s)
+	s2 := &IntegrationTestSuite{
+		timeout:    time.Second,
+		retryCount: 3,
+	}
+	suite.Run(t, s2)
 }
 
 // SetupTest sets up a compatible server and client for use by tests.
@@ -160,7 +168,8 @@ func (s *IntegrationTestSuite) SetupTest() {
 	atomic.StoreUint32(&client.TestDisableConnectionPool, 1)
 
 	var err error
-	s.server, err = server.NewServerFromFile(nil, serverCert, serverKey, keylessCA)
+	config := server.DefaultServeConfig().WithSignTimeout(s.timeout).WithSignRetryCount(s.retryCount)
+	s.server, err = server.NewServerFromFile(config, serverCert, serverKey, keylessCA)
 	require.NoError(err)
 	s.server.TLSConfig().Time = fixedCurrentTime
 
