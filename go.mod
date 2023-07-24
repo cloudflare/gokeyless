@@ -10,7 +10,7 @@ require (
 	github.com/ThalesIgnite/crypto11 v1.2.5
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
 	github.com/cloudflare/cfssl v1.6.4
-	github.com/cloudflare/cloudflare-go v0.72.0
+	github.com/cloudflare/cloudflare-go v0.73.0
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
 	github.com/davecgh/go-spew v1.1.1
 	github.com/googleapis/gax-go/v2 v2.12.0
@@ -81,7 +81,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/mod v0.8.0 // indirect
-	golang.org/x/net v0.11.0 // indirect
+	golang.org/x/net v0.12.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
 	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
