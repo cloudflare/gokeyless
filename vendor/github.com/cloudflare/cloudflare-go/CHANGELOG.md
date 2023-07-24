@@ -1,4 +1,37 @@
-## 0.73.0 (Unreleased)
+## 0.74.0 (Unreleased)
+
+## 0.73.0 (July 19th, 2023)
+
+BREAKING CHANGES:
+
+* pages_deployment: add support for auto pagination ([#1264](https://github.com/cloudflare/cloudflare-go/issues/1264))
+* pages_deployment: change DeletePagesDeploymentParams to contain all parameters ([#1264](https://github.com/cloudflare/cloudflare-go/issues/1264))
+* pages_project: change to use ResourceContainer for account ID ([#1264](https://github.com/cloudflare/cloudflare-go/issues/1264))
+* pages_project: rename PagesProject to GetPagesProject ([#1264](https://github.com/cloudflare/cloudflare-go/issues/1264))
+* rulesets: `CreateAccountRuleset` is removed in favour of `CreateRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `CreateZoneRuleset` is removed in favour of `CreateRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `DeleteAccountRuleset` is removed in favour of `DeleteRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `DeleteZoneRuleset` is removed in favour of `DeleteRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `GetAccountRulesetPhase` is removed in favour of `GetEntrypointRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `GetAccountRuleset` is removed in favour of `GetRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `GetZoneRulesetPhase` is removed in favour of `GetEntrypointRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `GetZoneRuleset` is removed in favour of `GetRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `UpdateAccountRulesetPhase` is removed in favour of `UpdateEntrypointRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `UpdateAccountRuleset` is removed in favour of `UpdateRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `UpdateZoneRulesetPhase` is removed in favour of `UpdateEntrypointRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+* rulesets: `UpdateZoneRuleset` is removed in favour of `UpdateRuleset` ([#1333](https://github.com/cloudflare/cloudflare-go/issues/1333))
+
+ENHANCEMENTS:
+
+* device_posture_rule: support active_threats, network_status, infected, and is_active for sentinelone_s2s posture rule ([#1339](https://github.com/cloudflare/cloudflare-go/issues/1339))
+* device_posture_rule: support certificate_id and cn for client_certificate posture rule ([#1339](https://github.com/cloudflare/cloudflare-go/issues/1339))
+* images: adds ability to upload image by url ([#1335](https://github.com/cloudflare/cloudflare-go/issues/1335))
+* load_balancing: support header session affinity policy ([#1302](https://github.com/cloudflare/cloudflare-go/issues/1302))
+* zone: Added `GetRegionalTieredCache` and `UpdateRegionalTieredCache` to allow setting Regional Tiered Cache for a zone. ([#1336](https://github.com/cloudflare/cloudflare-go/issues/1336))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.11.0 to 0.12.0 ([#1328](https://github.com/cloudflare/cloudflare-go/issues/1328))
 
 ## 0.72.0 (July 5th, 2023)
 
