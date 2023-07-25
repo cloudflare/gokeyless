@@ -51,6 +51,9 @@ type Server struct {
 	listeners map[net.Listener]map[net.Conn]struct{}
 	shutdown  bool
 	mtx       sync.Mutex
+
+	signTimeout    time.Duration
+	signRetryCount int
 }
 
 // NewServer prepares a TLS server capable of receiving connections from keyless clients.
@@ -73,6 +76,8 @@ func NewServer(config *ServeConfig, cert tls.Certificate, keylessCA *x509.CertPo
 		dispatcher:        rpc.NewServer(),
 		limitedDispatcher: rpc.NewServer(),
 		listeners:         make(map[net.Listener]map[net.Conn]struct{}),
+		signTimeout:       config.signTimeout,
+		signRetryCount:    config.signRetryCount,
 	}
 
 	return s, nil
@@ -448,17 +453,54 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 	}
 
-	signSpan, _ := opentracing.StartSpanFromContext(ctx, "execute.Sign")
+	signSpan, ctx := opentracing.StartSpanFromContext(ctx, "execute.Sign")
 	defer signSpan.Finish()
 	var sig []byte
-	sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
-	if err != nil {
-		tracing.LogError(span, err)
-		log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
-		return makeErrResponse(pkt, protocol.ErrCrypto)
+	// By default, we only try the request once, unless retry count is configured
+	for attempts := 1 + s.signRetryCount; attempts > 0; attempts-- {
+		var err error
+		// If signTimeout is not set, the value will be zero
+		if s.signTimeout == 0 {
+			sig, err = key.Sign(rand.Reader, pkt.Operation.Payload, opts)
+		} else {
+			ch := make(chan signWithTimeoutWrapper, 1)
+			ctxTimeout, cancel := context.WithTimeout(ctx, s.signTimeout)
+			defer cancel()
+
+			go signWithTimeout(ctxTimeout, ch, key, rand.Reader, pkt.Operation.Payload, opts)
+			select {
+			case <-ctxTimeout.Done():
+				sig = nil
+				err = ctxTimeout.Err()
+			case result := <-ch:
+				sig = result.sig
+				err = result.error
+			}
+		}
+		if err != nil {
+			if attempts > 1 {
+				log.Debugf("Connection %v: failed sign attempt: %s, %d attempt(s) left", connName, err, attempts-1)
+				continue
+			} else {
+				tracing.LogError(span, err)
+				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+				return makeErrResponse(pkt, protocol.ErrCrypto)
+			}
+		}
+		break
 	}
 
 	return makeRespondResponse(pkt, sig)
+}
+
+type signWithTimeoutWrapper struct {
+	sig   []byte
+	error error
+}
+
+func signWithTimeout(ctx context.Context, ch chan signWithTimeoutWrapper, key crypto.Signer, rand io.Reader, digest []byte, opts crypto.SignerOpts) {
+	sig, err := key.Sign(rand, digest, opts)
+	ch <- signWithTimeoutWrapper{sig, err}
 }
 
 func (s *Server) limitedDo(pkt *protocol.Packet, connName string) response {
@@ -697,6 +739,8 @@ type ServeConfig struct {
 	tcpTimeout, unixTimeout time.Duration
 	isLimited               func(state tls.ConnectionState) (bool, error)
 	customOpFunc            CustomOpFunction
+	signTimeout             time.Duration
+	signRetryCount          int
 }
 
 const (
@@ -718,6 +762,8 @@ func DefaultServeConfig() *ServeConfig {
 		unixTimeout:            defaultUnixTimeout,
 		maxConnPendingRequests: 1024,
 		isLimited:              func(state tls.ConnectionState) (bool, error) { return false, nil },
+		signTimeout:            0,
+		signRetryCount:         0,
 	}
 }
 
@@ -755,6 +801,29 @@ func (s *ServeConfig) UnixTimeout() time.Duration {
 func (s *ServeConfig) WithIsLimited(f func(state tls.ConnectionState) (bool, error)) *ServeConfig {
 	s.isLimited = f
 	return s
+}
+
+// WithSignTimeout specifies the sign operation timeout.  This timeout is used to enforce a
+// max execution time for a single sign operation
+func (s *ServeConfig) WithSignTimeout(timeout time.Duration) *ServeConfig {
+	s.signTimeout = timeout
+	return s
+}
+
+// SignTimeout returns the sign operation timeout
+func (s *ServeConfig) SignTimeout() time.Duration {
+	return s.signTimeout
+}
+
+// WithSignRetryCount specifics a number of retries to allow for failed sign operations
+func (s *ServeConfig) WithSignRetryCount(signRetryCount int) *ServeConfig {
+	s.signRetryCount = signRetryCount
+	return s
+}
+
+// SignRetryCount returns the count of retries allowed for sign operations
+func (s *ServeConfig) SignRetryCount() int {
+	return s.signRetryCount
 }
 
 // CustomOpFunction is the signature for custom opcode functions.
