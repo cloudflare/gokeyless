@@ -1,4 +1,26 @@
-## 0.74.0 (Unreleased)
+## 0.75.0 (Unreleased)
+
+## 0.74.0 (August 2nd, 2023)
+
+ENHANCEMENTS:
+
+* access_application: Add support for custom pages ([#1343](https://github.com/cloudflare/cloudflare-go/issues/1343))
+* access_custom_page: Add support for custom pages ([#1343](https://github.com/cloudflare/cloudflare-go/issues/1343))
+* access_organization: add support for custom pages ([#1343](https://github.com/cloudflare/cloudflare-go/issues/1343))
+* rulesets: Remove internal-only schema kind ([#1346](https://github.com/cloudflare/cloudflare-go/issues/1346))
+* rulesets: Remove some request parameters that are not allowed or have no effect ([#1346](https://github.com/cloudflare/cloudflare-go/issues/1346))
+* rulesets: Update API reference links ([#1346](https://github.com/cloudflare/cloudflare-go/issues/1346))
+* teams-accounts: Adds support for protocol detection ([#1340](https://github.com/cloudflare/cloudflare-go/issues/1340))
+* workers: Add `pipeline_hash` field to Workers script response struct. ([#1330](https://github.com/cloudflare/cloudflare-go/issues/1330))
+* workers: Add support for declaring arbitrary bindings with UnsafeBinding. ([#1330](https://github.com/cloudflare/cloudflare-go/issues/1330))
+* workers: Add support for uploading scripts to a Workers for Platforms namespace. ([#1330](https://github.com/cloudflare/cloudflare-go/issues/1330))
+* workers: Add support for uploading workers with Workers for Platforms namespace bindings. ([#1330](https://github.com/cloudflare/cloudflare-go/issues/1330))
+
+BUG FIXES:
+
+* flarectl: allow for create or update to actually create the record ([#1341](https://github.com/cloudflare/cloudflare-go/issues/1341))
+* load_balancing: Fix pool creation with MinimumOrigins set to 0 ([#1338](https://github.com/cloudflare/cloudflare-go/issues/1338))
+* workers: Fix namespace dispatch upload API path ([#1345](https://github.com/cloudflare/cloudflare-go/issues/1345))
 
 ## 0.73.0 (July 19th, 2023)
 
