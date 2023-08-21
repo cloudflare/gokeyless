@@ -70,7 +70,7 @@ github.com/cloudflare/cfssl/errors
 github.com/cloudflare/cfssl/helpers
 github.com/cloudflare/cfssl/helpers/derhelpers
 github.com/cloudflare/cfssl/log
-# github.com/cloudflare/cloudflare-go v0.74.0
+# github.com/cloudflare/cloudflare-go v0.75.0
 ## explicit; go 1.18
 github.com/cloudflare/cloudflare-go
 # github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
@@ -87,6 +87,17 @@ github.com/dimchansky/utfbom
 # github.com/fsnotify/fsnotify v1.6.0
 ## explicit; go 1.16
 github.com/fsnotify/fsnotify
+# github.com/goccy/go-json v0.10.2
+## explicit; go 1.12
+github.com/goccy/go-json
+github.com/goccy/go-json/internal/decoder
+github.com/goccy/go-json/internal/encoder
+github.com/goccy/go-json/internal/encoder/vm
+github.com/goccy/go-json/internal/encoder/vm_color
+github.com/goccy/go-json/internal/encoder/vm_color_indent
+github.com/goccy/go-json/internal/encoder/vm_indent
+github.com/goccy/go-json/internal/errors
+github.com/goccy/go-json/internal/runtime
 # github.com/golang-jwt/jwt/v4 v4.5.0
 ## explicit; go 1.16
 github.com/golang-jwt/jwt/v4
@@ -328,7 +339,7 @@ golang.org/x/lint/golint
 # golang.org/x/mod v0.8.0
 ## explicit; go 1.17
 golang.org/x/mod/semver
-# golang.org/x/net v0.12.0
+# golang.org/x/net v0.14.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context

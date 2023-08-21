@@ -2,9 +2,10 @@ package cloudflare
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/goccy/go-json"
 )
 
 // DevicePostureIntegrationConfig contains authentication information
@@ -185,7 +186,7 @@ type DevicePostureRuleInput struct {
 	ConnectionID     string   `json:"connection_id,omitempty"`
 	IssueCount       string   `json:"issue_count,omitempty"`
 	CountOperator    string   `json:"countOperator,omitempty"`
-	TotalScore       string   `json:"total_score,omitempty"`
+	TotalScore       int      `json:"total_score,omitempty"`
 	ScoreOperator    string   `json:"scoreOperator,omitempty"`
 	CertificateID    string   `json:"certificate_id,omitempty"`
 	CommonName       string   `json:"cn,omitempty"`
@@ -193,6 +194,8 @@ type DevicePostureRuleInput struct {
 	NetworkStatus    string   `json:"network_status,omitempty"`
 	Infected         bool     `json:"infected,omitempty"`
 	IsActive         bool     `json:"is_active,omitempty"`
+	EidLastSeen      string   `json:"eid_last_seen,omitempty"`
+	RiskLevel        string   `json:"risk_level,omitempty"`
 }
 
 // DevicePostureRuleListResponse represents the response from the list

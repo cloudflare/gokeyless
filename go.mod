@@ -10,7 +10,7 @@ require (
 	github.com/ThalesIgnite/crypto11 v1.2.5
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
 	github.com/cloudflare/cfssl v1.6.4
-	github.com/cloudflare/cloudflare-go v0.74.0
+	github.com/cloudflare/cloudflare-go v0.75.0
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
 	github.com/davecgh/go-spew v1.1.1
 	github.com/googleapis/gax-go/v2 v2.12.0
@@ -50,6 +50,7 @@ require (
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
@@ -81,7 +82,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/mod v0.8.0 // indirect
-	golang.org/x/net v0.12.0 // indirect
+	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/text v0.12.0 // indirect

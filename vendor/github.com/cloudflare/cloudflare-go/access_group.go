@@ -2,10 +2,11 @@ package cloudflare
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/goccy/go-json"
 )
 
 // AccessGroup defines a group for allowing or disallowing access to
@@ -151,6 +152,15 @@ type AccessGroupSAML struct {
 		AttributeValue     string `json:"attribute_value"`
 		IdentityProviderID string `json:"identity_provider_id"`
 	} `json:"saml"`
+}
+
+// AccessGroupAzureAuthContext is used to configure access based on Azure auth contexts.
+type AccessGroupAzureAuthContext struct {
+	AuthContext struct {
+		ID                 string `json:"id"`
+		IdentityProviderID string `json:"identity_provider_id"`
+		ACID               string `json:"ac_id"`
+	} `json:"auth_context"`
 }
 
 // AccessGroupAuthMethod is used for managing access by the "amr"
