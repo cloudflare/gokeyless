@@ -86,6 +86,12 @@ You should add your Cloudflare account details to the configuration file, and op
 
 Each option can optionally be overridden via environment variables or command-line arguments. Run `gokeyless -h` to see the full list of available options.
 
+## Running using Docker Image
+
+A docker image is published that contains a built binary file and startup instruction for the `gokeyless` process.  An example of the usage of this docker file is in `docker-compose.example.yaml`
+
+This examples shows how you may provide the same configuration options through environment variables and provide a mount with a directory for private keys instead of through a `gokeyless.yaml` file.
+
 ## Testing
 
 Unit tests and benchmarks have been implemented for various parts of Go Keyless via `go test`. Most of the tests run out of the box, but some setup is necessary to run the HSM-related tests:

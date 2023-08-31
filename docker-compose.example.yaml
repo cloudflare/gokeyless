@@ -1,0 +1,25 @@
+version: "3"
+services:
+  gokeyless:
+    platform: linux/amd64
+    container_name: gokeyless
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./tests/testdata/:/gokeyless/config
+    environment:
+      # - KEYLESS_HOSTNAME=keyserver.keyless.com
+      # - KEYLESS_ZONE_ID=5c7004f5221ba2a24c998bd609244a39
+      # - KEYLESS_ORIGIN_CA_API_KEY=ORIGIN_CA_API_KEY_HERE
+      - KEYLESS_AUTH_CERT=/gokeyless/config/server.pem
+      - KEYLESS_AUTH_KEY=/gokeyless/config/server-key.pem
+      - KEYLESS_AUTH_CSR=/gokeyless/config/csr.json
+      - KEYLESS_CLOUDFLARE_CA_CERT=/gokeyless/config/ca.pem
+      - KEYLESS_LOGLEVEL=0
+      - KEYLESS_PORT=2407
+      - KEYLESS_METRICS_PORT=2406
+      - KEYLESS_PRIVATE_KEY_DIRS=/gokeyless/config
+    ports:
+      - "2406:2406"
+      - "2407:2407"
