@@ -166,21 +166,23 @@ type handler struct {
 	closed   bool
 }
 
-func (h *handler) close() {
+func (h *handler) close(err error) {
 	if !h.closed {
 		h.conn.Close() // ignoring error: what can we do?
 		h.s.mtx.Lock()
 		delete(h.s.listeners[h.listener], h.conn)
 		h.s.mtx.Unlock()
-		logConnFailure()
 		h.closed = true
+		if err != nil {
+			logConnFailure()
+		}
 	}
 }
 
 func (h *handler) closeWithWritingErr(err error) {
 	if !h.closed {
 		log.Errorf("connection %v: error in writing response %v", h.name, err)
-		h.close()
+		h.close(err)
 	}
 }
 
@@ -251,7 +253,7 @@ func (h *handler) loop() error {
 		}
 		h.mtx.Lock()
 		defer h.mtx.Unlock()
-		h.close()
+		h.close(err)
 		return err
 	}
 	// In the event of a read timeout, gracefully close
@@ -260,7 +262,8 @@ func (h *handler) loop() error {
 	h.tokens.Acquire(ctx, int64(h.s.config.maxConnPendingRequests))
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
-	h.close()
+	// Don't pass err here since this was a graceful close
+	h.close(nil)
 	return err
 }
 
