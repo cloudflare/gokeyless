@@ -161,6 +161,8 @@ const (
 	ErrCertNotFound
 	// ErrExpired indicates that the sealed blob is no longer unsealable.
 	ErrExpired
+	// ErrRemoteConfiguration indicates that a remote keyserver was not configured correctly.
+	ErrRemoteConfiguration
 )
 
 func (e Error) Error() string {
@@ -191,6 +193,8 @@ func (e Error) String() string {
 		return "certificate not found"
 	case ErrExpired:
 		return "sealing key expired"
+	case ErrRemoteConfiguration:
+		return "remote configuration error"
 	default:
 		return "unknown error"
 	}

@@ -377,7 +377,15 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
 			log.Errorf("Connection: %s: Signing error: %v", connName, protocol.ErrCrypto, err)
-			return makeErrResponse(pkt, protocol.ErrCrypto)
+			// This indicates that a remote keyserver is being used
+			var remoteConfigurationErr RemoteConfigurationErr
+			if errors.As(err, &remoteConfigurationErr) {
+				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrRemoteConfiguration, err)
+				return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
+			} else {
+				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+				return makeErrResponse(pkt, protocol.ErrCrypto)
+			}
 		}
 		return makeRespondResponse(pkt, sig)
 
@@ -486,8 +494,15 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 				continue
 			} else {
 				tracing.LogError(span, err)
-				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
-				return makeErrResponse(pkt, protocol.ErrCrypto)
+				// This indicates that a remote keyserver is being used
+				var remoteConfigurationErr RemoteConfigurationErr
+				if errors.As(err, &remoteConfigurationErr) {
+					log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrRemoteConfiguration, err)
+					return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
+				} else {
+					log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+					return makeErrResponse(pkt, protocol.ErrCrypto)
+				}
 			}
 		}
 		break
