@@ -92,8 +92,8 @@ github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a h1:8d1CEOF1xlde
 github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a/go.mod h1:rzgs2ZOiguV6/NpiDgADjRLPNyZlApIWxKpkT+X8SdY=
 github.com/cloudflare/cfssl v1.6.4 h1:NMOvfrEjFfC63K3SGXgAnFdsgkmiq4kATme5BfcqrO8=
 github.com/cloudflare/cfssl v1.6.4/go.mod h1:8b3CQMxfWPAeom3zBnGJ6sd+G1NkL5TXqmDXacb+1J0=
-github.com/cloudflare/cloudflare-go v0.76.0 h1:0YsPw0KHWJK2fpivzx38X5onurfM0GkanZtS8HAqlj0=
-github.com/cloudflare/cloudflare-go v0.76.0/go.mod h1:5ocQT9qQ99QsT1Ii2751490Z5J+W/nv6jOj+lSAe4ug=
+github.com/cloudflare/cloudflare-go v0.77.0 h1:bVUGkSKdXEz8+u2Yj3ASqZsqlcsPkeB+PDqVs9OE7TY=
+github.com/cloudflare/cloudflare-go v0.77.0/go.mod h1:R+Q/Im0G0MzKJxj3eXOBBE8xpnchVA9tSiQwOEvfW4Y=
 github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41 h1:/8sZyuGTAU2+fYv0Sz9lBcipqX0b7i4eUl8pSStk/4g=
 github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41/go.mod h1:eaZPlJWD+G9wseg1BuRXlHnjntPMrywMsyxf+LTOdP4=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
