@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
+	"github.com/cloudflare/gokeyless/server"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -112,12 +113,12 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 	for attempts := 2; attempts > 0; attempts-- {
 		r, err := key.client.getRemote(key.keyserver)
 		if err != nil {
-			return nil, err
+			return nil, server.RemoteConfigurationErr{Err: err}
 		}
 
 		conn, err := r.Dial(key.client)
 		if err != nil {
-			return nil, err
+			return nil, server.RemoteConfigurationErr{Err: err}
 		}
 
 		// We explicitly do NOT want to fill in JaegerSpan here, since the remote keyless server
