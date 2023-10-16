@@ -70,7 +70,7 @@ github.com/cloudflare/cfssl/errors
 github.com/cloudflare/cfssl/helpers
 github.com/cloudflare/cfssl/helpers/derhelpers
 github.com/cloudflare/cfssl/log
-# github.com/cloudflare/cloudflare-go v0.78.0
+# github.com/cloudflare/cloudflare-go v0.79.0
 ## explicit; go 1.18
 github.com/cloudflare/cloudflare-go
 # github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
@@ -337,7 +337,7 @@ golang.org/x/lint/golint
 # golang.org/x/mod v0.12.0
 ## explicit; go 1.17
 golang.org/x/mod/semver
-# golang.org/x/net v0.15.0
+# golang.org/x/net v0.17.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context
