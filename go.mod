@@ -3,7 +3,7 @@ module github.com/cloudflare/gokeyless
 go 1.19
 
 require (
-	cloud.google.com/go/kms v1.15.2
+	cloud.google.com/go/kms v1.15.3
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.12
