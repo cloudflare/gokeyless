@@ -333,3 +333,173 @@ func (api *API) UpdateAPIShieldSchema(ctx context.Context, rc *ResourceContainer
 
 	return &asResponse.Result, nil
 }
+
+// Schema Validation Settings
+
+// APIShieldSchemaValidationSettings represents zone level schema validation settings for
+// API Shield Schema Validation 2.0.
+type APIShieldSchemaValidationSettings struct {
+	// DefaultMitigationAction is the mitigation to apply when there is no operation-level
+	// mitigation action defined
+	DefaultMitigationAction string `json:"validation_default_mitigation_action" url:"-"`
+	// OverrideMitigationAction when set, will apply to all requests regardless of
+	// zone-level/operation-level setting
+	OverrideMitigationAction *string `json:"validation_override_mitigation_action" url:"-"`
+}
+
+// UpdateAPIShieldSchemaValidationSettingsParams represents the parameters to pass to update certain fields
+// on schema validation settings on the zone
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-patch-zone-level-settings
+type UpdateAPIShieldSchemaValidationSettingsParams struct {
+	// DefaultMitigationAction is the mitigation to apply when there is no operation-level
+	// mitigation action defined
+	//
+	// passing a `nil` value will have no effect on this setting
+	DefaultMitigationAction *string `json:"validation_default_mitigation_action" url:"-"`
+
+	// OverrideMitigationAction when set, will apply to all requests regardless of
+	// zone-level/operation-level setting
+	//
+	// passing a `nil` value will have no effect on this setting
+	OverrideMitigationAction *string `json:"validation_override_mitigation_action" url:"-"`
+}
+
+// APIShieldSchemaValidationSettingsResponse represents the response from the GET api_gateway/settings/schema_validation endpoint.
+type APIShieldSchemaValidationSettingsResponse struct {
+	Result APIShieldSchemaValidationSettings `json:"result"`
+	Response
+}
+
+// GetAPIShieldSchemaValidationSettings retrieves zone level schema validation settings
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-retrieve-zone-level-settings
+func (api *API) GetAPIShieldSchemaValidationSettings(ctx context.Context, rc *ResourceContainer) (*APIShieldSchemaValidationSettings, error) {
+	path := fmt.Sprintf("/zones/%s/api_gateway/settings/schema_validation", rc.Identifier)
+
+	uri := buildURI(path, nil)
+
+	res, err := api.makeRequestContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var asResponse APIShieldSchemaValidationSettingsResponse
+	err = json.Unmarshal(res, &asResponse)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errUnmarshalError, err)
+	}
+
+	return &asResponse.Result, nil
+}
+
+// UpdateAPIShieldSchemaValidationSettings updates certain fields on zone level schema validation settings
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-patch-zone-level-settings
+func (api *API) UpdateAPIShieldSchemaValidationSettings(ctx context.Context, rc *ResourceContainer, params UpdateAPIShieldSchemaValidationSettingsParams) (*APIShieldSchemaValidationSettings, error) {
+	path := fmt.Sprintf("/zones/%s/api_gateway/settings/schema_validation", rc.Identifier)
+
+	uri := buildURI(path, params)
+
+	res, err := api.makeRequestContext(ctx, http.MethodPatch, uri, params)
+	if err != nil {
+		return nil, err
+	}
+
+	var asResponse APIShieldSchemaValidationSettingsResponse
+	err = json.Unmarshal(res, &asResponse)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errUnmarshalError, err)
+	}
+
+	return &asResponse.Result, nil
+}
+
+// APIShieldOperationSchemaValidationSettings represents operation level schema validation settings for
+// API Shield Schema Validation 2.0.
+type APIShieldOperationSchemaValidationSettings struct {
+	// MitigationAction is the mitigation to apply to the operation
+	MitigationAction *string `json:"mitigation_action" url:"-"`
+}
+
+// GetAPIShieldOperationSchemaValidationSettingsParams represents the parameters to pass to retrieve
+// the schema validation settings set on the operation.
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-retrieve-operation-level-settings
+type GetAPIShieldOperationSchemaValidationSettingsParams struct {
+	// The Operation ID to apply the mitigation action to
+	OperationID string `url:"-"`
+}
+
+// UpdateAPIShieldOperationSchemaValidationSettings maps operation IDs to APIShieldOperationSchemaValidationSettings
+//
+// # This can be used to bulk update operations in one call
+//
+// Example:
+//
+//	UpdateAPIShieldOperationSchemaValidationSettings{
+//			"99522293-a505-45e5-bbad-bbc339f5dc40": APIShieldOperationSchemaValidationSettings{ MitigationAction: nil },
+//	}
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-update-multiple-operation-level-settings
+type UpdateAPIShieldOperationSchemaValidationSettings map[string]APIShieldOperationSchemaValidationSettings
+
+// APIShieldOperationSchemaValidationSettingsResponse represents the response from the GET api_gateway/operation/{operationID}/schema_validation endpoint.
+type APIShieldOperationSchemaValidationSettingsResponse struct {
+	Result APIShieldOperationSchemaValidationSettings `json:"result"`
+	Response
+}
+
+// UpdateAPIShieldOperationSchemaValidationSettingsResponse represents the response from the PATCH api_gateway/operations/schema_validation endpoint.
+type UpdateAPIShieldOperationSchemaValidationSettingsResponse struct {
+	Result UpdateAPIShieldOperationSchemaValidationSettings `json:"result"`
+	Response
+}
+
+// GetAPIShieldOperationSchemaValidationSettings retrieves operation level schema validation settings
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-retrieve-operation-level-settings
+func (api *API) GetAPIShieldOperationSchemaValidationSettings(ctx context.Context, rc *ResourceContainer, params GetAPIShieldOperationSchemaValidationSettingsParams) (*APIShieldOperationSchemaValidationSettings, error) {
+	if params.OperationID == "" {
+		return nil, fmt.Errorf("operation ID must be provided")
+	}
+
+	path := fmt.Sprintf("/zones/%s/api_gateway/operations/%s/schema_validation", rc.Identifier, params.OperationID)
+
+	uri := buildURI(path, nil)
+
+	res, err := api.makeRequestContext(ctx, http.MethodGet, uri, params)
+	if err != nil {
+		return nil, err
+	}
+
+	var asResponse APIShieldOperationSchemaValidationSettingsResponse
+	err = json.Unmarshal(res, &asResponse)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errUnmarshalError, err)
+	}
+
+	return &asResponse.Result, nil
+}
+
+// UpdateAPIShieldOperationSchemaValidationSettings update multiple operation level schema validation settings
+//
+// API documentation: https://developers.cloudflare.com/api/operations/api-shield-schema-validation-update-multiple-operation-level-settings
+func (api *API) UpdateAPIShieldOperationSchemaValidationSettings(ctx context.Context, rc *ResourceContainer, params UpdateAPIShieldOperationSchemaValidationSettings) (*UpdateAPIShieldOperationSchemaValidationSettings, error) {
+	path := fmt.Sprintf("/zones/%s/api_gateway/operations/schema_validation", rc.Identifier)
+
+	uri := buildURI(path, nil)
+
+	res, err := api.makeRequestContext(ctx, http.MethodPatch, uri, params)
+	if err != nil {
+		return nil, err
+	}
+
+	var asResponse UpdateAPIShieldOperationSchemaValidationSettingsResponse
+	err = json.Unmarshal(res, &asResponse)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errUnmarshalError, err)
+	}
+
+	return &asResponse.Result, nil
+}
