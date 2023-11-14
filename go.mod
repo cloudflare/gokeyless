@@ -10,7 +10,7 @@ require (
 	github.com/ThalesIgnite/crypto11 v1.2.5
 	github.com/cloudflare/backoff v0.0.0-20161212185259-647f3cdfc87a
 	github.com/cloudflare/cfssl v1.6.4
-	github.com/cloudflare/cloudflare-go v0.80.0
+	github.com/cloudflare/cloudflare-go v0.81.0
 	github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
 	github.com/davecgh/go-spew v1.1.1
 	github.com/googleapis/gax-go/v2 v2.12.0
@@ -84,7 +84,7 @@ require (
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
+	golang.org/x/time v0.4.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	google.golang.org/api v0.149.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
