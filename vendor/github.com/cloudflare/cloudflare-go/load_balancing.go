@@ -26,6 +26,7 @@ type LoadBalancerPool struct {
 	Longitude         *float32                    `json:"longitude,omitempty"`
 	LoadShedding      *LoadBalancerLoadShedding   `json:"load_shedding,omitempty"`
 	OriginSteering    *LoadBalancerOriginSteering `json:"origin_steering,omitempty"`
+	Healthy           *bool                       `json:"healthy,omitempty"`
 
 	// CheckRegions defines the geographic region(s) from where to run health-checks from - e.g. "WNAM", "WEU", "SAF", "SAM".
 	// Providing a null/empty value means "all regions", which may not be available to all plan types.
@@ -47,6 +48,9 @@ type LoadBalancerOrigin struct {
 	// weight is used to scale the origin's open connections.
 	Weight float64             `json:"weight"`
 	Header map[string][]string `json:"header"`
+	// The virtual network subnet ID the origin belongs in.
+	// Virtual network must also belong to the account.
+	VirtualNetworkID string `json:"virtual_network_id,omitempty"`
 }
 
 // LoadBalancerOriginSteering controls origin selection for new sessions and traffic without session affinity.

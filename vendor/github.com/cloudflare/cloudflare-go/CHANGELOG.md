@@ -1,4 +1,21 @@
-## 0.82.0 (Unreleased)
+## 0.83.0 (Unreleased)
+
+## 0.82.0 (November 22nd, 2023)
+
+ENHANCEMENTS:
+
+* ip_access_rules: Add ListIPAccessRules() to list IP Access Rules ([#1428](https://github.com/cloudflare/cloudflare-go/issues/1428))
+* load_balancing: add healthy field to LoadBalancerPool ([#1442](https://github.com/cloudflare/cloudflare-go/issues/1442))
+
+BUG FIXES:
+
+* load_balancing: Add support for virtual network id in origins ([#1441](https://github.com/cloudflare/cloudflare-go/issues/1441))
+* per_hostname_tls_setting: use `buildURI` for defining the query parameters when sorting ([#1440](https://github.com/cloudflare/cloudflare-go/issues/1440))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/hashicorp/go-retryablehttp from 0.7.4 to 0.7.5 ([#1438](https://github.com/cloudflare/cloudflare-go/issues/1438))
+* deps: bumps golang.org/x/net from 0.17.0 to 0.18.0 ([#1439](https://github.com/cloudflare/cloudflare-go/issues/1439))
 
 ## 0.81.0 (November 8th, 2023)
 
