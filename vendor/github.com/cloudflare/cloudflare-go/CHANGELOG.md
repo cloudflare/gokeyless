@@ -1,4 +1,23 @@
-## 0.83.0 (Unreleased)
+## 0.84.0 (Unreleased)
+
+## 0.83.0 (December 6th, 2023)
+
+ENHANCEMENTS:
+
+* cloudflare: Add ResultInfo to RawResponse ([#1453](https://github.com/cloudflare/cloudflare-go/issues/1453))
+* devices_policy: add fields for Opt-In Split Tunnel Overlapping IPs feature. ([#1454](https://github.com/cloudflare/cloudflare-go/issues/1454))
+* stream: Add ScheduledDeletion to StreamCreateVideoParameters ([#1457](https://github.com/cloudflare/cloudflare-go/issues/1457))
+* stream: Add ScheduledDeletion to StreamUploadFromURLParameters ([#1457](https://github.com/cloudflare/cloudflare-go/issues/1457))
+* stream: Add ScheduledDeletion to StreamVideo ([#1457](https://github.com/cloudflare/cloudflare-go/issues/1457))
+* stream: Add ScheduledDeletion to StreamVideoCreate ([#1457](https://github.com/cloudflare/cloudflare-go/issues/1457))
+* worker_bindings: Fixing form element name for d1 binding ([#1450](https://github.com/cloudflare/cloudflare-go/issues/1450))
+* worker_bindings: add support for `d1` bindings ([#1446](https://github.com/cloudflare/cloudflare-go/issues/1446))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/urfave/cli/v2 from 2.25.7 to 2.26.0 ([#1456](https://github.com/cloudflare/cloudflare-go/issues/1456))
+* deps: bumps golang.org/x/net from 0.18.0 to 0.19.0 ([#1452](https://github.com/cloudflare/cloudflare-go/issues/1452))
+* deps: bumps golang.org/x/time from 0.4.0 to 0.5.0 ([#1449](https://github.com/cloudflare/cloudflare-go/issues/1449))
 
 ## 0.82.0 (November 22nd, 2023)
 
