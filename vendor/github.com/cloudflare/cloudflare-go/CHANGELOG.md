@@ -1,4 +1,18 @@
-## 0.84.0 (Unreleased)
+## 0.85.0 (Unreleased)
+
+## 0.84.0 (December 20th, 2023)
+
+ENHANCEMENTS:
+
+* access_group: Add support for email lists ([#1445](https://github.com/cloudflare/cloudflare-go/issues/1445))
+* device_posture_rules: add support for Access client fields in device posture integrations ([#1464](https://github.com/cloudflare/cloudflare-go/issues/1464))
+* page_shield: added support for page shield ([#1459](https://github.com/cloudflare/cloudflare-go/issues/1459))
+
+DEPENDENCIES:
+
+* deps: bumps actions/setup-go from 4 to 5 ([#1460](https://github.com/cloudflare/cloudflare-go/issues/1460))
+* deps: bumps github/codeql-action from 2 to 3 ([#1462](https://github.com/cloudflare/cloudflare-go/issues/1462))
+* deps: bumps golang.org/x/crypto from 0.14.0 to 0.17.0 ([#1466](https://github.com/cloudflare/cloudflare-go/issues/1466))
 
 ## 0.83.0 (December 6th, 2023)
 
