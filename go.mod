@@ -16,7 +16,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.0
 	github.com/joshlf/testutil v0.0.0-20170608050642-b5d8aa79d93d
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
-	github.com/miekg/dns v1.1.57
+	github.com/miekg/dns v1.1.58
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/spf13/afero v1.11.0
@@ -24,9 +24,9 @@ require (
 	github.com/spf13/viper v1.17.0
 	github.com/stretchr/testify v1.8.4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	golang.org/x/crypto v0.17.0
+	golang.org/x/crypto v0.18.0
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.6.0
 	google.golang.org/genproto v0.0.0-20231106174013-bbf56f31fb17
 	google.golang.org/protobuf v1.32.0
 	gopkg.in/square/go-jose.v2 v2.6.0
@@ -83,13 +83,13 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/net v0.19.0 // indirect
+	golang.org/x/mod v0.14.0 // indirect
+	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.13.0 // indirect
+	golang.org/x/tools v0.17.0 // indirect
 	google.golang.org/api v0.152.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231106174013-bbf56f31fb17 // indirect
