@@ -20,7 +20,7 @@ jobs:
       - run: go install github.com/ory/go-acc@latest
       - run: go-acc -o coverage.txt ./... -- -race -tags integration
       - run: make test-trust
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v4
   test-hsm:
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +35,7 @@ jobs:
       - run: go-acc -o coverage.txt ./... -- -race -tags pkcs11
         env:
           TEST_SOFT_HSM: true
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v4
   lint:
     runs-on: ubuntu-latest
     steps:
