@@ -1,4 +1,34 @@
-## 0.90.0 (Unreleased)
+## 0.92.0 (Unreleased)
+
+## 0.91.0 (March 22nd, 2024)
+
+ENHANCEMENTS:
+
+* access_application: add support for `saml_attribute_transform_jsonata` in saas apps ([#1562](https://github.com/cloudflare/cloudflare-go/issues/1562))
+
+DEPENDENCIES:
+
+* deps: bumps actions/checkout from 2 to 4 ([#1573](https://github.com/cloudflare/cloudflare-go/issues/1573))
+* deps: bumps google.golang.org/protobuf from 1.28.0 to 1.33.0 ([#1558](https://github.com/cloudflare/cloudflare-go/issues/1558))
+
+## 0.90.0 (March 13th, 2024)
+
+ENHANCEMENTS:
+
+* access_mutual_tls_certificates: add support for mutual tls hostname settings ([#1516](https://github.com/cloudflare/cloudflare-go/issues/1516))
+* device_posture_rule: support last_seen and state for crowdstrike_s2s posture rule ([#1509](https://github.com/cloudflare/cloudflare-go/issues/1509))
+* dlp: add support for Context Awareness in DLP profiles ([#1497](https://github.com/cloudflare/cloudflare-go/issues/1497))
+* workers: Add Workers for Platforms support for getting a Worker, content and bindings ([#1508](https://github.com/cloudflare/cloudflare-go/issues/1508))
+* workers_for_platforms: Add ability to list Workers for Platforms namespaces, get a namespace, create a new namespace or delete a namespace. ([#1508](https://github.com/cloudflare/cloudflare-go/issues/1508))
+
+BUG FIXES:
+
+* dlp: added optional ContextAwareness support ([#1510](https://github.com/cloudflare/cloudflare-go/issues/1510))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/stretchr/testify from 1.8.4 to 1.9.0 ([#1511](https://github.com/cloudflare/cloudflare-go/issues/1511))
+* deps: bumps golang.org/x/net from 0.21.0 to 0.22.0 ([#1513](https://github.com/cloudflare/cloudflare-go/issues/1513))
 
 ## 0.89.0 (February 28th, 2024)
 
