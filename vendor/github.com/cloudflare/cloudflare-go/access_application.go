@@ -53,6 +53,7 @@ type AccessApplication struct {
 	ServiceAuth401Redirect   *bool                          `json:"service_auth_401_redirect,omitempty"`
 	PathCookieAttribute      *bool                          `json:"path_cookie_attribute,omitempty"`
 	AllowAuthenticateViaWarp *bool                          `json:"allow_authenticate_via_warp,omitempty"`
+	OptionsPreflightBypass   *bool                          `json:"options_preflight_bypass,omitempty"`
 	CustomPages              []string                       `json:"custom_pages,omitempty"`
 	Tags                     []string                       `json:"tags,omitempty"`
 	AccessAppLauncherCustomization
@@ -114,14 +115,15 @@ type SaasApplication struct {
 	AuthType  string     `json:"auth_type,omitempty"`
 
 	// SAML saas app
-	ConsumerServiceUrl     string                `json:"consumer_service_url,omitempty"`
-	SPEntityID             string                `json:"sp_entity_id,omitempty"`
-	IDPEntityID            string                `json:"idp_entity_id,omitempty"`
-	NameIDFormat           string                `json:"name_id_format,omitempty"`
-	SSOEndpoint            string                `json:"sso_endpoint,omitempty"`
-	DefaultRelayState      string                `json:"default_relay_state,omitempty"`
-	CustomAttributes       []SAMLAttributeConfig `json:"custom_attributes,omitempty"`
-	NameIDTransformJsonata string                `json:"name_id_transform_jsonata,omitempty"`
+	ConsumerServiceUrl            string                `json:"consumer_service_url,omitempty"`
+	SPEntityID                    string                `json:"sp_entity_id,omitempty"`
+	IDPEntityID                   string                `json:"idp_entity_id,omitempty"`
+	NameIDFormat                  string                `json:"name_id_format,omitempty"`
+	SSOEndpoint                   string                `json:"sso_endpoint,omitempty"`
+	DefaultRelayState             string                `json:"default_relay_state,omitempty"`
+	CustomAttributes              []SAMLAttributeConfig `json:"custom_attributes,omitempty"`
+	NameIDTransformJsonata        string                `json:"name_id_transform_jsonata,omitempty"`
+	SamlAttributeTransformJsonata string                `json:"saml_attribute_transform_jsonata"`
 
 	// OIDC saas app
 	ClientID         string   `json:"client_id,omitempty"`
@@ -180,6 +182,7 @@ type CreateAccessApplicationParams struct {
 	ServiceAuth401Redirect   *bool                          `json:"service_auth_401_redirect,omitempty"`
 	SessionDuration          string                         `json:"session_duration,omitempty"`
 	SkipInterstitial         *bool                          `json:"skip_interstitial,omitempty"`
+	OptionsPreflightBypass   *bool                          `json:"options_preflight_bypass,omitempty"`
 	Type                     AccessApplicationType          `json:"type,omitempty"`
 	AllowAuthenticateViaWarp *bool                          `json:"allow_authenticate_via_warp,omitempty"`
 	CustomPages              []string                       `json:"custom_pages,omitempty"`
@@ -213,6 +216,7 @@ type UpdateAccessApplicationParams struct {
 	SkipInterstitial         *bool                          `json:"skip_interstitial,omitempty"`
 	Type                     AccessApplicationType          `json:"type,omitempty"`
 	AllowAuthenticateViaWarp *bool                          `json:"allow_authenticate_via_warp,omitempty"`
+	OptionsPreflightBypass   *bool                          `json:"options_preflight_bypass,omitempty"`
 	CustomPages              []string                       `json:"custom_pages,omitempty"`
 	Tags                     []string                       `json:"tags,omitempty"`
 	AccessAppLauncherCustomization
