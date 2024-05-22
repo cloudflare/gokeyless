@@ -18,8 +18,10 @@ func TestMarshalBinary(t *testing.T) {
 	// to ensure that the size is calculated correctly.
 	extra := make([]byte, 100)
 	payload := make([]byte, 1000)
+	reqCtx := make([]byte, 100)
 	rand.Read(extra)
 	rand.Read(payload)
+	rand.Read(reqCtx)
 	op := Operation{
 		Opcode:         OpECDSASignSHA256,
 		Payload:        payload,
@@ -32,6 +34,7 @@ func TestMarshalBinary(t *testing.T) {
 		CertID:         "SNI",
 		CustomFuncName: "CustomFuncName",
 		JaegerSpan:     []byte("615f730ad5fe896f:615f730ad5fe896f:1"),
+		ReqContext:     reqCtx,
 	}
 	pkt := NewPacket(42, op)
 	b, err := pkt.MarshalBinary()

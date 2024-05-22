@@ -49,6 +49,8 @@ const (
 	TagExtra Tag = 0x14
 	// TagJaegerSpan contains a binary encoded jaeger span context. See https://www.jaegertracing.io/docs/1.19/client-libraries/#value
 	TagJaegerSpan Tag = 0x15
+	// TagReqContext contains request metadata
+	TagReqContext Tag = 0x16
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -414,6 +416,7 @@ type Operation struct {
 	CertID         string
 	CustomFuncName string
 	JaegerSpan     []byte
+	ReqContext     []byte
 }
 
 func (o *Operation) String() string {
@@ -504,6 +507,9 @@ func (o *Operation) Bytes() uint16 {
 	if o.JaegerSpan != nil {
 		add(tlvLen(len(o.JaegerSpan)))
 	}
+	if o.ReqContext != nil {
+		add(tlvLen(len(o.ReqContext)))
+	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -573,6 +579,9 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	}
 	if o.JaegerSpan != nil {
 		b = append(b, tlvBytes(TagJaegerSpan, o.JaegerSpan)...)
+	}
+	if o.ReqContext != nil {
+		b = append(b, tlvBytes(TagReqContext, o.ReqContext)...)
 	}
 
 	if len(b)+headerSize < paddedLength {
@@ -660,6 +669,8 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.CustomFuncName = string(data)
 		case TagJaegerSpan:
 			o.JaegerSpan = data
+		case TagReqContext:
+			o.ReqContext = data
 		default:
 			// Silently ignore any unknown tags (to allow for new tags to be gradually added to the protocol).
 			continue
