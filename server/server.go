@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 	textbook_rsa "github.com/cloudflare/gokeyless/server/internal/rsa"
 
 	"github.com/cloudflare/cfssl/log"
+	"github.com/google/uuid"
 )
 
 // Server is a Keyless Server capable of performing opaque key operations.
@@ -284,6 +286,37 @@ func makeErrResponse(pkt *protocol.Packet, err protocol.Error) response {
 	return response{id: pkt.ID, op: protocol.MakeErrorOp(err)}
 }
 
+func addOperationRequestID(op *protocol.Operation) string {
+	reqContext := make(map[string]interface{})
+	var reqID string
+	var gen bool
+
+	if len(op.ReqContext) > 0 {
+		if err := json.Unmarshal(op.ReqContext, &reqContext); err == nil {
+			if v, ok := reqContext["request_id"]; ok {
+				return v.(string)
+			} else {
+				gen = true
+			}
+		} else {
+			log.Errorf("malformed operation.ReqContext %v, ignoring error", op.ReqContext)
+		}
+	}
+
+	if len(op.ReqContext) == 0 || gen {
+		reqID = uuid.New().String()
+		reqContext["request_id"] = reqID
+		b, err := json.Marshal(reqContext)
+		if err == nil {
+			op.ReqContext = b
+		} else {
+			log.Errorf("error marshaling operation.ReqContext %v, ignoring error", reqContext)
+			reqID = ""
+		}
+	}
+	return reqID
+}
+
 func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	spanCtx, err := tracing.SpanContextFromBinary(pkt.Operation.JaegerSpan)
 	if err != nil {
@@ -292,14 +325,17 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	span, ctx := opentracing.StartSpanFromContext(context.Background(), "operation execution", ext.RPCServerOption(spanCtx))
 	defer span.Finish()
 	tracing.SetOperationSpanTags(span, &pkt.Operation)
+	reqID := addOperationRequestID(&pkt.Operation)
+	span.SetTag("request_id", reqID)
 
-	log.Debugf("connection %s: limited=false  opcode=%s id=%d sni=%s ip=%s ski=%v",
+	log.Debugf("connection %s: limited=false  opcode=%s id=%d sni=%s ip=%s ski=%v request-id=%s",
 		connName,
 		pkt.Operation.Opcode,
 		pkt.Header.ID,
 		pkt.Operation.SNI,
 		pkt.Operation.ServerIP,
-		pkt.Operation.SKI)
+		pkt.Operation.SKI,
+		reqID)
 
 	var opts crypto.SignerOpts
 	switch pkt.Operation.Opcode {
@@ -362,10 +398,10 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		key, err := s.keys.Get(ctx, &pkt.Operation)
 		logKeyLoadDuration(loadStart)
 		if err != nil {
-			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
+			log.Errorf("failed to load key with sni=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.SKI, reqID, err)
 			return makeErrResponse(pkt, protocol.ErrInternal)
 		} else if key == nil {
-			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
+			log.Errorf("failed to load key with sni=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
 			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 		}
 
@@ -376,14 +412,14 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 
 		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
-			log.Errorf("Connection: %s: Signing error: %v", connName, protocol.ErrCrypto, err)
+			log.Errorf("Connection: %s: sni=%s ski=%v request-id=%s: Signing error: %v: request-id:%s:", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err, reqID)
 			// This indicates that a remote keyserver is being used
 			var remoteConfigurationErr RemoteConfigurationErr
 			if errors.As(err, &remoteConfigurationErr) {
-				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrRemoteConfiguration, err)
+				log.Errorf("Connection %v: sni=%s ski=%v request-id=%s: %s: Signing error: %v request-id:%s\n", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrRemoteConfiguration, err, reqID)
 				return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
 			} else {
-				log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+				log.Errorf("Connection %v: sni=%s ski=%v request-id=%s: %s: Signing error: %v request-id:%s\n", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err, reqID)
 				return makeErrResponse(pkt, protocol.ErrCrypto)
 			}
 		}
@@ -394,15 +430,15 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		key, err := s.keys.Get(ctx, &pkt.Operation)
 		logKeyLoadDuration(loadStart)
 		if err != nil {
-			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err)
 			return makeErrResponse(pkt, protocol.ErrInternal)
 		} else if key == nil {
-			log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
+			log.Errorf("failed to load key with sni=%s ip=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
 			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 		}
 
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
-			log.Errorf("Connection %v: %s: Key is not RSA", connName, protocol.ErrCrypto)
+			log.Errorf("Connection %v: sni=%s request-id=%s: %s: Key is not RSA", connName, pkt.Operation.SNI, reqID, protocol.ErrCrypto)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
@@ -410,7 +446,7 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			// Decrypt without removing padding; that's the client's responsibility.
 			ptxt, err := textbook_rsa.Decrypt(rsaKey, pkt.Operation.Payload)
 			if err != nil {
-				log.Errorf("connection %v: %v", connName, err)
+				log.Errorf("connection %v: sni=%s ip=%s ski=%v request-id=%s: %v", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err)
 				return makeErrResponse(pkt, protocol.ErrCrypto)
 			}
 			return makeRespondResponse(pkt, ptxt)
@@ -418,13 +454,13 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 
 		rsaKey, ok := key.(crypto.Decrypter)
 		if !ok {
-			log.Errorf("Connection %v: %s: Key is not Decrypter", connName, protocol.ErrCrypto)
+			log.Errorf("Connection %v: sni=%s request-id=%s: %s: Key is not Decrypter", connName, pkt.Operation.SNI, reqID, protocol.ErrCrypto)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
 		ptxt, err := rsaKey.Decrypt(nil, pkt.Operation.Payload, nil)
 		if err != nil {
-			log.Errorf("Connection %v: %s: Decryption error: %v", connName, protocol.ErrCrypto, err)
+			log.Errorf("Connection %v: sni=%s ip=%s ski=%v request-id=%s: %s: Decryption error: %v", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
 			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 
@@ -457,10 +493,10 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	key, err := s.keys.Get(ctx, &pkt.Operation)
 	logKeyLoadDuration(loadStart)
 	if err != nil {
-		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, err)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err)
 		return makeErrResponse(pkt, protocol.ErrInternal)
 	} else if key == nil {
-		log.Errorf("failed to load key with sni=%s ip=%s ski=%v: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, protocol.ErrKeyNotFound)
+		log.Errorf("failed to load key with sni=%s ip=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
 		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
 	}
 
@@ -490,17 +526,17 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		}
 		if err != nil {
 			if attempts > 1 {
-				log.Debugf("Connection %v: failed sign attempt: %s, %d attempt(s) left", connName, err, attempts-1)
+				log.Debugf("Connection %v sni=%s ip=%s ski=%v request-id=%s : failed sign attempt: %s, %d attempt(s) left", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err, attempts-1)
 				continue
 			} else {
 				tracing.LogError(span, err)
 				// This indicates that a remote keyserver is being used
 				var remoteConfigurationErr RemoteConfigurationErr
 				if errors.As(err, &remoteConfigurationErr) {
-					log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrRemoteConfiguration, err)
+					log.Errorf("Connection %v sni=%s ip=%s ski=%v request-id=%s : %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrRemoteConfiguration, err)
 					return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
 				} else {
-					log.Errorf("Connection %v: %s: Signing error: %v\n", connName, protocol.ErrCrypto, err)
+					log.Errorf("Connection %v sni=%s ip=%s ski=%v request-id=%s : %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
 					return makeErrResponse(pkt, protocol.ErrCrypto)
 				}
 			}
