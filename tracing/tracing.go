@@ -47,6 +47,7 @@ func SetOperationSpanTags(span opentracing.Span, op *protocol.Operation) {
 		"operation.sni":            op.SNI,
 		"operation.certid":         op.CertID,
 		"operation.customfuncname": op.CustomFuncName,
+		"operation.forwardingsvc":  fmt.Sprintf("%d", op.ForwardingSvc),
 	}
 	for k, v := range tags {
 		span.SetTag(k, v)
