@@ -127,5 +127,5 @@ snapshot:
 	docker run --rm --privileged -v $(PWD):/go/tmp \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-w /go/tmp \
-		ghcr.io/goreleaser/goreleaser-cross:latest --clean --snapshot --skip-publish
+		ghcr.io/goreleaser/goreleaser-cross:latest --clean --snapshot --skip publish
 

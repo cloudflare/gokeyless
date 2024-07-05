@@ -414,19 +414,21 @@ type Operation struct {
 	ServerIP       net.IP
 	SNI            string
 	CertID         string
+	ForwardingSvc  int64
 	CustomFuncName string
 	JaegerSpan     []byte
 	ReqContext     []byte
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s]",
+	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s, Forwarding Service: %v]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
 		o.ClientIP,
 		o.ServerIP,
 		o.SNI,
+		o.ForwardingSvc,
 	)
 }
 
