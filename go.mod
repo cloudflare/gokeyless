@@ -19,7 +19,7 @@ require (
 	github.com/lziest/ttlcache v0.0.0-20160918175801-3c85255853f2
 	github.com/miekg/dns v1.1.58
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_golang v1.19.1
 	github.com/spf13/afero v1.11.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
