@@ -94,7 +94,7 @@ github.com/cloudflare/cfssl/errors
 github.com/cloudflare/cfssl/helpers
 github.com/cloudflare/cfssl/helpers/derhelpers
 github.com/cloudflare/cfssl/log
-# github.com/cloudflare/cloudflare-go v0.94.0
+# github.com/cloudflare/cloudflare-go v0.100.0
 ## explicit; go 1.19
 github.com/cloudflare/cloudflare-go
 # github.com/cloudflare/go-metrics v0.0.0-20151117154305-6a9aea36fb41
@@ -121,8 +121,8 @@ github.com/go-logr/logr/funcr
 # github.com/go-logr/stdr v1.2.2
 ## explicit; go 1.16
 github.com/go-logr/stdr
-# github.com/goccy/go-json v0.10.2
-## explicit; go 1.12
+# github.com/goccy/go-json v0.10.3
+## explicit; go 1.19
 github.com/goccy/go-json
 github.com/goccy/go-json/internal/decoder
 github.com/goccy/go-json/internal/encoder
