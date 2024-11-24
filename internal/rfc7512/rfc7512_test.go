@@ -1,3 +1,4 @@
+//go:build pkcs11 && cgo
 // +build pkcs11,cgo
 
 package rfc7512
@@ -35,4 +36,19 @@ func TestParsePKCS11URI(t *testing.T) {
 			t.Fatalf("PKCS#11 Parser failed to detect a wrong URI: %s", uri)
 		}
 	}
+}
+
+func FuzzParsePKCS11URI(f *testing.F) {
+	tests := strings.Split(samples, "\n")
+	for _, uri := range tests {
+		f.Add(uri)
+	}
+
+	f.Fuzz(func(t *testing.T, uri string) {
+		pk11uri, err := ParsePKCS11URI(uri)
+		if err != nil {
+			return
+		}
+		_, _ = LoadPKCS11Signer(pk11uri)
+	})
 }

@@ -107,7 +107,8 @@ func (k KeyVaultSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts)
 	return convert1363ToAsn1(res)
 }
 
-//  map the signature algirthm to the relevant JWK one
+//	map the signature algirthm to the relevant JWK one
+//
 // see https://tools.ietf.org/html/rfc7518#section-3.1
 func (k KeyVaultSigner) determineSigAlg(opts crypto.SignerOpts) (algo keyvault.JSONWebKeySignatureAlgorithm, err error) {
 	switch {

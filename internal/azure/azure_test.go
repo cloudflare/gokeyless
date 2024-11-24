@@ -72,3 +72,10 @@ func TestSmoke(t *testing.T) {
 	require.NoError(err)
 
 }
+
+func FuzzParseKeyURL(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, url string) {
+		parseKeyURL(url)
+	})
+}

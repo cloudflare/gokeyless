@@ -46,3 +46,19 @@ func TestMarshalBinary(t *testing.T) {
 	require.Equal(pkt.ID, pkt2.ID)
 	require.Equal(op, pkt2.Operation)
 }
+
+func FuzzUnmarshalBinary(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var p Packet
+		_ = p.UnmarshalBinary(data)
+	})
+}
+
+func FuzzReadFrom(f *testing.F) {
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var pkt2 Packet
+		pkt2.ReadFrom(bytes.NewReader(data))
+	})
+}

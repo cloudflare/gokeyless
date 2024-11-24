@@ -107,6 +107,15 @@ test-nohsm:
 test-trust: gokeyless
 	tests/trust-check.sh
 
+.PHONY: fuzz
+fuzz:
+	@go test -run=^$ -fuzz=FuzzStripPKCS1v15 -fuzztime=600s ./client
+	@go test -run=^$ -fuzz=FuzzStripPKCS1v15SessionKey -fuzztime=600s ./client
+	@go test -fuzz=FuzzParseKeyURL -fuzztime=600s ./internal/azure
+	@go test -fuzz=FuzzParsePKCS11URI -fuzztime=600s ./internal/rfc7512
+	@go test -fuzz=FuzzUnmarshalBinary -fuzztime=600s ./protocol
+	@go test -fuzz=FuzzReadFrom -fuzztime=600s ./protocol
+
 .PHONY: benchmark-softhsm
 benchmark-softhsm:
 	go test -tags pkcs11 -v -race ./server -bench HSM -args -softhsm2
