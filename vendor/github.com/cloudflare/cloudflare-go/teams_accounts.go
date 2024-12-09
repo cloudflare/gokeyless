@@ -132,7 +132,7 @@ type TeamsAccountLoggingConfiguration struct {
 
 type TeamsLoggingSettings struct {
 	LoggingSettingsByRuleType map[TeamsRuleType]TeamsAccountLoggingConfiguration `json:"settings_by_rule_type"`
-	RedactPii                 bool                                               `json:"redact_pii,omitempty"`
+	RedactPii                 *bool                                              `json:"redact_pii,omitempty"`
 }
 
 type TeamsDeviceSettings struct {
@@ -140,6 +140,7 @@ type TeamsDeviceSettings struct {
 	GatewayProxyUDPEnabled             bool  `json:"gateway_udp_proxy_enabled"`
 	RootCertificateInstallationEnabled bool  `json:"root_certificate_installation_enabled"`
 	UseZTVirtualIP                     *bool `json:"use_zt_virtual_ip"`
+	DisableForTime                     int32 `json:"disable_for_time"`
 }
 
 type TeamsDeviceSettingsResponse struct {
