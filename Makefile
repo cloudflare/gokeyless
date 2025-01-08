@@ -67,6 +67,7 @@ package-deb: | $(INSTALL_BIN)/$(NAME) install-config
 	--deb-user root --deb-group root \
 	.
 
+
 .PHONY: package-rpm
 package-rpm: | $(INSTALL_BIN)/$(NAME) install-config
 	$(FPM) \
