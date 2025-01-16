@@ -27,8 +27,6 @@ type DNSRecord struct {
 	Meta       interface{} `json:"meta,omitempty"`
 	Data       interface{} `json:"data,omitempty"` // data returned by: SRV, LOC
 	ID         string      `json:"id,omitempty"`
-	ZoneID     string      `json:"zone_id,omitempty"`
-	ZoneName   string      `json:"zone_name,omitempty"`
 	Priority   *uint16     `json:"priority,omitempty"`
 	TTL        int         `json:"ttl,omitempty"`
 	Proxied    *bool       `json:"proxied,omitempty"`
@@ -185,8 +183,6 @@ type CreateDNSRecordParams struct {
 	Meta       interface{} `json:"meta,omitempty"`
 	Data       interface{} `json:"data,omitempty"` // data returned by: SRV, LOC
 	ID         string      `json:"id,omitempty"`
-	ZoneID     string      `json:"zone_id,omitempty"`
-	ZoneName   string      `json:"zone_name,omitempty"`
 	Priority   *uint16     `json:"priority,omitempty"`
 	TTL        int         `json:"ttl,omitempty"`
 	Proxied    *bool       `json:"proxied,omitempty" url:"proxied,omitempty"`
@@ -351,7 +347,7 @@ func (api *API) DeleteDNSRecord(ctx context.Context, rc *ResourceContainer, reco
 
 // ExportDNSRecords returns all DNS records for a zone in the BIND format.
 //
-// API reference: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-export-dns-records
+// API reference: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/export/
 func (api *API) ExportDNSRecords(ctx context.Context, rc *ResourceContainer, params ExportDNSRecordsParams) (string, error) {
 	if rc.Level != ZoneRouteLevel {
 		return "", ErrRequiredZoneLevelResourceContainer
@@ -380,7 +376,7 @@ func (api *API) ExportDNSRecords(ctx context.Context, rc *ResourceContainer, par
 // two separate API calls (one for proxied and one for non-proxied) instead of
 // making the end user know about this detail.
 //
-// API reference: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-import-dns-records
+// API reference: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/import/
 func (api *API) ImportDNSRecords(ctx context.Context, rc *ResourceContainer, params ImportDNSRecordsParams) error {
 	if rc.Level != ZoneRouteLevel {
 		return ErrRequiredZoneLevelResourceContainer
