@@ -21,7 +21,7 @@ import (
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 )
 
-//go:generate stringer -type=Tag,Op -output=protocol_string.go
+//go:generate stringer -type=Tag,Op,ComplianceRegion -output=protocol_string.go
 
 // Tag marks the type of an Item.
 type Tag byte
@@ -51,6 +51,8 @@ const (
 	TagJaegerSpan Tag = 0x15
 	// TagReqContext contains request metadata
 	TagReqContext Tag = 0x16
+	// TagComplianceRegion implies the compliance region of the operation which can impact behavior
+	TagComplianceRegion Tag = 0x17
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -201,6 +203,16 @@ func (e Error) String() string {
 		return "unknown error"
 	}
 }
+
+// ComplianceRegion describes any guardrails that gokeyless should follow when accessing data from
+// external applications
+type ComplianceRegion byte
+
+const (
+	// ComplianceRegionFedRAMPHigh signals that this operation should only interact
+	// with the FedRAMP High QS instance
+	ComplianceRegionFedRAMPHigh ComplianceRegion = 0x01
+)
 
 const (
 	paddedLength = 1024
@@ -405,23 +417,24 @@ func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
 
 // Operation defines a single (repeatable) keyless operation.
 type Operation struct {
-	Opcode         Op
-	Payload        []byte
-	Extra          []byte
-	SKI            SKI
-	Digest         Digest
-	ClientIP       net.IP
-	ServerIP       net.IP
-	SNI            string
-	CertID         string
-	ForwardingSvc  int64
-	CustomFuncName string
-	JaegerSpan     []byte
-	ReqContext     []byte
+	Opcode           Op
+	Payload          []byte
+	Extra            []byte
+	SKI              SKI
+	Digest           Digest
+	ClientIP         net.IP
+	ServerIP         net.IP
+	SNI              string
+	CertID           string
+	ForwardingSvc    int64
+	CustomFuncName   string
+	JaegerSpan       []byte
+	ReqContext       []byte
+	ComplianceRegion ComplianceRegion
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s, Forwarding Service: %v]",
+	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s, Forwarding Service: %v, ComplianceRegion %v]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
@@ -429,6 +442,7 @@ func (o *Operation) String() string {
 		o.ServerIP,
 		o.SNI,
 		o.ForwardingSvc,
+		o.ComplianceRegion,
 	)
 }
 
@@ -512,6 +526,8 @@ func (o *Operation) Bytes() uint16 {
 	if o.ReqContext != nil {
 		add(tlvLen(len(o.ReqContext)))
 	}
+	// compliance region
+	add(tlvLen(1))
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -585,6 +601,8 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 	if o.ReqContext != nil {
 		b = append(b, tlvBytes(TagReqContext, o.ReqContext)...)
 	}
+
+	b = append(b, tlvBytes(TagComplianceRegion, []byte{byte(o.ComplianceRegion)})...)
 
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
@@ -673,6 +691,11 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 			o.JaegerSpan = data
 		case TagReqContext:
 			o.ReqContext = data
+		case TagComplianceRegion:
+			if len(data) != 1 {
+				return fmt.Errorf("invalid ComplianceRegion: %s", data)
+			}
+			o.ComplianceRegion = ComplianceRegion(data[0])
 		default:
 			// Silently ignore any unknown tags (to allow for new tags to be gradually added to the protocol).
 			continue
