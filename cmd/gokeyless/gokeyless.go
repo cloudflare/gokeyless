@@ -240,7 +240,7 @@ func runMain() error {
 
 		return nil
 	case manualMode && configMode:
-		return fmt.Errorf("can't specify both --manual-activation and --config-only!")
+		return fmt.Errorf("can't specify both --manual-activation and --config-only")
 	case manualMode:
 		// Allow manual activation (requires the CSR to be manually signed).
 		// manual activation won't proceed to start the server
@@ -403,15 +403,15 @@ func validCertExpiry(cert *x509.Certificate) bool {
 }
 
 // needNewCertAndKey checks the validity of certificate and key
-func (config Config) needNewCertAndKey() bool {
-	_, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+func (c Config) needNewCertAndKey() bool {
+	_, err := tls.LoadX509KeyPair(c.CertFile, c.KeyFile)
 	if err != nil {
 		log.Errorf("cannot load server cert/key: %v", err)
 		return true
 	}
 
 	// error is ignore because tls.LoadX509KeyPair already verify the existence of the file
-	certBytes, _ := os.ReadFile(config.CertFile)
+	certBytes, _ := os.ReadFile(c.CertFile)
 	// error is ignore because tls.LoadX509KeyPair already verify the file can be parsed
 	cert, _ := helpers.ParseCertificatePEM(certBytes)
 	// verify the leaf certificate
@@ -424,8 +424,8 @@ func (config Config) needNewCertAndKey() bool {
 }
 
 // verifyCSRAndKey checks if csr and key files exist and if they match
-func (config Config) verifyCSRAndKey() bool {
-	csrBytes, err := os.ReadFile(config.CSRFile)
+func (c Config) verifyCSRAndKey() bool {
+	csrBytes, err := os.ReadFile(c.CSRFile)
 	if err != nil {
 		log.Errorf("cannot read csr file: %v", err)
 		return false
@@ -448,7 +448,7 @@ func (config Config) verifyCSRAndKey() bool {
 		return false
 	}
 
-	keyBytes, err := os.ReadFile(config.KeyFile)
+	keyBytes, err := os.ReadFile(c.KeyFile)
 	if err != nil {
 		log.Errorf("cannot read private key file: %v", err)
 		return false

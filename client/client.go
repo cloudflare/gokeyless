@@ -388,6 +388,9 @@ func (c *Client) LoadTLSCertificate(server, certFile string) (cert tls.Certifica
 	return cert, nil
 }
 
+// DefaultLoadPubKey will parse a public key from the provided bytes.
+// The function used to load the public key in ScanDir if no LoadPubKey
+// argument is provided
 func DefaultLoadPubKey(in []byte) (crypto.PublicKey, error) {
 	block, _ := pem.Decode(in)
 	if block == nil {

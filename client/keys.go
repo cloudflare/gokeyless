@@ -66,15 +66,13 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 	case *rsa.PublicKey:
 		if value, ok := rsaCrypto[opts.HashFunc()]; ok {
 			return value
-		} else {
-			return protocol.OpError
 		}
+		return protocol.OpError
 	case *ecdsa.PublicKey:
 		if value, ok := ecdsaCrypto[opts.HashFunc()]; ok {
 			return value
-		} else {
-			return protocol.OpError
 		}
+		return protocol.OpError
 	case ed25519.PublicKey:
 		return protocol.OpEd25519Sign
 	default:
