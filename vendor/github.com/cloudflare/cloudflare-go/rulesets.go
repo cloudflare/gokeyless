@@ -35,7 +35,6 @@ const (
 	RulesetPhaseHTTPRequestOrigin            RulesetPhase = "http_request_origin"
 	RulesetPhaseHTTPRequestRedirect          RulesetPhase = "http_request_redirect"
 	RulesetPhaseHTTPRequestSanitize          RulesetPhase = "http_request_sanitize"
-	RulesetPhaseHTTPRequestSBFM              RulesetPhase = "http_request_sbfm"
 	RulesetPhaseHTTPRequestTransform         RulesetPhase = "http_request_transform"
 	RulesetPhaseHTTPResponseCompression      RulesetPhase = "http_response_compression"
 	RulesetPhaseHTTPResponseFirewallManaged  RulesetPhase = "http_response_firewall_managed"
@@ -104,7 +103,6 @@ func RulesetPhaseValues() []string {
 		string(RulesetPhaseHTTPRequestOrigin),
 		string(RulesetPhaseHTTPRequestRedirect),
 		string(RulesetPhaseHTTPRequestSanitize),
-		string(RulesetPhaseHTTPRequestSBFM),
 		string(RulesetPhaseHTTPRequestTransform),
 		string(RulesetPhaseHTTPResponseCompression),
 		string(RulesetPhaseHTTPResponseFirewallManaged),
@@ -334,7 +332,8 @@ type RulesetRuleActionParametersCustomKey struct {
 
 type RulesetRuleActionParametersCustomKeyHeader struct {
 	RulesetRuleActionParametersCustomKeyFields
-	ExcludeOrigin *bool `json:"exclude_origin,omitempty"`
+	ExcludeOrigin *bool               `json:"exclude_origin,omitempty"`
+	Contains      map[string][]string `json:"contains,omitempty"`
 }
 
 type RulesetRuleActionParametersCustomKeyCookie RulesetRuleActionParametersCustomKeyFields
@@ -741,11 +740,16 @@ type UpdateEntrypointRulesetParams struct {
 	Rules       []RulesetRule `json:"rules"`
 }
 
+type DeleteRulesetRuleParams struct {
+	RulesetID     string `json:"-"`
+	RulesetRuleID string `json:"-"`
+}
+
 // ListRulesets lists all Rulesets in a given zone or account depending on the
 // ResourceContainer type provided.
 //
 // API reference: https://developers.cloudflare.com/api/operations/listAccountRulesets
-// API reference: https://developers.cloudflare.com/api/operations/listZoneRulesets
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/list/
 func (api *API) ListRulesets(ctx context.Context, rc *ResourceContainer, params ListRulesetsParams) ([]Ruleset, error) {
 	uri := fmt.Sprintf("/%s/%s/rulesets", rc.Level, rc.Identifier)
 
@@ -765,7 +769,7 @@ func (api *API) ListRulesets(ctx context.Context, rc *ResourceContainer, params 
 // GetRuleset fetches a single ruleset.
 //
 // API reference: https://developers.cloudflare.com/api/operations/getAccountRuleset
-// API reference: https://developers.cloudflare.com/api/operations/getZoneRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/get/
 func (api *API) GetRuleset(ctx context.Context, rc *ResourceContainer, rulesetID string) (Ruleset, error) {
 	uri := fmt.Sprintf("/%s/%s/rulesets/%s", rc.Level, rc.Identifier, rulesetID)
 	res, err := api.makeRequestContext(ctx, http.MethodGet, uri, nil)
@@ -784,7 +788,7 @@ func (api *API) GetRuleset(ctx context.Context, rc *ResourceContainer, rulesetID
 // CreateRuleset creates a new ruleset.
 //
 // API reference: https://developers.cloudflare.com/api/operations/createAccountRuleset
-// API reference: https://developers.cloudflare.com/api/operations/createZoneRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/create/
 func (api *API) CreateRuleset(ctx context.Context, rc *ResourceContainer, params CreateRulesetParams) (Ruleset, error) {
 	uri := fmt.Sprintf("/%s/%s/rulesets", rc.Level, rc.Identifier)
 	res, err := api.makeRequestContext(ctx, http.MethodPost, uri, params)
@@ -803,7 +807,7 @@ func (api *API) CreateRuleset(ctx context.Context, rc *ResourceContainer, params
 // DeleteRuleset removes a ruleset based on the ruleset ID.
 //
 // API reference: https://developers.cloudflare.com/api/operations/deleteAccountRuleset
-// API reference: https://developers.cloudflare.com/api/operations/deleteZoneRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/delete/
 func (api *API) DeleteRuleset(ctx context.Context, rc *ResourceContainer, rulesetID string) error {
 	uri := fmt.Sprintf("/%s/%s/rulesets/%s", rc.Level, rc.Identifier, rulesetID)
 	res, err := api.makeRequestContext(ctx, http.MethodDelete, uri, nil)
@@ -824,7 +828,7 @@ func (api *API) DeleteRuleset(ctx context.Context, rc *ResourceContainer, rulese
 // UpdateRuleset updates a ruleset based on the ruleset ID.
 //
 // API reference: https://developers.cloudflare.com/api/operations/updateAccountRuleset
-// API reference: https://developers.cloudflare.com/api/operations/updateZoneRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/update/
 func (api *API) UpdateRuleset(ctx context.Context, rc *ResourceContainer, params UpdateRulesetParams) (Ruleset, error) {
 	if params.ID == "" {
 		return Ruleset{}, ErrMissingResourceIdentifier
@@ -844,10 +848,31 @@ func (api *API) UpdateRuleset(ctx context.Context, rc *ResourceContainer, params
 	return result.Result, nil
 }
 
+// DeleteRulesetRule removes a ruleset rule based on the ruleset ID +
+// ruleset rule ID.
+//
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/methods/delete/
+func (api *API) DeleteRulesetRule(ctx context.Context, rc *ResourceContainer, params DeleteRulesetRuleParams) error {
+	uri := fmt.Sprintf("/%s/%s/rulesets/%s/rules/%s", rc.Level, rc.Identifier, params.RulesetID, params.RulesetRuleID)
+	res, err := api.makeRequestContext(ctx, http.MethodDelete, uri, nil)
+	if err != nil {
+		return err
+	}
+
+	// The API is not implementing the standard response blob but returns an
+	// empty response (204) in case of a success. So we are checking for the
+	// response body size here.
+	if len(res) > 0 {
+		return fmt.Errorf(errMakeRequestError+": %w", errors.New(string(res)))
+	}
+
+	return nil
+}
+
 // GetEntrypointRuleset returns an entry point ruleset base on the phase.
 //
 // API reference: https://developers.cloudflare.com/api/operations/getAccountEntrypointRuleset
-// API reference: https://developers.cloudflare.com/api/operations/getZoneEntrypointRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/subresources/phases/methods/get/
 func (api *API) GetEntrypointRuleset(ctx context.Context, rc *ResourceContainer, phase string) (Ruleset, error) {
 	uri := fmt.Sprintf("/%s/%s/rulesets/phases/%s/entrypoint", rc.Level, rc.Identifier, phase)
 	res, err := api.makeRequestContext(ctx, http.MethodGet, uri, nil)
@@ -867,7 +892,7 @@ func (api *API) GetEntrypointRuleset(ctx context.Context, rc *ResourceContainer,
 // phase.
 //
 // API reference: https://developers.cloudflare.com/api/operations/updateAccountEntrypointRuleset
-// API reference: https://developers.cloudflare.com/api/operations/updateZoneEntrypointRuleset
+// API reference: https://developers.cloudflare.com/api/resources/rulesets/subresources/phases/methods/update/
 func (api *API) UpdateEntrypointRuleset(ctx context.Context, rc *ResourceContainer, params UpdateEntrypointRulesetParams) (Ruleset, error) {
 	if params.Phase == "" {
 		return Ruleset{}, ErrMissingRulesetPhase
