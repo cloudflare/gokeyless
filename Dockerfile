@@ -1,4 +1,4 @@
-FROM golang:1.21 as builder
+FROM golang:1.23 as builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -14,7 +14,7 @@ WORKDIR /gokeyless
 COPY . .
 RUN env GOOS=${TARGETOS} GOARCH=${TARGETARCH} make gokeyless
 
-FROM golang:1.21
+FROM golang:1.23
 WORKDIR /gokeyless
 COPY --from=builder /gokeyless/gokeyless gokeyless
 ENTRYPOINT ["./gokeyless"]
