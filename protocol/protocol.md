@@ -39,6 +39,7 @@ The following tag values are possible for items:
     0x13 - CustomFuncName, (for use with opcode 0x24)
     0x14 - Supplemental payload, whose meaning is not specified and must be predetermined between the server and client,
     0x15 - Binary encoded Jaeger span (https://www.jaegertracing.io/docs/1.19/client-libraries/#value)
+    0x17 - ComplianceRegion,
 
 A requests contains a header and the following items:
 

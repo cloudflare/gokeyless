@@ -23,18 +23,19 @@ func TestMarshalBinary(t *testing.T) {
 	rand.Read(payload)
 	rand.Read(reqCtx)
 	op := Operation{
-		Opcode:         OpECDSASignSHA256,
-		Payload:        payload,
-		Extra:          extra,
-		Digest:         sha256.Sum256([]byte("Digest")),
-		SKI:            sha1.Sum([]byte("SKI")),
-		ClientIP:       net.ParseIP("1.1.1.1").To4(),
-		ServerIP:       net.ParseIP("2.2.2.2").To4(),
-		SNI:            "SNI",
-		CertID:         "SNI",
-		CustomFuncName: "CustomFuncName",
-		JaegerSpan:     []byte("615f730ad5fe896f:615f730ad5fe896f:1"),
-		ReqContext:     reqCtx,
+		Opcode:           OpECDSASignSHA256,
+		Payload:          payload,
+		Extra:            extra,
+		Digest:           sha256.Sum256([]byte("Digest")),
+		SKI:              sha1.Sum([]byte("SKI")),
+		ClientIP:         net.ParseIP("1.1.1.1").To4(),
+		ServerIP:         net.ParseIP("2.2.2.2").To4(),
+		SNI:              "SNI",
+		CertID:           "SNI",
+		CustomFuncName:   "CustomFuncName",
+		JaegerSpan:       []byte("615f730ad5fe896f:615f730ad5fe896f:1"),
+		ReqContext:       reqCtx,
+		ComplianceRegion: ComplianceRegionFedRAMPHigh,
 	}
 	pkt := NewPacket(42, op)
 	b, err := pkt.MarshalBinary()
