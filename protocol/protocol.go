@@ -527,7 +527,9 @@ func (o *Operation) Bytes() uint16 {
 		add(tlvLen(len(o.ReqContext)))
 	}
 	// compliance region
-	add(tlvLen(1))
+	if o.ComplianceRegion != 0 {
+		add(tlvLen(1))
+	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -602,7 +604,9 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagReqContext, o.ReqContext)...)
 	}
 
-	b = append(b, tlvBytes(TagComplianceRegion, []byte{byte(o.ComplianceRegion)})...)
+	if o.ComplianceRegion != 0 {
+		b = append(b, tlvBytes(TagComplianceRegion, []byte{byte(o.ComplianceRegion)})...)
+	}
 
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
