@@ -39,15 +39,16 @@ func SpanContextToBinary(sc opentracing.SpanContext) ([]byte, error) {
 // SetOperationSpanTags sets span tags with all of the operation's fields
 func SetOperationSpanTags(span opentracing.Span, op *protocol.Operation) {
 	tags := map[string]interface{}{
-		"operation.opcode":         op.Opcode.String(),
-		"operation.ski":            op.SKI,
-		"operation.digest":         fmt.Sprintf("%02x", op.Digest),
-		"operation.clientip":       op.ClientIP,
-		"operation.serverip":       op.ServerIP,
-		"operation.sni":            op.SNI,
-		"operation.certid":         op.CertID,
-		"operation.customfuncname": op.CustomFuncName,
-		"operation.forwardingsvc":  fmt.Sprintf("%d", op.ForwardingSvc),
+		"operation.opcode":            op.Opcode.String(),
+		"operation.ski":               op.SKI,
+		"operation.digest":            fmt.Sprintf("%02x", op.Digest),
+		"operation.clientip":          op.ClientIP,
+		"operation.serverip":          op.ServerIP,
+		"operation.sni":               op.SNI,
+		"operation.certid":            op.CertID,
+		"operation.customfuncname":    op.CustomFuncName,
+		"operation.forwardingsvc":     fmt.Sprintf("%d", op.ForwardingSvc),
+		"operation.compliance_region": op.ComplianceRegion.String(),
 	}
 	for k, v := range tags {
 		span.SetTag(k, v)
