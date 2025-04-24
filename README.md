@@ -29,7 +29,7 @@ private_key_stores:
 
 Full instructions: https://developers.cloudflare.com/ssl/keyless-ssl/configuration/public-dns/#populate-keys
 
-#### PKCS #11 Compatable HSM
+#### PKCS #11 Compatible HSM
 
 Private keys can also be stored on a Hardware Security Module. Keyless can access such a key using a [PKCS #11 URI](https://tools.ietf.org/html/rfc7512) in the configuration file. Here are some examples of URIs for keys stored on various HSM providers:
 
