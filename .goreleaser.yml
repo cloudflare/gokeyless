@@ -30,7 +30,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 archives:
-  - format: binary
+  - formats: [binary]
 release:
   github:
     owner: cloudflare
