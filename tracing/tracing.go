@@ -12,6 +12,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
 	opentracing_log "github.com/opentracing/opentracing-go/log"
+	"github.com/uber/jaeger-client-go"
 )
 
 // SpanContextFromBinary builds span context based on binary-encoded bytes (e.g. for servers)
@@ -22,7 +23,17 @@ func SpanContextFromBinary(spanData []byte) (opentracing.SpanContext, error) {
 		return nil, nil
 	}
 	var scReader = bytes.NewReader(spanData)
-	return opentracing.GlobalTracer().Extract(opentracing.Binary, scReader)
+	sc, err := opentracing.GlobalTracer().Extract(opentracing.Binary, scReader)
+	if err != nil {
+		carrier := opentracing.TextMapCarrier{
+			jaeger.TraceContextHeaderName: string(spanData),
+		}
+		sc, err = opentracing.GlobalTracer().Extract(opentracing.TextMap, &carrier)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sc, nil
 }
 
 // SpanContextToBinary returns bytes representing the binary-encoded span context (e.g. for clients)
