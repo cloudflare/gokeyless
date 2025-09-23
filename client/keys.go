@@ -93,7 +93,8 @@ type PrivateKey struct {
 
 	// We have shove the span context inside PrivateKey because
 	// it's used by calling functions on the `crypto.Signer` interface, which don't take ctx as a parameter.
-	JaegerSpan []byte
+	JaegerSpan       []byte
+	complianceRegion protocol.ComplianceRegion
 }
 
 // Public returns the public key corresponding to the opaque private key.
@@ -124,13 +125,14 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 		// https://github.com/cloudflare/gokeyless/pull/276 makes it safe to fill it in,
 		// but there's no way to know the version of the remote keyserver
 		result, err = conn.Conn.DoOperation(ctx, protocol.Operation{
-			Opcode:   op,
-			Payload:  msg,
-			SKI:      key.ski,
-			ClientIP: key.clientIP,
-			ServerIP: key.serverIP,
-			SNI:      key.sni,
-			CertID:   key.certID,
+			Opcode:           op,
+			Payload:          msg,
+			SKI:              key.ski,
+			ClientIP:         key.clientIP,
+			ServerIP:         key.serverIP,
+			SNI:              key.sni,
+			CertID:           key.certID,
+			ComplianceRegion: key.complianceRegion,
 		})
 		if err != nil {
 			conn.Close()

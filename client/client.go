@@ -193,7 +193,7 @@ func (c *Client) getRemote(server string) (Remote, error) {
 // ski, sni, serverIP, and certID are used to identify the key by the remote
 // keyserver.
 func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
-	pub crypto.PublicKey, sni string, certID string, serverIP net.IP) (crypto.Signer, error) {
+	pub crypto.PublicKey, sni string, certID string, serverIP net.IP, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
 	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
 	defer span.Finish()
 	priv := PrivateKey{
@@ -204,6 +204,9 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 		serverIP:  serverIP,
 		keyserver: keyserver,
 		certID:    certID,
+	}
+	if len(complianceRegion) > 0 {
+		priv.complianceRegion = complianceRegion[0]
 	}
 	var err error
 	priv.JaegerSpan, err = tracing.SpanContextToBinary(span.Context())
@@ -223,7 +226,7 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 // ski, sni, and serverIP are used to identified the key by the remote
 // keyserver.
 func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
-	pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+	pub crypto.PublicKey, sni string, serverIP net.IP, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
 	defer span.Finish()
@@ -234,6 +237,10 @@ func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski proto
 		sni:       sni,
 		serverIP:  serverIP,
 		keyserver: keyserver,
+	}
+
+	if len(complianceRegion) > 0 {
+		priv.complianceRegion = complianceRegion[0]
 	}
 	var err error
 	priv.JaegerSpan, err = tracing.SpanContextToBinary(span.Context())
@@ -254,24 +261,24 @@ func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski proto
 // SKI is computed from the public key and along with sni and serverIP,
 // the remote Signer uses those key identification info to contact the
 // remote keyserver for keyless operations.
-func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplate(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
-	return NewRemoteSigner(ctx, c, keyserver, ski, pub, sni, serverIP)
+	return NewRemoteSigner(ctx, c, keyserver, ski, pub, sni, serverIP, complianceRegion...)
 }
 
 // NewRemoteSignerTemplateWithCertID returns a remote keyserver
 // based crypto.Signer with the public key.
 // SKI is computed from public key, and along with sni, serverIP, and
 // certID the remote signer uses these to contact the remote keyserver.
-func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string) (crypto.Signer, error) {
+func (c *Client) NewRemoteSignerTemplateWithCertID(ctx context.Context, keyserver string, pub crypto.PublicKey, sni string, serverIP net.IP, certID string, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
 	ski, err := protocol.GetSKI(pub)
 	if err != nil {
 		return nil, err
 	}
-	return NewRemoteSignerWithCertID(ctx, c, keyserver, ski, pub, sni, certID, serverIP)
+	return NewRemoteSignerWithCertID(ctx, c, keyserver, ski, pub, sni, certID, serverIP, complianceRegion...)
 }
 
 // NewRemoteSignerByPublicKey returns a remote keyserver based signer
