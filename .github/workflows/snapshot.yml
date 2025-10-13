@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y softhsm2
       - run: sudo cp -r tests/testdata/tokens/* /var/lib/softhsm/tokens
       - run: make snapshot
