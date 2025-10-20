@@ -188,8 +188,8 @@ type WorkerMetaData struct {
 	TailConsumers    *[]WorkersTailConsumer `json:"tail_consumers,omitempty"`
 	LastDeployedFrom *string                `json:"last_deployed_from,omitempty"`
 	DeploymentId     *string                `json:"deployment_id,omitempty"`
-	PlacementMode    *PlacementMode         `json:"placement_mode,omitempty"`
-	PipelineHash     *string                `json:"pipeline_hash,omitempty"`
+	PlacementFields
+	PipelineHash *string `json:"pipeline_hash,omitempty"`
 }
 
 // WorkerListResponse wrapper struct for API response to worker script list API call.
@@ -228,13 +228,34 @@ const (
 	PlacementModeSmart PlacementMode = "smart"
 )
 
+type PlacementStatus string
+
+// Placement contains all the worker placement information.
 type Placement struct {
+
+	// Mode is the placement mode for the worker (e.g. "smart").
 	Mode PlacementMode `json:"mode"`
+
+	// Status is the status of the placement (readonly).
+	Status PlacementStatus `json:"status,omitempty"`
+}
+
+// PlacementFields contains all the worker placement fields (deprecated and nested).
+// This struct is meant to be embedded, it exists for locality of deprecated and regular fields.
+type PlacementFields struct {
+
+	// PlacementMode.
+	//
+	// Deprecated: Use Placement.Mode instead.
+	PlacementMode *PlacementMode `json:"placement_mode,omitempty"`
+
+	// Placement.
+	Placement *Placement `json:"placement,omitempty"`
 }
 
 // DeleteWorker deletes a single Worker.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-delete-worker
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/delete/
 func (api *API) DeleteWorker(ctx context.Context, rc *ResourceContainer, params DeleteWorkerParams) error {
 	if rc.Level != AccountRouteLevel {
 		return ErrRequiredAccountLevelResourceContainer
@@ -267,7 +288,7 @@ func (api *API) DeleteWorker(ctx context.Context, rc *ResourceContainer, params 
 // GetWorker fetch raw script content for your worker returns string containing
 // worker code js.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-download-worker
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/get/
 func (api *API) GetWorker(ctx context.Context, rc *ResourceContainer, scriptName string) (WorkerScriptResponse, error) {
 	return api.GetWorkerWithDispatchNamespace(ctx, rc, scriptName, "")
 }
@@ -275,7 +296,7 @@ func (api *API) GetWorker(ctx context.Context, rc *ResourceContainer, scriptName
 // GetWorker fetch raw script content for your worker returns string containing
 // worker code js.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-download-worker
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/get/
 func (api *API) GetWorkerWithDispatchNamespace(ctx context.Context, rc *ResourceContainer, scriptName string, dispatchNamespace string) (WorkerScriptResponse, error) {
 	if rc.Level != AccountRouteLevel {
 		return WorkerScriptResponse{}, ErrRequiredAccountLevelResourceContainer
@@ -321,7 +342,7 @@ func (api *API) GetWorkerWithDispatchNamespace(ctx context.Context, rc *Resource
 
 // ListWorkers returns list of Workers for given account.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-list-workers
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/list/
 func (api *API) ListWorkers(ctx context.Context, rc *ResourceContainer, params ListWorkersParams) (WorkerListResponse, *ResultInfo, error) {
 	if rc.Level != AccountRouteLevel {
 		return WorkerListResponse{}, &ResultInfo{}, ErrRequiredAccountLevelResourceContainer
@@ -348,7 +369,7 @@ func (api *API) ListWorkers(ctx context.Context, rc *ResourceContainer, params L
 
 // UploadWorker pushes raw script content for your Worker.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-upload-worker-module
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/
 func (api *API) UploadWorker(ctx context.Context, rc *ResourceContainer, params CreateWorkerParams) (WorkerScriptResponse, error) {
 	if rc.Level != AccountRouteLevel {
 		return WorkerScriptResponse{}, ErrRequiredAccountLevelResourceContainer
@@ -395,7 +416,7 @@ func (api *API) UploadWorker(ctx context.Context, rc *ResourceContainer, params 
 
 // GetWorkersScriptContent returns the pure script content of a worker.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-get-content
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/content/methods/get/
 func (api *API) GetWorkersScriptContent(ctx context.Context, rc *ResourceContainer, scriptName string) (string, error) {
 	if rc.Level != AccountRouteLevel {
 		return "", ErrRequiredAccountLevelResourceContainer
@@ -416,7 +437,7 @@ func (api *API) GetWorkersScriptContent(ctx context.Context, rc *ResourceContain
 
 // UpdateWorkersScriptContent pushes only script content, no metadata.
 //
-// API reference: https://developers.cloudflare.com/api/operations/worker-script-put-content
+// API reference: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/content/methods/update/
 func (api *API) UpdateWorkersScriptContent(ctx context.Context, rc *ResourceContainer, params UpdateWorkersScriptContentParams) (WorkerScriptResponse, error) {
 	if rc.Level != AccountRouteLevel {
 		return WorkerScriptResponse{}, ErrRequiredAccountLevelResourceContainer
