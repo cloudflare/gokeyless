@@ -202,7 +202,10 @@ func readPacket(conn *tls.Conn) {
 
 func makeBandwidthClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.BandwidthClient, error) {
 	conn := dial(cli, server, port)
-	pkt := protocol.NewPacket(0, op)
+	pkt, err := protocol.NewPacket(0, op)
+	if err != nil {
+		return nil, err
+	}
 	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)
@@ -215,7 +218,10 @@ func makeBandwidthClientFromOp(cli *client.Client, server, port string, op proto
 
 func makeLatencyClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.LatencyClient, error) {
 	conn := dial(cli, server, port)
-	pkt := protocol.NewPacket(0, op)
+	pkt, err := protocol.NewPacket(0, op)
+	if err != nil {
+		return nil, err
+	}
 	buf, err := pkt.MarshalBinary()
 	if err != nil {
 		panic(err)

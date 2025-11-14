@@ -259,7 +259,10 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 	c.listeners[id] = response
 	c.mapMtx.Unlock()
 
-	pkt := protocol.NewPacket(id, op)
+	pkt, err := protocol.NewPacket(id, op)
+	if err != nil {
+		return nil, fmt.Errorf("could not create packet: %w", err)
+	}
 
 	// Acquire the write mutex and only release it once we're done writing.
 	c.writeMtx.Lock()
@@ -269,7 +272,7 @@ func (c *Conn) sendOp(ctx context.Context, op protocol.Operation) (chan *result,
 		return nil, ErrClosed
 	}
 	end := time.Now().Add(c.opTimeout)
-	err := c.conn.SetWriteDeadline(end)
+	err = c.conn.SetWriteDeadline(end)
 	if err != nil {
 		c.writeMtx.Unlock()
 		return nil, fmt.Errorf("could not set write deadline: %w", err)

@@ -213,11 +213,16 @@ func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 		log.Errorf("operation from client %s client cert serial: %s errored. sni %s ski %s cert %s request-id %s", h.c.Name, h.c.CertSerial, resp.op.SNI, resp.op.SKI.String(), resp.op.CertID, reqID)
 	}
 	logRequestExecDuration(pkt.Operation.Opcode, start, resp.op.ErrorVal())
+	opLength, err := resp.op.Bytes()
+	if err != nil {
+		h.closeWithWritingErr(err)
+		return
+	}
 	respPkt := protocol.Packet{
 		Header: protocol.Header{
 			MajorVers: 0x01,
 			MinorVers: 0x00,
-			Length:    resp.op.Bytes(),
+			Length:    opLength,
 			ID:        resp.id,
 		},
 		Operation: resp.op,
@@ -226,7 +231,7 @@ func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 	defer logRequestTotalDuration(pkt.Operation.Opcode, reqTime, resp.op.ErrorVal())
-	err := h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
+	err = h.conn.SetWriteDeadline(time.Now().Add(h.timeout))
 	if err != nil {
 		h.closeWithWritingErr(err)
 		return

@@ -37,7 +37,8 @@ func TestMarshalBinary(t *testing.T) {
 		ReqContext:       reqCtx,
 		ComplianceRegion: ComplianceRegionFedRAMPHigh,
 	}
-	pkt := NewPacket(42, op)
+	pkt, err := NewPacket(42, op)
+	require.NoError(err)
 	b, err := pkt.MarshalBinary()
 	require.NoError(err)
 
@@ -62,7 +63,8 @@ func TestMarshalBinary(t *testing.T) {
 		JaegerSpan:     []byte("615f730ad5fe896f:615f730ad5fe896f:1"),
 		ReqContext:     reqCtx,
 	}
-	globalPkt := NewPacket(42, globalOp)
+	globalPkt, err := NewPacket(42, globalOp)
+	require.NoError(err)
 	gb, err := globalPkt.MarshalBinary()
 	require.NoError(err)
 
@@ -74,4 +76,37 @@ func TestMarshalBinary(t *testing.T) {
 
 	// the global op should be 4 bytes smaller because it does not include an ComplianceRegion TLV
 	require.Equal(size, globalSize+4)
+}
+
+func TestTLVMaxLengthExceeded(t *testing.T) {
+	require := require.New(t)
+
+	// Create an operation with a payload that exceeds the TLV maximum length
+	// TLV max data length is math.MaxUint16 - 3 = 65533 bytes
+	// We'll use 65534 bytes to trigger the error
+	oversizedPayload := make([]byte, 65534)
+	op := Operation{
+		Opcode:  OpECDSASignSHA256,
+		Payload: oversizedPayload,
+	}
+
+	// Attempting to create a packet should fail with an error
+	_, err := NewPacket(42, op)
+	require.Error(err, "Expected error when payload exceeds TLV maximum length")
+	require.Contains(err.Error(), "data exceeds TLV maximum length", "Error message should mention TLV maximum length")
+}
+
+func TestOperationBytesMaxLengthExceeded(t *testing.T) {
+	require := require.New(t)
+
+	// Test that Operation.Bytes() returns an error for oversized data
+	oversizedPayload := make([]byte, 65534)
+	op := Operation{
+		Opcode:  OpRSADecrypt,
+		Payload: oversizedPayload,
+	}
+
+	_, err := op.Bytes()
+	require.Error(err, "Expected error when calling Bytes() on operation with oversized payload")
+	require.Contains(err.Error(), "data exceeds TLV maximum length")
 }

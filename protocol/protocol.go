@@ -354,16 +354,20 @@ type Packet struct {
 
 // NewPacket constructs a new packet with the given ID and Operation. The
 // MajorVers, MinorVers, and Length fields are set automatically.
-func NewPacket(id uint32, op Operation) Packet {
+func NewPacket(id uint32, op Operation) (Packet, error) {
+	length, err := op.Bytes()
+	if err != nil {
+		return Packet{}, err
+	}
 	return Packet{
 		Header: Header{
 			MajorVers: 0x01,
 			MinorVers: 0x00,
 			ID:        id,
-			Length:    op.Bytes(),
+			Length:    length,
 		},
 		Operation: op,
-	}
+	}, nil
 }
 
 // MarshalBinary serializes p into its wire format.
@@ -456,79 +460,113 @@ func tlvBytes(tag Tag, data []byte) []byte {
 
 // tlvLen returns the number of bytes taken up by a TLV encoding of a blob of
 // datalen bytes. It returns 3 + len(datalen).
-func tlvLen(datalen int) uint16 {
+func tlvLen(datalen int) (uint16, error) {
 	// while the uint16 field in TLV could technically handle up to three more
 	// bytes, the 3-byte header would cause the total encoded bytes to exceed
 	// 2^16, which would in turn overflow the Header.Length field.
 	if datalen > math.MaxUint16-3 {
-		panic(fmt.Sprintf("data exceeds TLV maximum length: %v", datalen))
+		return 0, fmt.Errorf("data exceeds TLV maximum length: %v", datalen)
 	}
-	return 3 + uint16(datalen)
+	return 3 + uint16(datalen), nil
 }
 
 // Bytes returns the number of bytes in o's wire format representation.
-func (o *Operation) Bytes() uint16 {
+func (o *Operation) Bytes() (uint16, error) {
 	var length uint16
 
-	add := func(l uint16) {
+	add := func(l uint16, err error) error {
+		if err != nil {
+			return err
+		}
 		if l+length < length {
 			// this happens if l + length overflows uint16
-			panic("wire format representation of Operation exceeds maximum length")
+			return errors.New("wire format representation of Operation exceeds maximum length")
 		}
 		length += l
+		return nil
 	}
 
 	// opcode
-	add(tlvLen(1))
+	if err := add(tlvLen(1)); err != nil {
+		return 0, err
+	}
 	if len(o.Payload) > 0 {
-		add(tlvLen(len(o.Payload)))
+		if err := add(tlvLen(len(o.Payload))); err != nil {
+			return 0, err
+		}
 	}
 	if len(o.Extra) > 0 {
-		add(tlvLen(len(o.Extra)))
+		if err := add(tlvLen(len(o.Extra))); err != nil {
+			return 0, err
+		}
 	}
 	if o.SKI.Valid() {
-		add(tlvLen(len(o.SKI[:])))
+		if err := add(tlvLen(len(o.SKI[:]))); err != nil {
+			return 0, err
+		}
 	}
 	if o.Digest.Valid() {
-		add(tlvLen(len(o.Digest[:])))
+		if err := add(tlvLen(len(o.Digest[:]))); err != nil {
+			return 0, err
+		}
 	}
 	if o.ClientIP != nil {
 		if o.ClientIP.To4() != nil {
 			// IPv4
-			add(tlvLen(4))
+			if err := add(tlvLen(4)); err != nil {
+				return 0, err
+			}
 		} else {
 			// IPv6
-			add(tlvLen(16))
+			if err := add(tlvLen(16)); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if o.ServerIP != nil {
 		if o.ServerIP.To4() != nil {
 			// IPv4
-			add(tlvLen(4))
+			if err := add(tlvLen(4)); err != nil {
+				return 0, err
+			}
 		} else {
 			// IPv6
-			add(tlvLen(16))
+			if err := add(tlvLen(16)); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if o.SNI != "" {
 		// TODO(joshlf): Is len([]byte(o.SNI)) guaranteed to be the same as len(o.SNI)?
-		add(tlvLen(len([]byte(o.SNI))))
+		if err := add(tlvLen(len([]byte(o.SNI)))); err != nil {
+			return 0, err
+		}
 	}
 	if o.CertID != "" {
-		add(tlvLen(len([]byte(o.CertID))))
+		if err := add(tlvLen(len([]byte(o.CertID)))); err != nil {
+			return 0, err
+		}
 	}
 	if o.CustomFuncName != "" {
-		add(tlvLen(len([]byte(o.CustomFuncName))))
+		if err := add(tlvLen(len([]byte(o.CustomFuncName)))); err != nil {
+			return 0, err
+		}
 	}
 	if o.JaegerSpan != nil {
-		add(tlvLen(len(o.JaegerSpan)))
+		if err := add(tlvLen(len(o.JaegerSpan))); err != nil {
+			return 0, err
+		}
 	}
 	if o.ReqContext != nil {
-		add(tlvLen(len(o.ReqContext)))
+		if err := add(tlvLen(len(o.ReqContext))); err != nil {
+			return 0, err
+		}
 	}
 	// compliance region
 	if o.ComplianceRegion != 0 {
-		add(tlvLen(1))
+		if err := add(tlvLen(1)); err != nil {
+			return 0, err
+		}
 	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
@@ -544,9 +582,11 @@ func (o *Operation) Bytes() uint16 {
 			left = 0
 		}
 
-		add(tlvLen(left))
+		if err := add(tlvLen(left)); err != nil {
+			return 0, err
+		}
 	}
-	return length
+	return length, nil
 }
 
 // MarshalBinary serialises o using a TLV encoding.
