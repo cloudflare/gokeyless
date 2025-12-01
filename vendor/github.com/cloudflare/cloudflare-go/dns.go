@@ -17,24 +17,27 @@ import (
 // ErrMissingBINDContents is for when the BIND file contents is required but not set.
 var ErrMissingBINDContents = errors.New("required BIND config contents missing")
 
+type DNSRecordSettings struct {
+	FlattenCNAME *bool `json:"flatten_cname,omitempty"`
+}
+
 // DNSRecord represents a DNS record in a zone.
 type DNSRecord struct {
-	CreatedOn  time.Time   `json:"created_on,omitempty"`
-	ModifiedOn time.Time   `json:"modified_on,omitempty"`
-	Type       string      `json:"type,omitempty"`
-	Name       string      `json:"name,omitempty"`
-	Content    string      `json:"content,omitempty"`
-	Meta       interface{} `json:"meta,omitempty"`
-	Data       interface{} `json:"data,omitempty"` // data returned by: SRV, LOC
-	ID         string      `json:"id,omitempty"`
-	ZoneID     string      `json:"zone_id,omitempty"`
-	ZoneName   string      `json:"zone_name,omitempty"`
-	Priority   *uint16     `json:"priority,omitempty"`
-	TTL        int         `json:"ttl,omitempty"`
-	Proxied    *bool       `json:"proxied,omitempty"`
-	Proxiable  bool        `json:"proxiable,omitempty"`
-	Comment    string      `json:"comment,omitempty"` // the server will omit the comment field when the comment is empty
-	Tags       []string    `json:"tags,omitempty"`
+	CreatedOn  time.Time         `json:"created_on,omitempty"`
+	ModifiedOn time.Time         `json:"modified_on,omitempty"`
+	Type       string            `json:"type,omitempty"`
+	Name       string            `json:"name,omitempty"`
+	Content    string            `json:"content,omitempty"`
+	Meta       interface{}       `json:"meta,omitempty"`
+	Data       interface{}       `json:"data,omitempty"` // data returned by: SRV, LOC
+	ID         string            `json:"id,omitempty"`
+	Priority   *uint16           `json:"priority,omitempty"`
+	TTL        int               `json:"ttl,omitempty"`
+	Proxied    *bool             `json:"proxied,omitempty"`
+	Proxiable  bool              `json:"proxiable,omitempty"`
+	Comment    string            `json:"comment,omitempty"` // the server will omit the comment field when the comment is empty
+	Tags       []string          `json:"tags,omitempty"`
+	Settings   DNSRecordSettings `json:"settings,omitempty"`
 }
 
 // DNSRecordResponse represents the response from the DNS endpoint.
@@ -68,16 +71,17 @@ type ListDNSRecordsParams struct {
 }
 
 type UpdateDNSRecordParams struct {
-	Type     string      `json:"type,omitempty"`
-	Name     string      `json:"name,omitempty"`
-	Content  string      `json:"content,omitempty"`
-	Data     interface{} `json:"data,omitempty"` // data for: SRV, LOC
-	ID       string      `json:"-"`
-	Priority *uint16     `json:"priority,omitempty"`
-	TTL      int         `json:"ttl,omitempty"`
-	Proxied  *bool       `json:"proxied,omitempty"`
-	Comment  *string     `json:"comment,omitempty"` // nil will keep the current comment, while StringPtr("") will empty it
-	Tags     []string    `json:"tags"`
+	Type     string            `json:"type,omitempty"`
+	Name     string            `json:"name,omitempty"`
+	Content  string            `json:"content,omitempty"`
+	Data     interface{}       `json:"data,omitempty"` // data for: SRV, LOC
+	ID       string            `json:"-"`
+	Priority *uint16           `json:"priority,omitempty"`
+	TTL      int               `json:"ttl,omitempty"`
+	Proxied  *bool             `json:"proxied,omitempty"`
+	Comment  *string           `json:"comment,omitempty"` // nil will keep the current comment, while StringPtr("") will empty it
+	Tags     []string          `json:"tags"`
+	Settings DNSRecordSettings `json:"settings,omitempty"`
 }
 
 // DNSListResponse represents the response from the list DNS records endpoint.
@@ -177,22 +181,21 @@ type ImportDNSRecordsParams struct {
 }
 
 type CreateDNSRecordParams struct {
-	CreatedOn  time.Time   `json:"created_on,omitempty" url:"created_on,omitempty"`
-	ModifiedOn time.Time   `json:"modified_on,omitempty" url:"modified_on,omitempty"`
-	Type       string      `json:"type,omitempty" url:"type,omitempty"`
-	Name       string      `json:"name,omitempty" url:"name,omitempty"`
-	Content    string      `json:"content,omitempty" url:"content,omitempty"`
-	Meta       interface{} `json:"meta,omitempty"`
-	Data       interface{} `json:"data,omitempty"` // data returned by: SRV, LOC
-	ID         string      `json:"id,omitempty"`
-	ZoneID     string      `json:"zone_id,omitempty"`
-	ZoneName   string      `json:"zone_name,omitempty"`
-	Priority   *uint16     `json:"priority,omitempty"`
-	TTL        int         `json:"ttl,omitempty"`
-	Proxied    *bool       `json:"proxied,omitempty" url:"proxied,omitempty"`
-	Proxiable  bool        `json:"proxiable,omitempty"`
-	Comment    string      `json:"comment,omitempty" url:"comment,omitempty"` // to the server, there's no difference between "no comment" and "empty comment"
-	Tags       []string    `json:"tags,omitempty"`
+	CreatedOn  time.Time         `json:"created_on,omitempty" url:"created_on,omitempty"`
+	ModifiedOn time.Time         `json:"modified_on,omitempty" url:"modified_on,omitempty"`
+	Type       string            `json:"type,omitempty" url:"type,omitempty"`
+	Name       string            `json:"name,omitempty" url:"name,omitempty"`
+	Content    string            `json:"content,omitempty" url:"content,omitempty"`
+	Meta       interface{}       `json:"meta,omitempty"`
+	Data       interface{}       `json:"data,omitempty"` // data returned by: SRV, LOC
+	ID         string            `json:"id,omitempty"`
+	Priority   *uint16           `json:"priority,omitempty"`
+	TTL        int               `json:"ttl,omitempty"`
+	Proxied    *bool             `json:"proxied,omitempty" url:"proxied,omitempty"`
+	Proxiable  bool              `json:"proxiable,omitempty"`
+	Comment    string            `json:"comment,omitempty" url:"comment,omitempty"` // to the server, there's no difference between "no comment" and "empty comment"
+	Tags       []string          `json:"tags,omitempty"`
+	Settings   DNSRecordSettings `json:"settings,omitempty"`
 }
 
 // CreateDNSRecord creates a DNS record for the zone identifier.
@@ -351,7 +354,7 @@ func (api *API) DeleteDNSRecord(ctx context.Context, rc *ResourceContainer, reco
 
 // ExportDNSRecords returns all DNS records for a zone in the BIND format.
 //
-// API reference: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-export-dns-records
+// API reference: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/export/
 func (api *API) ExportDNSRecords(ctx context.Context, rc *ResourceContainer, params ExportDNSRecordsParams) (string, error) {
 	if rc.Level != ZoneRouteLevel {
 		return "", ErrRequiredZoneLevelResourceContainer
@@ -380,7 +383,7 @@ func (api *API) ExportDNSRecords(ctx context.Context, rc *ResourceContainer, par
 // two separate API calls (one for proxied and one for non-proxied) instead of
 // making the end user know about this detail.
 //
-// API reference: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-import-dns-records
+// API reference: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/import/
 func (api *API) ImportDNSRecords(ctx context.Context, rc *ResourceContainer, params ImportDNSRecordsParams) error {
 	if rc.Level != ZoneRouteLevel {
 		return ErrRequiredZoneLevelResourceContainer

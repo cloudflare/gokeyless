@@ -67,8 +67,22 @@ type TeamsRuleSettings struct {
 	// Resolver policy settings.
 	DnsResolverSettings *TeamsDnsResolverSettings `json:"dns_resolvers,omitempty"`
 
+	ResolveDnsInternallySettings *TeamsResolveDnsInternallySettings `json:"resolve_dns_internally,omitempty"`
+
 	NotificationSettings *TeamsNotificationSettings `json:"notification_settings"`
+	Quarantine           *TeamsQuarantine           `json:"quarantine,omitempty"`
+	ForensicCopySettings *TeamsForensicCopySettings `json:"forensic_copy,omitempty"`
 }
+
+type TeamsForensicCopySettings struct {
+	Enabled bool `json:"enabled"`
+}
+
+type TeamsQuarantine struct {
+	FileTypes []FileType `json:"file_types"`
+}
+
+type FileType = string
 
 type TeamsGatewayUntrustedCertAction string
 
@@ -105,13 +119,35 @@ type TeamsL4OverrideSettings struct {
 }
 
 type TeamsBISOAdminControlSettings struct {
-	DisablePrinting             bool `json:"dp"`
-	DisableCopyPaste            bool `json:"dcp"`
-	DisableDownload             bool `json:"dd"`
-	DisableUpload               bool `json:"du"`
-	DisableKeyboard             bool `json:"dk"`
-	DisableClipboardRedirection bool `json:"dcr"`
+	DisablePrinting             bool                                    `json:"dp"`
+	DisableCopyPaste            bool                                    `json:"dcp"`
+	DisableDownload             bool                                    `json:"dd"`
+	DisableUpload               bool                                    `json:"du"`
+	DisableKeyboard             bool                                    `json:"dk"`
+	DisableClipboardRedirection bool                                    `json:"dcr"`
+	Copy                        TeamsTeamsBISOAdminControlSettingsValue `json:"copy"`
+	Download                    TeamsTeamsBISOAdminControlSettingsValue `json:"download"`
+	Keyboard                    TeamsTeamsBISOAdminControlSettingsValue `json:"keyboard"`
+	Paste                       TeamsTeamsBISOAdminControlSettingsValue `json:"paste"`
+	Printing                    TeamsTeamsBISOAdminControlSettingsValue `json:"printing"`
+	Upload                      TeamsTeamsBISOAdminControlSettingsValue `json:"upload"`
+	Version                     TeamsBISOAdminControlSettingsVersion    `json:"version"`
 }
+
+type TeamsBISOAdminControlSettingsVersion string
+
+const (
+	TeamsBISOAdminControlSettingsV1 TeamsBISOAdminControlSettingsVersion = "v1"
+	TeamsBISOAdminControlSettingsV2 TeamsBISOAdminControlSettingsVersion = "v2"
+)
+
+type TeamsTeamsBISOAdminControlSettingsValue string
+
+const (
+	TeamsBISOAdminControlEnabled    TeamsTeamsBISOAdminControlSettingsValue = "enabled"
+	TeamsBISOAdminControlDisabled   TeamsTeamsBISOAdminControlSettingsValue = "disabled"
+	TeamsBISOAdminControlRemoteOnly TeamsTeamsBISOAdminControlSettingsValue = "remote_only"
+)
 
 type TeamsCheckSessionSettings struct {
 	Enforce  bool     `json:"enforce"`
@@ -138,6 +174,18 @@ type (
 		VnetID                     string `json:"vnet_id,omitempty"`
 		RouteThroughPrivateNetwork *bool  `json:"route_through_private_network,omitempty"`
 	}
+
+	TeamsResolveDnsInternallySettings struct {
+		ViewID   string                                    `json:"view_id"`
+		Fallback TeamsResolveDnsInternallyFallbackStrategy `json:"fallback"`
+	}
+
+	TeamsResolveDnsInternallyFallbackStrategy string
+)
+
+const (
+	None      TeamsResolveDnsInternallyFallbackStrategy = "none"
+	PublicDns TeamsResolveDnsInternallyFallbackStrategy = "public_dns"
 )
 
 type TeamsDlpPayloadLogSettings struct {
@@ -204,21 +252,43 @@ func TeamsRulesUntrustedCertActionValues() []string {
 
 // TeamsRule represents an Teams wirefilter rule.
 type TeamsRule struct {
-	ID            string             `json:"id,omitempty"`
-	CreatedAt     *time.Time         `json:"created_at,omitempty"`
-	UpdatedAt     *time.Time         `json:"updated_at,omitempty"`
-	DeletedAt     *time.Time         `json:"deleted_at,omitempty"`
-	Name          string             `json:"name"`
-	Description   string             `json:"description"`
-	Precedence    uint64             `json:"precedence"`
-	Enabled       bool               `json:"enabled"`
-	Action        TeamsGatewayAction `json:"action"`
-	Filters       []TeamsFilterType  `json:"filters"`
-	Traffic       string             `json:"traffic"`
-	Identity      string             `json:"identity"`
-	DevicePosture string             `json:"device_posture"`
-	Version       uint64             `json:"version"`
-	RuleSettings  TeamsRuleSettings  `json:"rule_settings,omitempty"`
+	ID            string               `json:"id,omitempty"`
+	CreatedAt     *time.Time           `json:"created_at,omitempty"`
+	UpdatedAt     *time.Time           `json:"updated_at,omitempty"`
+	DeletedAt     *time.Time           `json:"deleted_at,omitempty"`
+	Name          string               `json:"name"`
+	Description   string               `json:"description"`
+	Precedence    uint64               `json:"precedence"`
+	Enabled       bool                 `json:"enabled"`
+	Action        TeamsGatewayAction   `json:"action"`
+	Filters       []TeamsFilterType    `json:"filters"`
+	Traffic       string               `json:"traffic"`
+	Identity      string               `json:"identity"`
+	DevicePosture string               `json:"device_posture"`
+	Version       uint64               `json:"version"`
+	RuleSettings  TeamsRuleSettings    `json:"rule_settings,omitempty"`
+	Schedule      *TeamsRuleSchedule   `json:"schedule,omitempty"`   // only available at DNS rules
+	Expiration    *TeamsRuleExpiration `json:"expiration,omitempty"` // only available at DNS rules
+}
+
+type TeamsRuleExpiration struct {
+	ExpiresAt *time.Time `json:"expires_at"`
+	Duration  *uint64    `json:"duration,omitempty"` // read only
+	Expired   bool       `json:"expired"`            // read only
+}
+
+// format HH:MM,HH:MM,....,HH:MM
+type TeamsScheduleTimes string
+
+type TeamsRuleSchedule struct {
+	Monday    TeamsScheduleTimes `json:"mon,omitempty"`
+	Tuesday   TeamsScheduleTimes `json:"tue,omitempty"`
+	Wednesday TeamsScheduleTimes `json:"wed,omitempty"`
+	Thursday  TeamsScheduleTimes `json:"thu,omitempty"`
+	Friday    TeamsScheduleTimes `json:"fri,omitempty"`
+	Saturday  TeamsScheduleTimes `json:"sat,omitempty"`
+	Sunday    TeamsScheduleTimes `json:"sun,omitempty"`
+	TimeZone  string             `json:"time_zone,omitempty"` // default to user TZ based on the user IP location, fall backs to colo TZ
 }
 
 // TeamsRuleResponse is the API response, containing a single rule.

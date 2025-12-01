@@ -1,4 +1,212 @@
-## 0.101.0 (Unreleased)
+## 0.117.0 (Unreleased)
+
+## 0.116.0 (September 5th, 2025)
+
+ENHANCEMENTS:
+
+* access_service_tokens: Added graceful rotation support for client secrets ([#4189](https://github.com/cloudflare/cloudflare-go/issues/4189))
+
+## 0.115.0 (January 29th, 2025)
+
+ENHANCEMENTS:
+
+* access_service_token: add `last_seen_at` field ([#3838](https://github.com/cloudflare/cloudflare-go/issues/3838))
+* dns: Add settings to DNSRecord ([#3670](https://github.com/cloudflare/cloudflare-go/issues/3670))
+* teams_rules: add support for biso admin controls v2 ([#3848](https://github.com/cloudflare/cloudflare-go/issues/3848))
+
+DEPENDENCIES:
+
+* deps: bumps dependabot/fetch-metadata from 2.2.0 to 2.3.0 ([#3865](https://github.com/cloudflare/cloudflare-go/issues/3865))
+* deps: bumps github.com/go-git/go-git/v5 from 5.11.0 to 5.13.0 ([#3869](https://github.com/cloudflare/cloudflare-go/issues/3869))
+* deps: bumps github.com/goccy/go-json from 0.10.4 to 0.10.5 ([#3870](https://github.com/cloudflare/cloudflare-go/issues/3870))
+* deps: bumps golang.org/x/net from 0.25.0 to 0.33.0 ([#3868](https://github.com/cloudflare/cloudflare-go/issues/3868))
+
+## 0.114.0 (January 15th, 2025)
+
+NOTES:
+
+* rulesets: remove `http_request_sbfm` phase ([#3824](https://github.com/cloudflare/cloudflare-go/issues/3824))
+* workers: The `placement_mode` attribute in script upload responses has been deprecated. The new attribute `placement.mode` should be used instead. ([#3825](https://github.com/cloudflare/cloudflare-go/issues/3825))
+
+ENHANCEMENTS:
+
+* access_application: added more fields to private destinations ([#3829](https://github.com/cloudflare/cloudflare-go/issues/3829))
+* teams_rules: add support for `resolve_dns_internally` settings on dns_resolver rules ([#3779](https://github.com/cloudflare/cloudflare-go/issues/3779))
+* waiting_room: add waiting room turnstile integration fields ([#3764](https://github.com/cloudflare/cloudflare-go/issues/3764))
+* workers: Add new `placement` attribute object in script upload responses. It contains the `mode` and `status` attributes. ([#3825](https://github.com/cloudflare/cloudflare-go/issues/3825))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.33.0 to 0.34.0 ([#3796](https://github.com/cloudflare/cloudflare-go/issues/3796))
+* deps: bumps golang.org/x/time from 0.8.0 to 0.9.0 ([#3783](https://github.com/cloudflare/cloudflare-go/issues/3783))
+
+## 0.113.0 (January 1st, 2025)
+
+ENHANCEMENTS:
+
+* teams_location: make location parameters optional ([#3758](https://github.com/cloudflare/cloudflare-go/issues/3758))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.32.0 to 0.33.0 ([#3756](https://github.com/cloudflare/cloudflare-go/issues/3756))
+
+## 0.112.0 (December 18th, 2024)
+
+ENHANCEMENTS:
+
+* access_application: support Access service token + multi-valued authentication for SCIM provisioning ([#3708](https://github.com/cloudflare/cloudflare-go/issues/3708))
+* certificate_authorities: add new methods to interact with Certificate Authorities Hostname Associations API ([#3740](https://github.com/cloudflare/cloudflare-go/issues/3740))
+* content_scanning: Add new support for CRUD operations ([#3700](https://github.com/cloudflare/cloudflare-go/issues/3700))
+* teams: sync latest doc changes ([#3743](https://github.com/cloudflare/cloudflare-go/issues/3743))
+* teams_location: add support for `dns_destination_ipv6_block_id` to the location payload ([#3738](https://github.com/cloudflare/cloudflare-go/issues/3738))
+* teams_locations: Add dns_destination_ips_id and ipv4_destination_backup ([#3699](https://github.com/cloudflare/cloudflare-go/issues/3699))
+
+BUG FIXES:
+
+* certificate_authorities: fixes for methods to interact with Certificate Authorities Hostname Associations API ([#3742](https://github.com/cloudflare/cloudflare-go/issues/3742))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/goccy/go-json from 0.10.3 to 0.10.4 ([#3726](https://github.com/cloudflare/cloudflare-go/issues/3726))
+* deps: bumps golang.org/x/crypto from 0.21.0 to 0.31.0 ([#3725](https://github.com/cloudflare/cloudflare-go/issues/3725))
+* deps: bumps golang.org/x/net from 0.31.0 to 0.32.0 ([#3704](https://github.com/cloudflare/cloudflare-go/issues/3704))
+
+## 0.111.0 (December 4th, 2024)
+
+BREAKING CHANGES:
+
+* access: Remove the deprecated `SelfHostedDomains` field from Access applications. Use `Destinations` instead. ([#3667](https://github.com/cloudflare/cloudflare-go/issues/3667))
+
+ENHANCEMENTS:
+
+* Adds allow_email_alias connection rule boolean to access infra policy payload ([#3675](https://github.com/cloudflare/cloudflare-go/issues/3675))
+* access: Add `DomainType` field to Access applications. ([#3667](https://github.com/cloudflare/cloudflare-go/issues/3667))
+* leaked_credential_check: add new methods to interact with leaked credential check cloudfare API ([#3634](https://github.com/cloudflare/cloudflare-go/issues/3634))
+
+BUG FIXES:
+
+* authenticated_origin_pulls_per_hostname: fixes the struct to allow null (nil) values on the `Enabled` property ([#3680](https://github.com/cloudflare/cloudflare-go/issues/3680))
+* snippets_rules: fix upsert request type ([#3669](https://github.com/cloudflare/cloudflare-go/issues/3669))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/stretchr/testify from 1.9.0 to 1.10.0 ([#3672](https://github.com/cloudflare/cloudflare-go/issues/3672))
+
+## 0.110.0 (November 20th, 2024)
+
+ENHANCEMENTS:
+
+* access_identity_provider: Adds identity_update_behavior to SCIM config. ([#3618](https://github.com/cloudflare/cloudflare-go/issues/3618))
+* turnstile: fix UpdateTurnstileWidgetParams (support setting values to `false`) ([#3594](https://github.com/cloudflare/cloudflare-go/issues/3594))
+
+BUG FIXES:
+
+* snippets: fix response type for `UpdateZoneSnippet` ([#3596](https://github.com/cloudflare/cloudflare-go/issues/3596))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.30.0 to 0.31.0 ([#3588](https://github.com/cloudflare/cloudflare-go/issues/3588))
+* deps: bumps golang.org/x/time from 0.7.0 to 0.8.0 ([#3584](https://github.com/cloudflare/cloudflare-go/issues/3584))
+* deps: bumps goreleaser/goreleaser-action from 6.0.0 to 6.1.0 ([#3578](https://github.com/cloudflare/cloudflare-go/issues/3578))
+
+## 0.109.0 (November 6th, 2024)
+
+ENHANCEMENTS:
+
+* access_application: add support for controlling schema strictness in Access SCIM application provisioning mappings ([#3510](https://github.com/cloudflare/cloudflare-go/issues/3510))
+* regional_hostname: add support for `routing` attribute ([#3560](https://github.com/cloudflare/cloudflare-go/issues/3560))
+* snippets: add missing delete and get a single snippet methods ([#3529](https://github.com/cloudflare/cloudflare-go/issues/3529))
+
+## 0.108.0 (October 23rd, 2024)
+
+ENHANCEMENTS:
+
+* snippets: add CRUD support ([#3458](https://github.com/cloudflare/cloudflare-go/issues/3458))
+* snippets_rules: add CRUD support ([#3458](https://github.com/cloudflare/cloudflare-go/issues/3458))
+* waiting_room: Add CookieAttributes property ([#3388](https://github.com/cloudflare/cloudflare-go/issues/3388))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/urfave/cli/v2 from 2.27.4 to 2.27.5 ([#3391](https://github.com/cloudflare/cloudflare-go/issues/3391))
+
+## 0.107.0 (October 9th, 2024)
+
+ENHANCEMENTS:
+
+* device_posture_rule: support operational_state for sentinelone_s2s posture rule ([#3234](https://github.com/cloudflare/cloudflare-go/issues/3234))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.29.0 to 0.30.0 ([#3336](https://github.com/cloudflare/cloudflare-go/issues/3336))
+* deps: bumps golang.org/x/time from 0.6.0 to 0.7.0 ([#3321](https://github.com/cloudflare/cloudflare-go/issues/3321))
+
+## 0.106.0 (September 27th, 2024)
+
+ENHANCEMENTS:
+
+* access_application: added target contexts support for access application type infrastructure ([#3186](https://github.com/cloudflare/cloudflare-go/issues/3186))
+* access_policy: added infrastructure connection rule support for access policy ([#3186](https://github.com/cloudflare/cloudflare-go/issues/3186))
+
+## 0.105.0 (September 25th, 2024)
+
+ENHANCEMENTS:
+
+* device_posture_rule: add score field for custom_s2s posture rule ([#3031](https://github.com/cloudflare/cloudflare-go/issues/3031))
+* infrastructure_targets: initialize CRUD endpoints for infrastructure access endpoints ([#3184](https://github.com/cloudflare/cloudflare-go/issues/3184))
+* load_balancing: add account load balancer support ([#3027](https://github.com/cloudflare/cloudflare-go/issues/3027))
+
+## 0.104.0 (September 11th, 2024)
+
+BREAKING CHANGES:
+
+* dns: removed deprecated `ZoneID` and `ZoneName` fields ([#2986](https://github.com/cloudflare/cloudflare-go/issues/2986))
+
+ENHANCEMENTS:
+
+* bot_management: add ai_bots_protection to public API ([#2974](https://github.com/cloudflare/cloudflare-go/issues/2974))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.28.0 to 0.29.0 ([#3030](https://github.com/cloudflare/cloudflare-go/issues/3030))
+* deps: bumps golang.org/x/time from 0.5.0 to 0.6.0 ([#2816](https://github.com/cloudflare/cloudflare-go/issues/2816))
+
+## 0.103.0 (August 28th, 2024)
+
+ENHANCEMENTS:
+
+* errors: implement the Unwrap method for custom error types to access the wrapped errors via errors.Is and errors.As ([#2857](https://github.com/cloudflare/cloudflare-go/issues/2857))
+* rulesets: add "contains" field to custom cache key header ([#2935](https://github.com/cloudflare/cloudflare-go/issues/2935))
+* teams_certificates: renamed `enabled` to `in_use` ([#2937](https://github.com/cloudflare/cloudflare-go/issues/2937))
+* waiting_room: add support for `enabled_origin_commands` ([#2931](https://github.com/cloudflare/cloudflare-go/issues/2931))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/urfave/cli/v2 from 2.27.3 to 2.27.4 ([#2863](https://github.com/cloudflare/cloudflare-go/issues/2863))
+
+## 0.102.0 (August 14th, 2024)
+
+ENHANCEMENTS:
+
+* rulesets: Add `DeleteRulesetRule` ([#2833](https://github.com/cloudflare/cloudflare-go/issues/2833))
+* rulesets: Export `DeleteRulesetRuleParams` fields ([#2886](https://github.com/cloudflare/cloudflare-go/issues/2886))
+* teams_accounts: Add `disable_for_time` attribute ([#2797](https://github.com/cloudflare/cloudflare-go/issues/2797))
+
+DEPENDENCIES:
+
+* deps: bumps golang.org/x/net from 0.27.0 to 0.28.0 ([#2835](https://github.com/cloudflare/cloudflare-go/issues/2835))
+
+## 0.101.0 (July 31st, 2024)
+
+ENHANCEMENTS:
+
+* access_application: add `skip_app_launcher_login_page` flag to skip the App Launcher landing page ([#2793](https://github.com/cloudflare/cloudflare-go/issues/2793))
+* device_posture_rule: support extended_key_usage, check_private_key, and locations for client_certificate_v2 posture rule ([#1685](https://github.com/cloudflare/cloudflare-go/issues/1685))
+* devices_policy: Add new tunnel_protocol field to policy ([#2778](https://github.com/cloudflare/cloudflare-go/issues/2778))
+* risk_score_integration: Add support for Risk Score Integrations ([#2786](https://github.com/cloudflare/cloudflare-go/issues/2786))
+
+DEPENDENCIES:
+
+* deps: bumps github.com/urfave/cli/v2 from 2.27.2 to 2.27.3 ([#2787](https://github.com/cloudflare/cloudflare-go/issues/2787))
 
 ## 0.100.0 (July 18th, 2024)
 
@@ -943,7 +1151,7 @@ BREAKING CHANGES:
 
 NOTES:
 
-- pages: removed the v1 logs endpoint for Pages deployments. Please switch to v2: https://developers.cloudflare.com/api/operations/pages-deployment-get-deployment-logs ([#1135](https://github.com/cloudflare/cloudflare-go/issues/1135))
+- pages: removed the v1 logs endpoint for Pages deployments. Please switch to v2: https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/subresources/history/subresources/logs/methods/get/ ([#1135](https://github.com/cloudflare/cloudflare-go/issues/1135))
 
 ENHANCEMENTS:
 
