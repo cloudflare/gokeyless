@@ -3,10 +3,15 @@ package server
 import (
 	"crypto/rand"
 	"encoding/json"
+	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/stretchr/testify/require"
+
+	"golang.org/x/sync/semaphore"
 )
 
 func TestRequestID(t *testing.T) {
@@ -122,5 +127,137 @@ func TestGetOperationRequestID_NonStringTypes(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, reqID)
 		})
+	}
+}
+
+// panicSealer is a Sealer implementation that always panics.
+// Used to test that handler.handle() recovers from panics in the request path.
+type panicSealer struct{}
+
+func (p panicSealer) Seal(*protocol.Operation) ([]byte, error)   { panic("test panic in Seal") }
+func (p panicSealer) Unseal(*protocol.Operation) ([]byte, error) { panic("test panic in Unseal") }
+
+// TestHandlePanicRecovery verifies that handler.handle() recovers from a panic
+// instead of crashing the process or leaking a semaphore token. This is a
+// defense-in-depth measure: any unrecovered panic in a handler goroutine would
+// terminate the entire gokeyless server.
+func TestHandlePanicRecovery(t *testing.T) {
+	s := &Server{
+		config: DefaultServeConfig(),
+		keys:   NewDefaultKeystore(),
+		sealer: panicSealer{},
+	}
+
+	// Use a pipe so we have a valid net.Conn that handle() can write to.
+	serverConn, _ := net.Pipe()
+	defer serverConn.Close()
+
+	// The semaphore token is acquired by loop() before spawning handle().
+	// Simulate that by creating a semaphore with capacity 1 and acquiring it.
+	tokens := semaphore.NewWeighted(1)
+	require.True(t, tokens.TryAcquire(1), "should be able to acquire initial token")
+
+	h := &handler{
+		name:    "test-panic-recovery",
+		s:       s,
+		tokens:  tokens,
+		conn:    serverConn,
+		timeout: 5 * time.Second,
+		c:       &ClientInfo{},
+	}
+
+	// Send an OpSeal request. The panicSealer will panic inside unlimitedDo,
+	// exercising the recover() in handle().
+	pkt := &protocol.Packet{
+		Header: protocol.Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			ID:        1,
+		},
+		Operation: protocol.Operation{
+			Opcode:  protocol.OpSeal,
+			Payload: []byte("test payload"),
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.handle(pkt, time.Now())
+	}()
+
+	// Wait for handle to finish — it should return normally via recover().
+	select {
+	case <-done:
+		// success: handle() recovered from the panic
+	case <-time.After(5 * time.Second):
+		t.Fatal("handle() did not return — possible deadlock or unrecovered panic")
+	}
+
+	// The semaphore token must have been released by the recover() path.
+	// If the token leaked, this would fail.
+	if !tokens.TryAcquire(1) {
+		t.Fatal("semaphore token was not released after panic recovery")
+	}
+}
+
+// TestHandleNoPanicReleasesToken verifies that under normal (non-panic)
+// operation, handle() still correctly releases the semaphore token.
+func TestHandleNoPanicReleasesToken(t *testing.T) {
+	s := &Server{
+		config:     DefaultServeConfig(),
+		keys:       NewDefaultKeystore(),
+		dispatcher: nil,
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+
+	// Drain responses from the server side so WriteTo doesn't block.
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := clientConn.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+	defer clientConn.Close()
+
+	tokens := semaphore.NewWeighted(1)
+	require.True(t, tokens.TryAcquire(1))
+
+	h := &handler{
+		name:    "test-normal-token-release",
+		s:       s,
+		tokens:  tokens,
+		conn:    serverConn,
+		timeout: 5 * time.Second,
+		c:       &ClientInfo{},
+	}
+
+	// A simple OpPing with no ReqContext — should not panic.
+	pkt := &protocol.Packet{
+		Header: protocol.Header{
+			MajorVers: 0x01,
+			MinorVers: 0x00,
+			ID:        1,
+		},
+		Operation: protocol.Operation{
+			Opcode:  protocol.OpPing,
+			Payload: []byte("ping"),
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		h.handle(pkt, time.Now())
+	}()
+	wg.Wait()
+
+	if !tokens.TryAcquire(1) {
+		t.Fatal("semaphore token was not released after normal handle()")
 	}
 }
