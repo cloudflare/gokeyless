@@ -96,7 +96,7 @@ This examples shows how you may provide the same configuration options through e
 
 Unit tests and benchmarks have been implemented for various parts of Go Keyless via `go test`. Most of the tests run out of the box, but some setup is necessary to run the HSM-related tests:
 
-1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2. On MacOS, the easiest is `brew isntall softhsm`
+1. Follow https://wiki.opendnssec.org/display/SoftHSMDOCS/SoftHSM+Documentation+v2 to install SoftHSM2. On MacOS, the easiest is `brew install softhsm`
 2. Copy the test tokens to the location of your SoftHSM2 token directory (commonly `/var/lib/softhsm/tokens`, but may vary):
 
 ```bash
