@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -198,6 +199,13 @@ func (h *handler) closeWithWritingErr(err error) {
 }
 
 func (h *handler) handle(pkt *protocol.Packet, reqTime time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("panic recovered in handler for connection %v: %v\n%s", h.name, r, debug.Stack())
+			h.tokens.Release(1)
+		}
+	}()
+
 	var resp response
 	start := time.Now()
 	logRequest(pkt.Opcode)
