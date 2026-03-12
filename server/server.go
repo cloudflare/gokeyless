@@ -313,7 +313,9 @@ func addOperationRequestID(op *protocol.Operation) string {
 	}
 
 	if v, ok := reqContext["request_id"]; ok {
-		return v.(string)
+		if s, ok := v.(string); ok {
+			return s
+		}
 	}
 
 	reqID = uuid.New().String()
@@ -335,7 +337,9 @@ func getOperationRequestID(op *protocol.Operation) (reqID string, err error) {
 	}
 	if decodeErr := json.Unmarshal(op.ReqContext, &reqContext); decodeErr == nil {
 		if v, ok := reqContext["request_id"]; ok {
-			return v.(string), nil
+			if s, ok := v.(string); ok {
+				return s, nil
+			}
 		}
 	} else {
 		err = fmt.Errorf("malformed operation.ReqContext %v, ignoring error", op.ReqContext)
