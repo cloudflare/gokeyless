@@ -64,7 +64,7 @@ jobs:
           password: ${{ secrets[matrix.password_secret] }}
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ matrix.image }}
       - name: Build and push
