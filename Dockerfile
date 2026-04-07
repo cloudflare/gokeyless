@@ -14,7 +14,7 @@ WORKDIR /gokeyless
 COPY . .
 RUN env GOOS=${TARGETOS} GOARCH=${TARGETARCH} make gokeyless
 
-FROM golang:1.23
+FROM golang:1.24
 WORKDIR /gokeyless
 COPY --from=builder /gokeyless/gokeyless gokeyless
 ENTRYPOINT ["./gokeyless"]
