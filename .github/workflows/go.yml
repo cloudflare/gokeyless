@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
     branches: [master]
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -48,3 +52,44 @@ jobs:
         run: go install ./vendor/golang.org/x/lint/golint
       - name: Go Lint
         run: make gokeyless vet lint
+  # Verify that the CGO binary built for RHEL 8 does not exceed GLIBC 2.28.
+  # This catches upstream toolchain changes (e.g. goreleaser-cross base image
+  # bumps) that silently raise the GLIBC floor. See SECENG-13556.
+  build-el8:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:8
+    steps:
+      - name: Install system dependencies
+        run: dnf install -y gcc make libtool-ltdl-devel git findutils
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fix git ownership
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Go 1.24.1
+        run: |
+          curl -sL https://go.dev/dl/go1.24.1.linux-amd64.tar.gz -o /tmp/go.tar.gz
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+          rm /tmp/go.tar.gz
+          ln -s /usr/local/go/bin/go /usr/local/bin/go
+          ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+          go version
+
+      - name: Build gokeyless binary
+        run: make build/usr/bin/gokeyless
+
+      - name: Verify GLIBC compatibility
+        run: |
+          MAX_GLIBC=$(objdump -T build/usr/bin/gokeyless | grep -oP 'GLIBC_\d+\.\d+' | sort -uV | tail -1)
+          echo "Maximum GLIBC version required: $MAX_GLIBC"
+          MAX_VER=$(echo "$MAX_GLIBC" | grep -oP '\d+\.\d+')
+          if [ "$(printf '%s\n' "2.28" "$MAX_VER" | sort -V | tail -1)" != "2.28" ]; then
+            echo "ERROR: Binary requires $MAX_GLIBC which is newer than GLIBC 2.28 (RHEL 8)"
+            exit 1
+          fi
+          echo "OK: Binary is compatible with RHEL 8 (GLIBC 2.28)"

@@ -1,0 +1,60 @@
+# nfpm configuration for building RHEL 8 / EL8-compatible RPM packages.
+#
+# This exists because the main goreleaser pipeline builds inside
+# ghcr.io/goreleaser/goreleaser-cross:latest (Ubuntu 24.04, GLIBC 2.39),
+# producing binaries that are incompatible with RHEL 8 (GLIBC 2.28).
+#
+# This config is used by the build-el8-rpm CI job which compiles inside
+# a Rocky Linux 8 container to guarantee GLIBC 2.28 compatibility.
+#
+# See: SECENG-13556, ESCALATION-2261
+
+name: gokeyless
+arch: amd64
+platform: linux
+version: ${VERSION}
+maintainer: SSL Cloudflare <security-engineering@cloudflare.com>
+description: Go implementation of keyless protocol
+vendor: Cloudflare
+homepage: https://github.com/cloudflare/gokeyless
+license: Cloudflare
+
+depends:
+  - libtool-ltdl
+
+contents:
+  - src: build/usr/bin/gokeyless
+    dst: /usr/bin/gokeyless
+    file_info:
+      mode: 0755
+
+  - src: pkg/gokeyless.service
+    dst: /lib/systemd/system/gokeyless.service
+    file_info:
+      mode: 0644
+
+  - src: pkg/gokeyless.sysv
+    dst: /etc/init.d/gokeyless
+    type: config
+    file_info:
+      mode: 0755
+
+  - src: pkg/keyless_cacert.pem
+    dst: /etc/keyless/keyless_cacert.pem
+    type: config
+    file_info:
+      mode: 0644
+
+  - src: pkg/gokeyless.yaml
+    dst: /etc/keyless/gokeyless.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0600
+
+scripts:
+  preinstall: pkg/centos/before-install.sh
+  postinstall: pkg/centos/after-install.sh
+  preremove: pkg/centos/before-remove.sh
+
+rpm:
+  group: System Environment/Daemons
