@@ -88,9 +88,11 @@ Each option can optionally be overridden via environment variables or command-li
 
 ## Running using Docker Image
 
-A docker image is published that contains a built binary file and startup instruction for the `gokeyless` process.  An example of the usage of this docker file is in `docker-compose.example.yaml`
-
-This examples shows how you may provide the same configuration options through environment variables and provide a mount with a directory for private keys instead of through a `gokeyless.yaml` file.
+A Docker image is published to [GitHub Container Registry](https://github.com/cloudflare/gokeyless/pkgs/container/gokeyless) (`ghcr.io`) — not Docker Hub. Supported architectures: `linux/amd64` and `linux/arm64`.
+```sh
+docker pull ghcr.io/cloudflare/gokeyless:latest
+```
+An example of configuring and running the container using environment variables (in place of a gokeyless.yaml file) is in docker-compose.example.yaml.
 
 ## Testing
 
