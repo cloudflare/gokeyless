@@ -11,6 +11,9 @@ services:
     environment:
       # - KEYLESS_HOSTNAME=keyserver.keyless.com
       # - KEYLESS_ZONE_ID=5c7004f5221ba2a24c998bd609244a39
+      # Preferred: a Cloudflare API token scoped Zone > SSL and Certificates > Edit
+      # - KEYLESS_API_TOKEN=API_TOKEN_HERE
+      # Deprecated alternative (Origin CA Service Key):
       # - KEYLESS_ORIGIN_CA_API_KEY=ORIGIN_CA_API_KEY_HERE
       - KEYLESS_AUTH_CERT=/gokeyless/config/server.pem
       - KEYLESS_AUTH_KEY=/gokeyless/config/server-key.pem

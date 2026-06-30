@@ -2,88 +2,100 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/cloudflare/cfssl/csr"
 	"github.com/cloudflare/cfssl/log"
-	"github.com/cloudflare/cloudflare-go"
+	cloudflare "github.com/cloudflare/cloudflare-go"
 	"github.com/spf13/afero"
 )
 
+// initAPIRequest is the body sent to the Origin CA "certificates" endpoint to
+// request a keyless server authentication certificate. Note this carries
+// request_type and zone_id, which the typed cloudflare-go
+// CreateOriginCACertificate helper does not expose, so we send the request via
+// the client's generic Raw method instead.
 type initAPIRequest struct {
 	Rqtype    string   `json:"request_type,omitempty"`
 	Hostnames []string `json:"hostnames,omitempty"`
 	ZoneID    string   `json:"zone_id,omitempty"`
 	CSR       string   `json:"csr,omitempty"`
-	//Days      int      `json:"requested_validity,omitempty"`
 }
 
-func newRequestBody(hostname, zoneID, csr string) (io.Reader, error) {
-	apiReq := initAPIRequest{
+// newCFClient builds a cloudflare-go API client using whichever credential is
+// configured. An API token (preferred) takes precedence over the deprecated
+// Origin CA Service Key. The base URL is derived from InitEndpoint so the
+// hidden --init-endpoint override keeps working.
+func (config *Config) newCFClient() (*cloudflare.API, error) {
+	var opts []cloudflare.Option
+	if baseURL := deriveBaseURL(config.InitEndpoint); baseURL != "" {
+		opts = append(opts, cloudflare.BaseURL(baseURL))
+	}
+
+	switch {
+	case config.APIToken != "":
+		return cloudflare.NewWithAPIToken(config.APIToken, opts...)
+	case config.OriginCAKey != "":
+		log.Warning("authenticating with the deprecated Origin CA Service Key (origin_ca_api_key); " +
+			"please migrate to an API token (api_token / KEYLESS_API_TOKEN) scoped Zone > SSL and Certificates > Edit")
+		return cloudflare.NewWithUserServiceKey(config.OriginCAKey, opts...)
+	default:
+		return nil, fmt.Errorf("no Cloudflare credentials configured: set api_token (preferred) or origin_ca_api_key")
+	}
+}
+
+// deriveBaseURL converts a full Origin CA certificates endpoint (e.g.
+// "https://api.cloudflare.com/client/v4/certificates/") into the base URL
+// expected by cloudflare-go (e.g. "https://api.cloudflare.com/client/v4").
+// An empty result means "use the library default".
+func deriveBaseURL(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	base := strings.TrimSuffix(endpoint, "/")
+	base = strings.TrimSuffix(base, "/certificates")
+	return strings.TrimSuffix(base, "/")
+}
+
+func (config *Config) initAPICall(hostname, zoneID, csr string) ([]byte, error) {
+	client, err := config.newCFClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := initAPIRequest{
 		Rqtype:    "keyless-certificate",
 		Hostnames: []string{hostname},
 		ZoneID:    zoneID,
 		CSR:       csr,
 	}
-	body := new(bytes.Buffer)
-	err := json.NewEncoder(body).Encode(apiReq)
-	return body, err
-}
 
-type initAPIResponse struct {
-	cloudflare.Response
-	// todo: use https://github.com/cloudflare/cloudflare-go/blob/master/origin_ca.go for this whole struct
-	Result map[string]string `json:"result,omitempty"`
-}
-
-func (config *Config) initAPICall(token, hostname, zoneID, csr string) ([]byte, error) {
-	body, err := newRequestBody(hostname, zoneID, csr)
+	log.Infof("making API call: %s/certificates", deriveBaseURL(config.InitEndpoint))
+	// Use Raw rather than the typed CreateOriginCACertificate helper so we can
+	// send request_type and zone_id. cloudflare-go applies the configured auth
+	// (Bearer token or X-Auth-User-Service-Key) automatically.
+	resp, err := client.Raw(context.Background(), http.MethodPost, "/certificates", req, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("certificate API call failed: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", config.InitEndpoint, body)
-	if err != nil {
-		return nil, err
+	var result struct {
+		Certificate string `json:"certificate"`
+	}
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("unable to parse certificate API response (%w): %s", err, string(resp.Result))
 	}
 
-	req.Header.Set("X-Auth-User-Service-Key", token)
-
-	log.Infof("making API call: %s", config.InitEndpoint)
-	resp, err := new(http.Client).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("certificate API returned an invalid response body for HTTP %d", resp.StatusCode)
+	if result.Certificate == "" {
+		return nil, fmt.Errorf("no certificate in API response: %s", string(resp.Result))
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("certificate API returns non-200 response, HTTP code: %d, Response: %s", resp.StatusCode, string(bodyBytes))
-	}
-	apiResp := &initAPIResponse{}
-	err = json.Unmarshal(bodyBytes, apiResp)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse certificate API response (%w) HTTP Response: %s", err, string(bodyBytes))
-	}
-
-	if !apiResp.Success {
-		return nil, fmt.Errorf("certificate API call returns errors: %s", string(bodyBytes))
-	}
-
-	if cert, ok := apiResp.Result["certificate"]; ok {
-		return []byte(cert), nil
-	}
-
-	return nil, fmt.Errorf("no certificate in API response: %#v", apiResp)
+	return []byte(result.Certificate), nil
 }
 
 func (config *Config) interactivePrompt() error {
@@ -109,10 +121,12 @@ func (config *Config) interactivePrompt() error {
 			return scanner.Err()
 		}
 	}
-	if config.OriginCAKey == "" {
-		fmt.Print("Origin CA Key: ")
+	// Prefer an API token; only prompt for it when no credential is configured
+	// at all. The deprecated Origin CA Service Key continues to work if set.
+	if config.APIToken == "" && config.OriginCAKey == "" {
+		fmt.Print("Cloudflare API token (scoped Zone > SSL and Certificates > Edit): ")
 		if scanner.Scan() {
-			config.OriginCAKey = scanner.Text()
+			config.APIToken = strings.TrimSpace(scanner.Text())
 		}
 		if scanner.Err() != nil {
 			return scanner.Err()
@@ -121,8 +135,12 @@ func (config *Config) interactivePrompt() error {
 	return nil
 }
 
+func (config *Config) hasCredential() bool {
+	return config.APIToken != "" || config.OriginCAKey != ""
+}
+
 func (config *Config) needInteractivePrompt() bool {
-	return config.Hostname == "" || config.ZoneID == "" || config.OriginCAKey == ""
+	return config.Hostname == "" || config.ZoneID == "" || !config.hasCredential()
 }
 
 func (config *Config) initializeServerCertAndKey() error {
@@ -149,7 +167,7 @@ func (config *Config) initializeServerCertAndKey() error {
 
 	log.Info("contacting Cloudflare API for CSR signing")
 
-	cert, err := config.initAPICall(config.OriginCAKey, config.Hostname, config.ZoneID, string(csr))
+	cert, err := config.initAPICall(config.Hostname, config.ZoneID, string(csr))
 	if err != nil {
 		return fmt.Errorf("initialization failed due to API error: %w", err)
 	}

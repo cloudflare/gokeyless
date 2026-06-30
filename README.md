@@ -14,7 +14,7 @@ Instructions for installing Go Keyless from `.deb` and `.rpm` packages can be fo
 
 ## Key Management
 
-The Keyless SSL server is a TLS server and therefore requires cryptographic keys. All requests are mutually authenticated, so both the client and the server need a TLS 1.2 compatible key pair. The client must present a client certificate that can be verified against the CA that the keyless server is configured to use. This process can be automated using a cloudflare Origin CA API Key - see the [documentation](https://developers.cloudflare.com/ssl/keyless-ssl/) for examples.
+The Keyless SSL server is a TLS server and therefore requires cryptographic keys. All requests are mutually authenticated, so both the client and the server need a TLS 1.2 compatible key pair. The client must present a client certificate that can be verified against the CA that the keyless server is configured to use. This process can be automated using a Cloudflare API token (set `api_token` / `KEYLESS_API_TOKEN`) scoped `Zone > SSL and Certificates > Edit` - see the [documentation](https://developers.cloudflare.com/ssl/keyless-ssl/) for examples. The legacy Origin CA Service Key (`origin_ca_api_key` / `KEYLESS_ORIGIN_CA_API_KEY`) is still accepted but deprecated.
 
 ### Supported Key stores
 
