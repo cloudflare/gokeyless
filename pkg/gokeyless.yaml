@@ -8,8 +8,14 @@ hostname:
 # Zone ID can be found on the Cloudflare dashboard 'Overview' tab.
 zone_id:
 
-# Origin CA API Key can be found on the Cloudflare dashboard under the 'My
-# Profile' section.
+# Preferred credential used to request the server authentication certificate:
+# a Cloudflare API token scoped Zone > SSL and Certificates > Edit. See
+# https://developers.cloudflare.com/fundamentals/api/get-started/create-token/
+api_token:
+
+# Deprecated: the legacy Origin CA Service Key (found on the Cloudflare
+# dashboard under the 'My Profile' section). Prefer api_token above. Only one
+# of api_token or origin_ca_api_key needs to be set.
 origin_ca_api_key:
 
 # Configure one or more private key directories.

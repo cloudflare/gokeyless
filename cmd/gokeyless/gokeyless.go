@@ -40,8 +40,13 @@ func (c *Config) initializeWithDefaults() {
 type Config struct {
 	LogLevel int `yaml:"loglevel" mapstructure:"loglevel"`
 
-	Hostname     string `yaml:"hostname" mapstructure:"hostname"`
-	ZoneID       string `yaml:"zone_id" mapstructure:"zone_id"`
+	Hostname string `yaml:"hostname" mapstructure:"hostname"`
+	ZoneID   string `yaml:"zone_id" mapstructure:"zone_id"`
+	// APIToken is the preferred credential: a Cloudflare API token scoped
+	// Zone -> SSL and Certificates -> Edit.
+	APIToken string `yaml:"api_token" mapstructure:"api_token"`
+	// OriginCAKey is the legacy Origin CA "Service Key" credential. Deprecated:
+	// prefer APIToken. Retained for backwards compatibility.
 	OriginCAKey  string `yaml:"origin_ca_api_key" mapstructure:"origin_ca_api_key"`
 	InitEndpoint string `yaml:"init_endpoint" mapstructure:"init_endpoint"`
 
@@ -108,7 +113,8 @@ func init() {
 	viper.SetDefault("loglevel", log.LevelInfo)
 	flagset.String("hostname", "", "Hostname of this key server (must match configuration in Cloudflare dashboard)")
 	flagset.String("zone-id", "", "Cloudflare Zone ID")
-	flagset.String("origin_ca_api_key", "", "Cloudflare Origin CA API key")
+	flagset.String("api_token", "", "Cloudflare API token (scoped Zone > SSL and Certificates > Edit); preferred over origin_ca_api_key")
+	flagset.String("origin_ca_api_key", "", "Cloudflare Origin CA Service Key (deprecated; prefer api_token)")
 	flagset.String("init-endpoint", "", "Cloudflare API endpoint for server initialization")
 	viper.SetDefault("init_endpoint", defaultEndpoint)
 	flagset.MarkHidden("init-endpoint") // users should not need this
@@ -304,7 +310,7 @@ func runMain() error {
 	// daemon blocked waiting on input can be hard to debug.
 	if config.needNewCertAndKey() {
 		if config.needInteractivePrompt() {
-			return fmt.Errorf("the server cert/key need to be generated; set the hostname, zone_id, and origin_ca_api_key values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
+			return fmt.Errorf("the server cert/key need to be generated; set the hostname, zone_id, and api_token (or the deprecated origin_ca_api_key) values in your config file, or run the server with either the --config-only or --manual-activation flag to generate the pair interactively")
 		}
 		if err := config.initializeServerCertAndKey(); err != nil {
 			log.Fatalf("failed to initialize: %s", err)
