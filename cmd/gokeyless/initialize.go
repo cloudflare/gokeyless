@@ -42,7 +42,8 @@ func (config *Config) newCFClient() (*cloudflare.API, error) {
 		return cloudflare.NewWithAPIToken(config.APIToken, opts...)
 	case config.OriginCAKey != "":
 		log.Warning("authenticating with the deprecated Origin CA Service Key (origin_ca_api_key); " +
-			"please migrate to an API token (api_token / KEYLESS_API_TOKEN) scoped Zone > SSL and Certificates > Edit")
+			"this authentication flow will be removed after September 30, 2026 — " +
+			"please migrate to an API token (api_token / KEYLESS_API_TOKEN) scoped Zone > SSL and Certificates > Edit before then")
 		return cloudflare.NewWithUserServiceKey(config.OriginCAKey, opts...)
 	default:
 		return nil, fmt.Errorf("no Cloudflare credentials configured: set api_token (preferred) or origin_ca_api_key")
