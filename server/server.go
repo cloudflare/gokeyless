@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
@@ -450,15 +452,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeRespondResponse(pkt, res)
 
 	case protocol.OpEd25519Sign:
-		loadStart := time.Now()
-		key, err := s.keys.Get(ctx, &pkt.Operation)
-		logKeyLoadDuration(loadStart)
-		if err != nil {
-			log.Errorf("failed to load key with sni=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.SKI, reqID, err)
-			return makeErrResponse(pkt, protocol.ErrInternal)
-		} else if key == nil {
-			log.Errorf("failed to load key with sni=%s ski=%v request-id=%s: %v", pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
-			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
+		key, perr := s.loadKey(ctx, &pkt.Operation, connName, reqID)
+		if perr != protocol.ErrNone {
+			return makeErrResponse(pkt, perr)
 		}
 
 		if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
@@ -466,9 +462,14 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			return makeRespondResponse(pkt, sig)
 		}
 
+		// Fail closed: only Ed25519 keys may sign the raw payload here.
+		if pub, ok := key.Public().(ed25519.PublicKey); !ok || len(pub) != ed25519.PublicKeySize {
+			log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: Key is not Ed25519", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrCrypto)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
+		}
+
 		sig, err := key.Sign(rand.Reader, pkt.Operation.Payload, crypto.Hash(0))
 		if err != nil {
-			log.Errorf("Connection: %s: sni= %s ski= %v request-id= %s: Signing error: %v", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
 			// This indicates that a remote keyserver is being used
 			var remoteConfigurationErr RemoteConfigurationErr
 			if errors.As(err, &remoteConfigurationErr) {
@@ -482,15 +483,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		return makeRespondResponse(pkt, sig)
 
 	case protocol.OpRSADecrypt:
-		loadStart := time.Now()
-		key, err := s.keys.Get(ctx, &pkt.Operation)
-		logKeyLoadDuration(loadStart)
-		if err != nil {
-			log.Errorf("failed to load key with sni= %s ip= %s ski=%v request-id= %s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err)
-			return makeErrResponse(pkt, protocol.ErrInternal)
-		} else if key == nil {
-			log.Errorf("failed to load key with sni= %s ip= %s ski= %v request-id= %s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
-			return makeErrResponse(pkt, protocol.ErrKeyNotFound)
+		key, perr := s.loadKey(ctx, &pkt.Operation, connName, reqID)
+		if perr != protocol.ErrNone {
+			return makeErrResponse(pkt, perr)
 		}
 
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
@@ -534,6 +529,13 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		opts = crypto.SHA384
 	case protocol.OpRSASignSHA512, protocol.OpRSAPSSSignSHA512, protocol.OpECDSASignSHA512:
 		opts = crypto.SHA512
+	case protocol.OpMLDSA44Sign, protocol.OpMLDSA65Sign, protocol.OpMLDSA87Sign:
+		// Only TLS 1.3 server CertificateVerify content may be signed.
+		if !protocol.ValidTLS13ServerCertificateVerify(pkt.Payload) {
+			log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: payload is not a TLS 1.3 server CertificateVerify message: %s", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrFormat, protocol.TLS13ServerCertificateVerifyRejectReason(pkt.Payload))
+			return makeErrResponse(pkt, protocol.ErrFormat)
+		}
+		opts = crypto.Hash(0) // pure ML-DSA, no pre-hash
 	case protocol.OpPong, protocol.OpResponse, protocol.OpError:
 		log.Errorf("Connection  %v: %s: %s is not a valid request Opcode\n", connName, protocol.ErrUnexpectedOpcode, pkt.Operation.Opcode)
 		return makeErrResponse(pkt, protocol.ErrUnexpectedOpcode)
@@ -545,15 +547,20 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 	case protocol.OpRSAPSSSignSHA256, protocol.OpRSAPSSSignSHA384, protocol.OpRSAPSSSignSHA512:
 		opts = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: opts.HashFunc()}
 	}
-	loadStart := time.Now()
-	key, err := s.keys.Get(ctx, &pkt.Operation)
-	logKeyLoadDuration(loadStart)
-	if err != nil {
-		log.Errorf("failed to load key with sni= %s ip= %s ski= %v request-id= %s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, err)
-		return makeErrResponse(pkt, protocol.ErrInternal)
-	} else if key == nil {
-		log.Errorf("failed to load key with sni= %s ip= %s ski= %v request-id= %s: %v", pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrKeyNotFound)
-		return makeErrResponse(pkt, protocol.ErrKeyNotFound)
+	key, perr := s.loadKey(ctx, &pkt.Operation, connName, reqID)
+	if perr != protocol.ErrNone {
+		return makeErrResponse(pkt, perr)
+	}
+
+	mldsaSigSize := protocol.MLDSASignatureSize(pkt.Opcode)
+	if mldsaSigSize != 0 && mldsaKeyMismatch(pkt.Opcode, key.Public()) {
+		log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: public key does not match %s", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrCrypto, pkt.Opcode)
+		return makeErrResponse(pkt, protocol.ErrCrypto)
+	}
+	// ML-DSA keys sign only via the ML-DSA opcodes.
+	if mldsaSigSize == 0 && isMLDSAPublicKey(key.Public()) {
+		log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: ML-DSA key used with %s", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrCrypto, pkt.Opcode)
+		return makeErrResponse(pkt, protocol.ErrCrypto)
 	}
 
 	signSpan, ctx := opentracing.StartSpanFromContext(ctx, "execute.Sign")
@@ -600,7 +607,113 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 		break
 	}
 
+	// Backstop for keys of the wrong parameter set.
+	if mldsaSigSize != 0 && len(sig) != mldsaSigSize {
+		log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: unexpected signature length %d for %s (want %d)", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrCrypto, len(sig), pkt.Opcode, mldsaSigSize)
+		return makeErrResponse(pkt, protocol.ErrCrypto)
+	}
+	// Backstop for ML-DSA keys the pre-sign check could not identify.
+	if mldsaSigSize == 0 && isMLDSASignatureLen(len(sig)) {
+		log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: ML-DSA-sized signature (%d bytes) for %s", connName, pkt.SNI, pkt.SKI, reqID, protocol.ErrCrypto, len(sig), pkt.Opcode)
+		return makeErrResponse(pkt, protocol.ErrCrypto)
+	}
 	return makeRespondResponse(pkt, sig)
+}
+
+// loadKey resolves the key for a key operation. Operations carrying a
+// CertUsage item are validated and resolved only via CertUsageKeystore.
+// It returns protocol.ErrNone on success.
+func (s *Server) loadKey(ctx context.Context, op *protocol.Operation, connName, reqID string) (crypto.Signer, protocol.Error) {
+	var key crypto.Signer
+	var err error
+	loadStart := time.Now()
+	if op.CertUsage != nil {
+		if verr := op.ValidateCertUsage(); verr != nil {
+			log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: invalid certificate usage item: %s", connName, op.SNI, op.SKI, reqID, protocol.ErrFormat, op.CertUsageRejectReason())
+			return nil, protocol.ErrFormat
+		}
+		if cuKeys, ok := s.keys.(CertUsageKeystore); ok {
+			key, err = cuKeys.GetByCertUsage(ctx, op)
+		}
+	} else {
+		key, err = s.keys.Get(ctx, op)
+	}
+	logKeyLoadDuration(loadStart)
+	if err != nil {
+		log.Errorf("failed to load key with sni= %s ip= %s ski= %v request-id= %s: %v", op.SNI, op.ServerIP, op.SKI, reqID, err)
+		return nil, protocol.ErrInternal
+	} else if key == nil {
+		log.Errorf("failed to load key with sni= %s ip= %s ski= %v request-id= %s: %v", op.SNI, op.ServerIP, op.SKI, reqID, protocol.ErrKeyNotFound)
+		return nil, protocol.ErrKeyNotFound
+	}
+	return key, protocol.ErrNone
+}
+
+// mldsaPublicKeySize returns the ML-DSA public key size for op, or 0.
+func mldsaPublicKeySize(op protocol.Op) int {
+	switch op {
+	case protocol.OpMLDSA44Sign:
+		return 1312
+	case protocol.OpMLDSA65Sign:
+		return 1952
+	case protocol.OpMLDSA87Sign:
+		return 2592
+	default:
+		return 0
+	}
+}
+
+// encodedPublicKeyLen returns the encoded length of a non-classical public
+// key. classical is true for RSA, ECDSA and Ed25519 keys; ok is false if the
+// length is unknown.
+func encodedPublicKeyLen(pub crypto.PublicKey) (n int, classical, ok bool) {
+	switch k := pub.(type) {
+	case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey:
+		return 0, true, false
+	case interface{ Bytes() []byte }:
+		return len(k.Bytes()), false, true
+	case encoding.BinaryMarshaler:
+		b, err := k.MarshalBinary()
+		if err != nil {
+			return 0, false, false
+		}
+		return len(b), false, true
+	default:
+		return 0, false, false
+	}
+}
+
+// mldsaKeyMismatch reports whether pub is known not to be a key for op.
+// Public key types it cannot size are allowed.
+func mldsaKeyMismatch(op protocol.Op, pub crypto.PublicKey) bool {
+	n, classical, ok := encodedPublicKeyLen(pub)
+	if classical {
+		return true
+	}
+	return ok && n != mldsaPublicKeySize(op)
+}
+
+// isMLDSAPublicKey reports whether pub has the encoded size of an ML-DSA
+// public key.
+func isMLDSAPublicKey(pub crypto.PublicKey) bool {
+	n, _, ok := encodedPublicKeyLen(pub)
+	if !ok {
+		return false
+	}
+	switch n {
+	case mldsaPublicKeySize(protocol.OpMLDSA44Sign), mldsaPublicKeySize(protocol.OpMLDSA65Sign), mldsaPublicKeySize(protocol.OpMLDSA87Sign):
+		return true
+	}
+	return false
+}
+
+// isMLDSASignatureLen reports whether n is the size of an ML-DSA signature.
+func isMLDSASignatureLen(n int) bool {
+	switch n {
+	case protocol.MLDSASignatureSize(protocol.OpMLDSA44Sign), protocol.MLDSASignatureSize(protocol.OpMLDSA65Sign), protocol.MLDSASignatureSize(protocol.OpMLDSA87Sign):
+		return true
+	}
+	return false
 }
 
 type signWithTimeoutWrapper struct {
@@ -939,6 +1052,9 @@ func (s *ServeConfig) SignRetryCount() int {
 }
 
 // CustomOpFunction is the signature for custom opcode functions.
+//
+// The Operation is passed as received; a CertUsage item is not validated, so
+// call op.ValidateCertUsage if relying on it.
 //
 // If it returns a non-nil error which implements protocol.Error, the server
 // will return it directly. Otherwise it will return protocol.ErrInternal.

@@ -1,10 +1,13 @@
 package tracing
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 )
 
@@ -58,4 +61,77 @@ func TestSpanContextFromBinary(t *testing.T) {
 			}
 		})
 	}
+}
+
+// spanTags runs SetOperationSpanTags on a fresh sampled jaeger span and returns
+// the resulting tags.
+func spanTags(t *testing.T, op *protocol.Operation) opentracing.Tags {
+	t.Helper()
+	tracer, closer := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewInMemoryReporter())
+	defer func() { _ = closer.Close() }()
+	span := tracer.StartSpan("op")
+	defer span.Finish()
+	SetOperationSpanTags(span, op)
+	js, ok := span.(*jaeger.Span)
+	require.True(t, ok)
+	return js.Tags()
+}
+
+func TestSetOperationSpanTagsCertUsage(t *testing.T) {
+	tests := []struct {
+		name      string
+		cu        *protocol.CertUsage
+		wantUsage string
+		wantScope string
+	}{
+		{
+			name:      "valid",
+			cu:        &protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: "svc-a_1"},
+			wantUsage: "CertUsageServiceServer",
+			wantScope: "svc-a_1",
+		},
+		{
+			name:      "invalid scope characters",
+			cu:        &protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: "Evil\n<script>"},
+			wantUsage: "CertUsageServiceServer",
+			wantScope: "invalid",
+		},
+		{
+			name:      "scope too long",
+			cu:        &protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: strings.Repeat("a", protocol.MaxCertUsageScopeLen+1)},
+			wantUsage: "CertUsageServiceServer",
+			wantScope: "invalid",
+		},
+		{
+			name:      "empty scope",
+			cu:        &protocol.CertUsage{Usage: protocol.CertUsageServiceServer},
+			wantUsage: "CertUsageServiceServer",
+			wantScope: "invalid",
+		},
+		{
+			name:      "unknown usage",
+			cu:        &protocol.CertUsage{Usage: protocol.CertUsageType(0x7F), Scope: "example"},
+			wantUsage: "CertUsageType(127)",
+			wantScope: "invalid",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			op := &protocol.Operation{Opcode: protocol.OpMLDSA65Sign, SKI: protocol.SKI{1}, CertUsage: tt.cu}
+			tags := spanTags(t, op)
+			assert.Equal(t, tt.wantUsage, tags["operation.cert_usage"])
+			assert.Equal(t, tt.wantScope, tags["operation.cert_usage_scope"])
+			// Existing tags are unchanged.
+			assert.Equal(t, protocol.OpMLDSA65Sign.String(), tags["operation.opcode"])
+			assert.Contains(t, tags, "operation.ski")
+			assert.Contains(t, tags, "operation.sni")
+		})
+	}
+}
+
+func TestSetOperationSpanTagsNoCertUsage(t *testing.T) {
+	tags := spanTags(t, &protocol.Operation{Opcode: protocol.OpEd25519Sign})
+	assert.NotContains(t, tags, "operation.cert_usage")
+	assert.NotContains(t, tags, "operation.cert_usage_scope")
+	assert.Equal(t, protocol.OpEd25519Sign.String(), tags["operation.opcode"])
 }

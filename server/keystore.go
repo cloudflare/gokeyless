@@ -24,13 +24,31 @@ import (
 var keyExt = regexp.MustCompile(`.+\.key`)
 
 // Keystore is an abstract container for a server's private keys, allowing
-// lookup of keys based on incoming `Operation` requests.
+// lookup of keys based on incoming `Operation` requests. ML-DSA signers must
+// return a public key whose Bytes or MarshalBinary encoding has the ML-DSA
+// public key size; otherwise their requests may be refused.
 type Keystore interface {
 	// Get retrieves a key for signing. The Sign method will be called directly on
 	// this key, so it's advisable to perform any precomputation on this key that
 	// may speed up signing over the course of multiple signatures (e.g.,
 	// crypto/rsa.PrivateKey's Precompute method).
-	Get(context.Context, *protocol.Operation) (crypto.Signer, error)
+	//
+	// Get is not called for operations carrying a CertUsage item; see
+	// CertUsageKeystore.
+	Get(ctx context.Context, op *protocol.Operation) (crypto.Signer, error)
+}
+
+// CertUsageKeystore is implemented by keystores that can select keys by
+// certificate usage. Operations carrying a CertUsage item are resolved only
+// through GetByCertUsage; Keystore.Get is never called for them. If the
+// server's Keystore does not implement it, they get ErrKeyNotFound.
+// Wrapping keystores must forward this interface to keep support. The
+// Keystore ML-DSA public key requirement applies to returned signers too.
+type CertUsageKeystore interface {
+	// GetByCertUsage selects the key only by op.CertUsage (and op.SNI as
+	// applicable), never by SKI, Extra or CertID. op.CertUsage has already
+	// passed ValidateCertUsage. Return (nil, nil) if no key exists.
+	GetByCertUsage(ctx context.Context, op *protocol.Operation) (crypto.Signer, error)
 }
 
 // DefaultKeystore is a simple in-memory Keystore.
@@ -141,9 +159,15 @@ func DefaultLoadKey(in []byte) (priv crypto.Signer, err error) {
 }
 
 // Get returns a key from keys, mapped from SKI.
+// DefaultKeystore does not implement CertUsageKeystore; as a backstop, Get
+// returns (nil, nil) whenever op.CertUsage is set.
 func (keys *DefaultKeystore) Get(ctx context.Context, op *protocol.Operation) (crypto.Signer, error) {
 	span, _ := opentracing.StartSpanFromContext(ctx, "DefaultKeystore.Get")
 	defer span.Finish()
+
+	if op.CertUsage != nil {
+		return nil, nil
+	}
 
 	keys.mtx.RLock()
 	defer keys.mtx.RUnlock()

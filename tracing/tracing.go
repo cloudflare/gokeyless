@@ -61,9 +61,26 @@ func SetOperationSpanTags(span opentracing.Span, op *protocol.Operation) {
 		"operation.forwardingsvc":     fmt.Sprintf("%d", op.ForwardingSvc),
 		"operation.compliance_region": op.ComplianceRegion.String(),
 	}
+	if op.CertUsage != nil {
+		// Usage is a single byte, so its String() form is bounded.
+		tags["operation.cert_usage"] = op.CertUsage.Usage.String()
+		tags["operation.cert_usage_scope"] = certUsageScopeTag(op.CertUsage)
+	}
 	for k, v := range tags {
 		span.SetTag(k, v)
 	}
+}
+
+// certUsageScopeTagInvalid is the scope tag value for invalid certificate usage items.
+const certUsageScopeTagInvalid = "invalid"
+
+// certUsageScopeTag returns the scope if it passes Validate, otherwise "invalid".
+// Tags are set before server validation, so raw client input is never tagged.
+func certUsageScopeTag(c *protocol.CertUsage) string {
+	if c.Validate() != nil {
+		return certUsageScopeTagInvalid
+	}
+	return c.Scope
 }
 
 // CallRPC wraps rpc.Call with a trace

@@ -2,6 +2,7 @@
 package params
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -51,6 +52,38 @@ var (
 	ECDSASHA384Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA384, Curve: elliptic.P384(), Opts: crypto.SHA384, PayloadSize: 48}
 	ECDSASHA512Params = ECDSASignParams{Opcode: protocol.OpECDSASignSHA512, Curve: elliptic.P521(), Opts: crypto.SHA512, PayloadSize: 64}
 )
+
+// MLDSASignParams represents a set of parameters to an ML-DSA signing
+// operation. Payloads must be built with TLS13ServerCertificateVerify.
+type MLDSASignParams struct {
+	Opcode        protocol.Op // The Keyless protocol opcode for this operation
+	SignatureSize int         // The expected FIPS 204 signature size in bytes
+	HashSize      int         // The size of the transcript hash embedded in the payload
+}
+
+// MLDSA44Params, MLDSA65Params, and MLDSA87Params use a SHA-256 transcript
+// hash (130-byte payload).
+var (
+	MLDSA44Params = MLDSASignParams{Opcode: protocol.OpMLDSA44Sign, SignatureSize: protocol.MLDSASignatureSize(protocol.OpMLDSA44Sign), HashSize: 32}
+	MLDSA65Params = MLDSASignParams{Opcode: protocol.OpMLDSA65Sign, SignatureSize: protocol.MLDSASignatureSize(protocol.OpMLDSA65Sign), HashSize: 32}
+	MLDSA87Params = MLDSASignParams{Opcode: protocol.OpMLDSA87Sign, SignatureSize: protocol.MLDSASignatureSize(protocol.OpMLDSA87Sign), HashSize: 32}
+)
+
+// TLS 1.3 server CertificateVerify framing (RFC 8446, Section 4.4.3).
+const (
+	tls13CertVerifyPadLen        = 64
+	tls13ServerCertVerifyContext = "TLS 1.3, server CertificateVerify"
+)
+
+// TLS13ServerCertificateVerify returns the TLS 1.3 server CertificateVerify
+// signing input for hash. The keyserver accepts only 32- or 48-byte hashes.
+func TLS13ServerCertificateVerify(hash []byte) []byte {
+	msg := make([]byte, 0, tls13CertVerifyPadLen+len(tls13ServerCertVerifyContext)+1+len(hash))
+	msg = append(msg, bytes.Repeat([]byte{0x20}, tls13CertVerifyPadLen)...)
+	msg = append(msg, tls13ServerCertVerifyContext...)
+	msg = append(msg, 0x00)
+	return append(msg, hash...)
+}
 
 func getSoftHSMModulePath() string {
 	if override := os.Getenv("SOFTHSM_MODULE_DIR"); override != "" {
