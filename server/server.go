@@ -475,10 +475,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 			if errors.As(err, &remoteConfigurationErr) {
 				log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrRemoteConfiguration, err)
 				return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
-			} else {
-				log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
-				return makeErrResponse(pkt, protocol.ErrCrypto)
 			}
+			log.Errorf("Connection %v: sni= %s ski= %v request-id= %s: %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
+			return makeErrResponse(pkt, protocol.ErrCrypto)
 		}
 		return makeRespondResponse(pkt, sig)
 
@@ -598,10 +597,9 @@ func (s *Server) unlimitedDo(pkt *protocol.Packet, connName string) response {
 				if errors.As(err, &remoteConfigurationErr) {
 					log.Errorf("Connection %v sni= %s ip= %s ski= %v request-id= %s : %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrRemoteConfiguration, err)
 					return makeErrResponse(pkt, protocol.ErrRemoteConfiguration)
-				} else {
-					log.Errorf("Connection %v sni= %s ip= %s ski= %v request-id= %s : %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
-					return makeErrResponse(pkt, protocol.ErrCrypto)
 				}
+				log.Errorf("Connection %v sni= %s ip= %s ski= %v request-id= %s : %s: Signing error: %v\n", connName, pkt.Operation.SNI, pkt.Operation.ServerIP, pkt.Operation.SKI, reqID, protocol.ErrCrypto, err)
+				return makeErrResponse(pkt, protocol.ErrCrypto)
 			}
 		}
 		break
