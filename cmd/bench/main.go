@@ -1,5 +1,3 @@
-// +build go1.8
-
 package main
 
 import (
@@ -33,6 +31,9 @@ var (
 	serverFlag   string
 	portFlag     uint64
 
+	certUsageScopeFlag string
+	certUsageFlag      uint
+
 	bwFlag                     bool
 	gmpFlag                    int
 	workersFlag                int
@@ -51,8 +52,15 @@ var (
 		"RSA-SHA256":   makeRSASignOpMaker(params.RSASHA256Params),
 		"RSA-SHA384":   makeRSASignOpMaker(params.RSASHA384Params),
 		"RSA-SHA512":   makeRSASignOpMaker(params.RSASHA512Params),
+		"MLDSA44":      makeMLDSASignOpMaker(params.MLDSA44Params),
+		"MLDSA65":      makeMLDSASignOpMaker(params.MLDSA65Params),
+		"MLDSA87":      makeMLDSASignOpMaker(params.MLDSA87Params),
 	}
 )
+
+func makeMLDSASignOpMaker(params params.MLDSASignParams) func(op protocol.Operation) protocol.Operation {
+	return func(op protocol.Operation) protocol.Operation { return makeMLDSASignOp(params, op) }
+}
 
 func makeECDSASignOpMaker(params params.ECDSASignParams) func(op protocol.Operation) protocol.Operation {
 	return func(op protocol.Operation) protocol.Operation { return makeECDSASignOp(params, op) }
@@ -72,6 +80,8 @@ func init() {
 	flag.StringVar(&opFlag, "op", "ECDSA-SHA512", "the operation to request from the server")
 	flag.StringVar(&serverFlag, "server", "localhost", "keyless server to connect to")
 	flag.Uint64Var(&portFlag, "port", 2407, "port to connect to the keyless server on")
+	flag.StringVar(&certUsageScopeFlag, "cert-usage-scope", "", "attach a certificate usage item with this scope ([a-z0-9_-], 1-64 bytes)")
+	flag.UintVar(&certUsageFlag, "cert-usage", uint(protocol.CertUsageServiceServer), "certificate usage for -cert-usage-scope (1 = service server)")
 
 	flag.BoolVar(&bwFlag, "bandwidth", false, "perform a bandwidth test rather than a latency test")
 	flag.IntVar(&gmpFlag, "gmp", runtime.GOMAXPROCS(0), "override the default GOMAXPROCS")
@@ -127,6 +137,18 @@ func main() {
 
 	op = opFn(op)
 
+	if certUsageScopeFlag != "" {
+		if certUsageFlag > math.MaxUint8 {
+			fmt.Fprintf(os.Stderr, "invalid -cert-usage %d: must be 0-255\n", certUsageFlag)
+			os.Exit(2)
+		}
+		op.CertUsage = &protocol.CertUsage{Usage: protocol.CertUsageType(certUsageFlag), Scope: certUsageScopeFlag}
+		if err := op.ValidateCertUsage(); err != nil {
+			fmt.Fprintf(os.Stderr, "invalid certificate usage (usage=%d, scope=%q): %v\n", certUsageFlag, certUsageScopeFlag, err)
+			os.Exit(2)
+		}
+	}
+
 	runtime.GOMAXPROCS(gmpFlag)
 
 	cli, err := client.NewClientFromFile(certFileFlag, keyFileFlag, caFileFlag)
@@ -165,8 +187,9 @@ func main() {
 }
 
 type bwClient struct {
-	pkt  []byte
-	conn *tls.Conn
+	pkt    []byte
+	opcode protocol.Op
+	conn   *tls.Conn
 }
 
 func (b *bwClient) Dispatch() {
@@ -177,10 +200,10 @@ func (b *bwClient) Dispatch() {
 }
 
 func (b *bwClient) Complete() {
-	readPacket(b.conn)
+	checkResponse(b.opcode, readPacket(b.conn))
 }
 
-func readPacket(conn *tls.Conn) {
+func readPacket(conn *tls.Conn) []byte {
 	var buf [8]byte
 	_, err := io.ReadFull(conn, buf[:])
 	if err != nil {
@@ -198,6 +221,25 @@ func readPacket(conn *tls.Conn) {
 	if err != nil {
 		panic(err)
 	}
+	return body
+}
+
+// checkResponse checks that ML-DSA responses carry a signature of the expected
+// size. Other opcodes are not checked.
+func checkResponse(opcode protocol.Op, body []byte) {
+	if !opcode.IsMLDSASign() {
+		return
+	}
+	var resp protocol.Operation
+	if err := resp.UnmarshalBinary(body); err != nil {
+		panic(fmt.Errorf("could not parse %v response: %w", opcode, err))
+	}
+	if resp.Opcode == protocol.OpError {
+		panic(fmt.Errorf("%v request failed: %v", opcode, resp.GetError()))
+	}
+	if want := protocol.MLDSASignatureSize(opcode); len(resp.Payload) != want {
+		panic(fmt.Errorf("%v response: got %d-byte signature, want %d", opcode, len(resp.Payload), want))
+	}
 }
 
 func makeBandwidthClientFromOp(cli *client.Client, server, port string, op protocol.Operation) (bclient.BandwidthClient, error) {
@@ -208,8 +250,9 @@ func makeBandwidthClientFromOp(cli *client.Client, server, port string, op proto
 		panic(err)
 	}
 	return &bwClient{
-		pkt:  buf,
-		conn: conn,
+		pkt:    buf,
+		opcode: op.Opcode,
+		conn:   conn,
 	}, nil
 }
 
@@ -226,8 +269,9 @@ func makeLatencyClientFromOp(cli *client.Client, server, port string, op protoco
 		if err != nil {
 			panic(err)
 		}
-		readPacket(conn)
+		body := readPacket(conn)
 		t1 := time.Now()
+		checkResponse(op.Opcode, body)
 		if t1.Before(t0) {
 			// Time went backwards (probably because somebody reset the clock - Go
 			// doesn't yet support monotonic clocks). This test is obviously invalid.
@@ -260,6 +304,14 @@ func makeRSASignOp(params params.RSASignParams, op protocol.Operation) protocol.
 func makeECDSASignOp(params params.ECDSASignParams, op protocol.Operation) protocol.Operation {
 	op.Opcode = params.Opcode
 	op.Payload = randBytes(params.PayloadSize)
+	return op
+}
+
+// makeMLDSASignOp builds an ML-DSA sign operation over a TLS 1.3 server
+// CertificateVerify payload with a random transcript hash.
+func makeMLDSASignOp(p params.MLDSASignParams, op protocol.Operation) protocol.Operation {
+	op.Opcode = p.Opcode
+	op.Payload = params.TLS13ServerCertificateVerify(randBytes(p.HashSize))
 	return op
 }
 

@@ -59,6 +59,7 @@ type IntegrationTestSuite struct {
 	serverPort int
 	serverAddr string
 	server     *server.Server
+	keys       server.Keystore // keystore installed on server by SetupTest
 	client     *client.Client
 	rsaKey     *client.Decrypter
 	ecdsaKey   *client.PrivateKey
@@ -176,6 +177,7 @@ func (s *IntegrationTestSuite) SetupTest() {
 	if !testSoftHSM {
 		keys, err := server.NewKeystoreFromDir("testdata", server.DefaultLoadKey)
 		require.NoError(err)
+		s.keys = keys
 		s.server.SetKeystore(keys)
 	} else {
 		keys := server.NewDefaultKeystore()
@@ -183,6 +185,7 @@ func (s *IntegrationTestSuite) SetupTest() {
 		require.NoError(err)
 		err = keys.AddFromURI(params.ECDSAURI)
 		require.NoError(err)
+		s.keys = keys
 		s.server.SetKeystore(keys)
 	}
 

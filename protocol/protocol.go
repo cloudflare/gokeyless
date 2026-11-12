@@ -21,7 +21,7 @@ import (
 	"github.com/cloudflare/cfssl/helpers/derhelpers"
 )
 
-//go:generate stringer -type=Tag,Op,ComplianceRegion -output=protocol_string.go
+//go:generate stringer -type=Tag,Op,ComplianceRegion,CertUsageType -output=protocol_string.go
 
 // Tag marks the type of an Item.
 type Tag byte
@@ -53,6 +53,9 @@ const (
 	TagReqContext Tag = 0x16
 	// TagComplianceRegion implies the compliance region of the operation which can impact behavior
 	TagComplianceRegion Tag = 0x17
+	// TagCertUsage carries key selection metadata: 1 byte usage followed by
+	// the scope bytes. See CertUsage.
+	TagCertUsage Tag = 0x18
 	// TagPadding implies an item with a meaningless payload added for padding.
 	TagPadding Tag = 0x20
 )
@@ -108,6 +111,16 @@ const (
 	// OpCustom requests a custom operation that can be defined by a function set in the server configuration
 	OpCustom Op = 0x24
 
+	// Opcodes 0x40-0x4F are reserved for ML-DSA. The payload must be the
+	// 130- or 146-byte TLS 1.3 server CertificateVerify signed content.
+
+	// OpMLDSA44Sign signs with ML-DSA-44 (TLS sigalg 0x0904).
+	OpMLDSA44Sign Op = 0x41
+	// OpMLDSA65Sign signs with ML-DSA-65 (TLS sigalg 0x0905).
+	OpMLDSA65Sign Op = 0x42
+	// OpMLDSA87Sign signs with ML-DSA-87 (TLS sigalg 0x0906).
+	OpMLDSA87Sign Op = 0x43
+
 	// OpPing indicates a test message which will be echoed with opcode changed to OpPong.
 	OpPing Op = 0xF1
 	// OpPong indicates a response echoed from an OpPing test message.
@@ -134,8 +147,35 @@ func (op Op) Type() string {
 		return "other"
 	case OpEd25519Sign:
 		return "ed25519"
+	case OpMLDSA44Sign, OpMLDSA65Sign, OpMLDSA87Sign:
+		return "mldsa"
 	default:
 		return "unknown"
+	}
+}
+
+// IsMLDSASign reports whether op is an ML-DSA signing opcode.
+func (op Op) IsMLDSASign() bool {
+	switch op {
+	case OpMLDSA44Sign, OpMLDSA65Sign, OpMLDSA87Sign:
+		return true
+	default:
+		return false
+	}
+}
+
+// MLDSASignatureSize returns the ML-DSA signature size for o, or 0 if o is not
+// an ML-DSA signing opcode.
+func MLDSASignatureSize(o Op) int {
+	switch o {
+	case OpMLDSA44Sign:
+		return 2420
+	case OpMLDSA65Sign:
+		return 3309
+	case OpMLDSA87Sign:
+		return 4627
+	default:
+		return 0
 	}
 }
 
@@ -213,6 +253,51 @@ const (
 	// with the FedRAMP High QS instance
 	ComplianceRegionFedRAMPHigh ComplianceRegion = 0x01
 )
+
+// CertUsageType selects the usage-specific key lookup (first byte of TagCertUsage).
+type CertUsageType byte
+
+const (
+	// CertUsageServiceServer selects a server certificate key by service scope.
+	CertUsageServiceServer CertUsageType = 0x01
+)
+
+// CertUsage is the decoded value of a TagCertUsage item. Parsing checks only
+// that the usage byte is present; see Validate for semantic checks.
+type CertUsage struct {
+	Usage CertUsageType // e.g. CertUsageServiceServer
+	Scope string        // service scope for the key lookup
+}
+
+func (c *CertUsage) String() string {
+	if c == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("{Usage: %v, Scope: %q}", c.Usage, c.Scope)
+}
+
+// encodedLen returns the length in bytes of the TagCertUsage value encoding of c.
+func (c *CertUsage) encodedLen() int {
+	return 1 + len(c.Scope)
+}
+
+// marshalBinary returns the TagCertUsage value encoding of c.
+func (c *CertUsage) marshalBinary() []byte {
+	b := make([]byte, 0, c.encodedLen())
+	b = append(b, byte(c.Usage))
+	return append(b, c.Scope...)
+}
+
+// unmarshalCertUsage decodes a TagCertUsage value; it requires only the usage byte.
+func unmarshalCertUsage(data []byte) (*CertUsage, error) {
+	if len(data) < 1 {
+		return nil, errors.New("invalid CertUsage: missing usage byte")
+	}
+	return &CertUsage{
+		Usage: CertUsageType(data[0]),
+		Scope: string(data[1:]), // copies; does not alias data
+	}, nil
+}
 
 const (
 	paddedLength = 1024
@@ -431,10 +516,17 @@ type Operation struct {
 	JaegerSpan       []byte
 	ReqContext       []byte
 	ComplianceRegion ComplianceRegion
+	// CertUsage is the optional TagCertUsage item; nil if absent. The server
+	// validates it only for key operations; see ValidateCertUsage.
+	CertUsage *CertUsage
 }
 
 func (o *Operation) String() string {
-	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s, Forwarding Service: %v, ComplianceRegion %v]",
+	var cu string
+	if o.CertUsage != nil {
+		cu = fmt.Sprintf(", CertUsage: %v", o.CertUsage)
+	}
+	return fmt.Sprintf("[Opcode: %v, SKI: %v, Digest: %02x, Client IP: %s, Server IP: %s, SNI: %s, Forwarding Service: %v, ComplianceRegion %v%s]",
 		o.Opcode,
 		o.SKI,
 		o.Digest,
@@ -443,6 +535,7 @@ func (o *Operation) String() string {
 		o.SNI,
 		o.ForwardingSvc,
 		o.ComplianceRegion,
+		cu,
 	)
 }
 
@@ -530,6 +623,9 @@ func (o *Operation) Bytes() uint16 {
 	if o.ComplianceRegion != 0 {
 		add(tlvLen(1))
 	}
+	if o.CertUsage != nil {
+		add(tlvLen(o.CertUsage.encodedLen()))
+	}
 	if int(length)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -608,6 +704,10 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 		b = append(b, tlvBytes(TagComplianceRegion, []byte{byte(o.ComplianceRegion)})...)
 	}
 
+	if o.CertUsage != nil {
+		b = append(b, tlvBytes(TagCertUsage, o.CertUsage.marshalBinary())...)
+	}
+
 	if len(b)+headerSize < paddedLength {
 		// TODO: Are we sure that's the right behavior?
 
@@ -631,9 +731,8 @@ func (o *Operation) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary unmarshalls a binary-encoded TLV list of items into o.
 // It guarantees that ClientIP and ServerIP, if present, are each 4 or 16 bytes.
 func (o *Operation) UnmarshalBinary(body []byte) error {
-	// seen has enough entries to be indexed by any valid Tag value. If more tags
-	// are added later, change this code!
-	var seen [33]bool
+	// seen is indexed by Tag (a byte), so it covers every tag value.
+	var seen [256]bool
 	var length int
 
 	validateIP := func(ip net.IP) (net.IP, error) {
@@ -700,13 +799,20 @@ func (o *Operation) UnmarshalBinary(body []byte) error {
 				return fmt.Errorf("invalid ComplianceRegion: %s", data)
 			}
 			o.ComplianceRegion = ComplianceRegion(data[0])
+		case TagCertUsage:
+			// Structural check only; the server validates semantics so it can
+			// return an error response instead of dropping the connection.
+			cu, err := unmarshalCertUsage(data)
+			if err != nil {
+				return err
+			}
+			o.CertUsage = cu
 		default:
 			// Silently ignore any unknown tags (to allow for new tags to be gradually added to the protocol).
 			continue
 		}
 
-		// only use tag as an index in seen after we've validated that it's a tag
-		// that we recognize, and thus won't be out of bounds.
+		// Only recognized tags reach here; unknown tags skip duplicate detection.
 		if seen[tag] {
 			return fmt.Errorf("tag %02x seen multiple times", tag)
 		}
