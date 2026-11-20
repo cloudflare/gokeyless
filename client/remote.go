@@ -332,18 +332,18 @@ type ewmaLatency struct {
 	measured bool
 }
 
-func (l ewmaLatency) Update(val time.Duration) {
+func (l *ewmaLatency) Update(val time.Duration) {
 	l.measured = true
 	l.val /= 2
 	l.val += (val / 2)
 }
 
-func (l ewmaLatency) Reset() {
+func (l *ewmaLatency) Reset() {
 	l.val = 0
 	l.measured = false
 }
 
-func (l ewmaLatency) Better(r ewmaLatency) bool {
+func (l *ewmaLatency) Better(r ewmaLatency) bool {
 	// if l is not measured (it also means last measurement was
 	// a failure), any updated/measured latency is better than
 	// l. Also if neither l or r is measured, l can't be better
