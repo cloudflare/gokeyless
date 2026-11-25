@@ -179,6 +179,21 @@ func MLDSASignatureSize(o Op) int {
 	}
 }
 
+// MLDSAPublicKeySize returns the ML-DSA public key size for o, or 0 if o is not
+// an ML-DSA signing opcode.
+func MLDSAPublicKeySize(o Op) int {
+	switch o {
+	case OpMLDSA44Sign:
+		return 1312
+	case OpMLDSA65Sign:
+		return 1952
+	case OpMLDSA87Sign:
+		return 2592
+	default:
+		return 0
+	}
+}
+
 // Error defines a 1-byte error payload.
 type Error byte
 

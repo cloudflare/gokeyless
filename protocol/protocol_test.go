@@ -84,10 +84,11 @@ func TestMLDSAOps(t *testing.T) {
 		value   byte
 		name    string
 		sigSize int
+		pubSize int
 	}{
-		{OpMLDSA44Sign, 0x41, "OpMLDSA44Sign", 2420},
-		{OpMLDSA65Sign, 0x42, "OpMLDSA65Sign", 3309},
-		{OpMLDSA87Sign, 0x43, "OpMLDSA87Sign", 4627},
+		{OpMLDSA44Sign, 0x41, "OpMLDSA44Sign", 2420, 1312},
+		{OpMLDSA65Sign, 0x42, "OpMLDSA65Sign", 3309, 1952},
+		{OpMLDSA87Sign, 0x43, "OpMLDSA87Sign", 4627, 2592},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,6 +98,7 @@ func TestMLDSAOps(t *testing.T) {
 			require.Equal("mldsa", tt.op.Type())
 			require.True(tt.op.IsMLDSASign())
 			require.Equal(tt.sigSize, MLDSASignatureSize(tt.op))
+			require.Equal(tt.pubSize, MLDSAPublicKeySize(tt.op))
 		})
 	}
 }
@@ -112,6 +114,7 @@ func TestNonMLDSAOps(t *testing.T) {
 	} {
 		require.False(op.IsMLDSASign(), "%s should not be an ML-DSA op", op)
 		require.Zero(MLDSASignatureSize(op), "%s should have no ML-DSA signature size", op)
+		require.Zero(MLDSAPublicKeySize(op), "%s should have no ML-DSA public key size", op)
 		require.NotEqual("mldsa", op.Type(), "%s should not have type mldsa", op)
 	}
 	// Neighbouring opcodes keep their existing names/types.

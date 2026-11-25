@@ -649,16 +649,7 @@ func (s *Server) loadKey(ctx context.Context, op *protocol.Operation, connName, 
 
 // mldsaPublicKeySize returns the ML-DSA public key size for op, or 0.
 func mldsaPublicKeySize(op protocol.Op) int {
-	switch op {
-	case protocol.OpMLDSA44Sign:
-		return 1312
-	case protocol.OpMLDSA65Sign:
-		return 1952
-	case protocol.OpMLDSA87Sign:
-		return 2592
-	default:
-		return 0
-	}
+	return protocol.MLDSAPublicKeySize(op)
 }
 
 // encodedPublicKeyLen returns the encoded length of a non-classical public

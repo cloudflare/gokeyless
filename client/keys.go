@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/subtle"
+	"encoding"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
-	"github.com/cloudflare/gokeyless/server"
 	"github.com/cloudflare/gokeyless/tracing"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
@@ -39,19 +39,47 @@ var (
 	}
 )
 
+// mldsaSignOp returns the ML-DSA signing op matching the encoded size of pub,
+// or OpError if pub is not a recognized ML-DSA public key.
+func mldsaSignOp(pub crypto.PublicKey) protocol.Op {
+	var n int
+	switch k := pub.(type) {
+	case interface{ Bytes() []byte }:
+		n = len(k.Bytes())
+	case encoding.BinaryMarshaler:
+		b, err := k.MarshalBinary()
+		if err != nil {
+			return protocol.OpError
+		}
+		n = len(b)
+	default:
+		return protocol.OpError
+	}
+	for _, op := range []protocol.Op{protocol.OpMLDSA44Sign, protocol.OpMLDSA65Sign, protocol.OpMLDSA87Sign} {
+		if protocol.MLDSAPublicKeySize(op) == n {
+			return op
+		}
+	}
+	return protocol.OpError
+}
+
 func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
-	if opts, ok := opts.(*rsa.PSSOptions); ok {
+	if pss, ok := opts.(*rsa.PSSOptions); ok {
+		// A typed-nil *PSSOptions panics on HashFunc, so reject it here.
+		if pss == nil {
+			return protocol.OpError
+		}
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
 			return protocol.OpError
 		}
 		// Keyless only implements RSA-PSS with salt length == hash length,
 		// as used in TLS 1.3.  Check that it's what the client is asking,
 		// either explicitly or with the magic value.
-		if opts.SaltLength != rsa.PSSSaltLengthEqualsHash &&
-			opts.SaltLength != opts.Hash.Size() {
+		if pss.SaltLength != rsa.PSSSaltLengthEqualsHash &&
+			pss.SaltLength != pss.Hash.Size() {
 			return protocol.OpError
 		}
-		switch opts.Hash {
+		switch pss.Hash {
 		case crypto.SHA256:
 			return protocol.OpRSAPSSSignSHA256
 		case crypto.SHA384:
@@ -64,11 +92,17 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 	}
 	switch key.Public().(type) {
 	case *rsa.PublicKey:
+		if opts == nil {
+			return protocol.OpError
+		}
 		if value, ok := rsaCrypto[opts.HashFunc()]; ok {
 			return value
 		}
 		return protocol.OpError
 	case *ecdsa.PublicKey:
+		if opts == nil {
+			return protocol.OpError
+		}
 		if value, ok := ecdsaCrypto[opts.HashFunc()]; ok {
 			return value
 		}
@@ -76,11 +110,15 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 	case ed25519.PublicKey:
 		return protocol.OpEd25519Sign
 	default:
-		return protocol.OpError
+		// ML-DSA signs the message directly: only nil or crypto.Hash(0) opts.
+		if opts != nil && opts != crypto.Hash(0) {
+			return protocol.OpError
+		}
+		return mldsaSignOp(key.Public())
 	}
 }
 
-// PrivateKey represents a keyless-backed RSA/ECDSA private key.
+// PrivateKey represents a keyless-backed RSA, ECDSA, Ed25519 or ML-DSA private key.
 type PrivateKey struct {
 	public    crypto.PublicKey
 	client    *Client
@@ -90,6 +128,8 @@ type PrivateKey struct {
 	keyserver string
 	sni       string
 	certID    string
+	// certUsage, if set, is sent on every operation for server-side key selection.
+	certUsage *protocol.CertUsage
 
 	// We have shove the span context inside PrivateKey because
 	// it's used by calling functions on the `crypto.Signer` interface, which don't take ctx as a parameter.
@@ -112,12 +152,12 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 	for attempts := 2; attempts > 0; attempts-- {
 		r, err := key.client.getRemote(key.keyserver)
 		if err != nil {
-			return nil, server.RemoteConfigurationErr{Err: err}
+			return nil, protocol.RemoteConfigurationErr{Err: err}
 		}
 
 		conn, err := r.Dial(key.client)
 		if err != nil {
-			return nil, server.RemoteConfigurationErr{Err: err}
+			return nil, protocol.RemoteConfigurationErr{Err: err}
 		}
 
 		// We explicitly do NOT want to fill in JaegerSpan here, since the remote keyless server
@@ -132,6 +172,7 @@ func (key *PrivateKey) execute(ctx context.Context, op protocol.Op, msg []byte) 
 			ServerIP:         key.serverIP,
 			SNI:              key.sni,
 			CertID:           key.certID,
+			CertUsage:        key.certUsage,
 			ComplianceRegion: key.complianceRegion,
 		})
 		if err != nil {
@@ -171,17 +212,35 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 	span, ctx := opentracing.StartSpanFromContext(context.Background(), "client: PrivateKey.Sign", ext.RPCServerOption(spanCtx))
 	defer span.Finish()
 
-	// If opts specifies a hash function, then the message is expected to be the
-	// length of the output of that hash function.
-	if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
-		return nil, errors.New("input must be hashed message")
-	}
-
 	op := signOpFromSignerOpts(key, opts)
 	if op == protocol.OpError {
 		return nil, errors.New("invalid key type, hash or options")
 	}
-	return key.execute(ctx, op, msg)
+
+	if op.IsMLDSASign() {
+		// ML-DSA keys only sign TLS 1.3 CertificateVerify inputs; reject others locally.
+		if !protocol.ValidTLS13ServerCertificateVerify(msg) {
+			return nil, errors.New("ML-DSA input must be a TLS 1.3 server CertificateVerify message")
+		}
+	} else {
+		if opts == nil {
+			return nil, errors.New("signer options are required")
+		}
+		// If opts specifies a hash function, then the message is expected to be the
+		// length of the output of that hash function.
+		if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
+			return nil, errors.New("input must be hashed message")
+		}
+	}
+
+	sig, err := key.execute(ctx, op, msg)
+	if err != nil {
+		return nil, err
+	}
+	if op.IsMLDSASign() && len(sig) != protocol.MLDSASignatureSize(op) {
+		return nil, fmt.Errorf("unexpected ML-DSA signature length %d", len(sig))
+	}
+	return sig, nil
 }
 
 // Decrypter implements the Decrypt method on a PrivateKey.

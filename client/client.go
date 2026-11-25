@@ -194,8 +194,6 @@ func (c *Client) getRemote(server string) (Remote, error) {
 // keyserver.
 func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, certID string, serverIP net.IP, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
-	defer span.Finish()
 	priv := PrivateKey{
 		public:    pub,
 		client:    c,
@@ -205,21 +203,32 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 		keyserver: keyserver,
 		certID:    certID,
 	}
-	if len(complianceRegion) > 0 {
-		priv.complianceRegion = complianceRegion[0]
-	}
-	var err error
-	priv.JaegerSpan, err = tracing.SpanContextToBinary(span.Context())
-	if err != nil {
-		log.Errorf("failed to inject span: %v", err)
-	}
+	return newRemoteSigner(ctx, "client.NewRemoteSignerWithCertID", priv, complianceRegion)
+}
 
-	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
-	// implement Decrypt.
-	if _, ok := pub.(*rsa.PublicKey); ok {
-		return &Decrypter{priv}, nil
+// NewRemoteSignerWithCertUsage returns a remote keyserver based crypto.Signer
+// whose operations carry certUsage; the server selects the key by it. ski may be zero.
+func NewRemoteSignerWithCertUsage(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
+	pub crypto.PublicKey, sni string, serverIP net.IP, certUsage *protocol.CertUsage,
+	complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
+	if certUsage == nil {
+		return nil, errors.New("invalid cert usage: nil")
 	}
-	return &priv, nil
+	if err := certUsage.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid cert usage: %w", err)
+	}
+	// Copy so later caller mutations don't affect the signer.
+	cu := *certUsage
+	priv := PrivateKey{
+		public:    pub,
+		client:    c,
+		ski:       ski,
+		sni:       sni,
+		serverIP:  serverIP,
+		keyserver: keyserver,
+		certUsage: &cu,
+	}
+	return newRemoteSigner(ctx, "client.NewRemoteSignerWithCertUsage", priv, complianceRegion)
 }
 
 // NewRemoteSigner returns a remote keyserver based crypto.Signer,
@@ -227,9 +236,6 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 // keyserver.
 func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
 	pub crypto.PublicKey, sni string, serverIP net.IP, complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
-
-	span, _ := opentracing.StartSpanFromContext(ctx, "client.NewRemoteSignerWithCertID")
-	defer span.Finish()
 	priv := PrivateKey{
 		public:    pub,
 		client:    c,
@@ -238,7 +244,14 @@ func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski proto
 		serverIP:  serverIP,
 		keyserver: keyserver,
 	}
+	return newRemoteSigner(ctx, "client.NewRemoteSigner", priv, complianceRegion)
+}
 
+// newRemoteSigner applies the optional compliance region and tracing span to
+// priv and wraps it as a crypto.Signer (or Decrypter for RSA keys).
+func newRemoteSigner(ctx context.Context, spanName string, priv PrivateKey, complianceRegion []protocol.ComplianceRegion) (crypto.Signer, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, spanName)
+	defer span.Finish()
 	if len(complianceRegion) > 0 {
 		priv.complianceRegion = complianceRegion[0]
 	}
@@ -250,7 +263,7 @@ func NewRemoteSigner(ctx context.Context, c *Client, keyserver string, ski proto
 
 	// This is due to an issue in crypto/tls, where an ECDSA key is not allowed to
 	// implement Decrypt.
-	if _, ok := pub.(*rsa.PublicKey); ok {
+	if _, ok := priv.public.(*rsa.PublicKey); ok {
 		return &Decrypter{priv}, nil
 	}
 	return &priv, nil
