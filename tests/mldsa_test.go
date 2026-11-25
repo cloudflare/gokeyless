@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/cloudflare/gokeyless/client"
 	"github.com/cloudflare/gokeyless/protocol"
 	"github.com/cloudflare/gokeyless/server"
 )
@@ -218,6 +220,63 @@ func (s *IntegrationTestSuite) TestMLDSASignSuccess() {
 					}
 				})
 			}
+		}
+	}
+}
+
+// TestClientMLDSASign signs through the client's crypto.Signer and checks the
+// opcode chosen from the public key size and the keystore lookup path.
+func (s *IntegrationTestSuite) TestClientMLDSASign() {
+	cu := &protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: "example"}
+
+	for _, opcode := range mldsaOpcodes {
+		for _, withCertUsage := range []bool{false, true} {
+			s.Run(fmt.Sprintf("%s/cu=%t", opcode, withCertUsage), func() {
+				require := require.New(s.T())
+
+				signer := &fakeMLDSASigner{sigLen: protocol.MLDSASignatureSize(opcode)}
+				keys := &fakeKeystore{signer: signer}
+				defer s.useKeystore(keys)()
+
+				ctx := context.Background()
+				pub := fakeMLDSAPublicKey(make([]byte, protocol.MLDSAPublicKeySize(opcode)))
+				var (
+					priv crypto.Signer
+					err  error
+					ski  protocol.SKI
+				)
+				if withCertUsage {
+					priv, err = client.NewRemoteSignerWithCertUsage(ctx, s.client, "", ski, pub, "example.com", nil, *cu)
+				} else {
+					ski = testSKI
+					priv, err = client.NewRemoteSigner(ctx, s.client, "", ski, pub, "example.com", nil)
+				}
+				require.NoError(err)
+
+				payload := tls13ServerCertVerify(32)
+				sig, err := priv.Sign(rand.Reader, payload, crypto.Hash(0))
+				require.NoError(err)
+				require.Equal(bytes.Repeat([]byte{0x5a}, protocol.MLDSASignatureSize(opcode)), sig)
+
+				calls := signer.Calls()
+				require.Len(calls, 1)
+				require.Equal(payload, calls[0].msg)
+
+				ops, other := keys.Ops(), keys.CertUsageOps()
+				if withCertUsage {
+					ops, other = other, ops
+				}
+				require.Empty(other)
+				require.Len(ops, 1)
+				require.Equal(opcode, ops[0].Opcode)
+				require.Equal(ski, ops[0].SKI)
+				require.Equal("example.com", ops[0].SNI)
+				if withCertUsage {
+					require.Equal(cu, ops[0].CertUsage)
+				} else {
+					require.Nil(ops[0].CertUsage)
+				}
+			})
 		}
 	}
 }

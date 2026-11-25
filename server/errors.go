@@ -1,9 +1,6 @@
 package server
 
-type RemoteConfigurationErr struct {
-	Err error
-}
+import "github.com/cloudflare/gokeyless/protocol"
 
-func (rce RemoteConfigurationErr) Error() string {
-	return rce.Err.Error()
-}
+// RemoteConfigurationErr is an alias of protocol.RemoteConfigurationErr.
+type RemoteConfigurationErr = protocol.RemoteConfigurationErr
