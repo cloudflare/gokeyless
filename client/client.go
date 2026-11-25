@@ -209,16 +209,11 @@ func NewRemoteSignerWithCertID(ctx context.Context, c *Client, keyserver string,
 // NewRemoteSignerWithCertUsage returns a remote keyserver based crypto.Signer
 // whose operations carry certUsage; the server selects the key by it. ski may be zero.
 func NewRemoteSignerWithCertUsage(ctx context.Context, c *Client, keyserver string, ski protocol.SKI,
-	pub crypto.PublicKey, sni string, serverIP net.IP, certUsage *protocol.CertUsage,
+	pub crypto.PublicKey, sni string, serverIP net.IP, certUsage protocol.CertUsage,
 	complianceRegion ...protocol.ComplianceRegion) (crypto.Signer, error) {
-	if certUsage == nil {
-		return nil, errors.New("invalid cert usage: nil")
-	}
 	if err := certUsage.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid cert usage: %w", err)
 	}
-	// Copy so later caller mutations don't affect the signer.
-	cu := *certUsage
 	priv := PrivateKey{
 		public:    pub,
 		client:    c,
@@ -226,7 +221,7 @@ func NewRemoteSignerWithCertUsage(ctx context.Context, c *Client, keyserver stri
 		sni:       sni,
 		serverIP:  serverIP,
 		keyserver: keyserver,
-		certUsage: &cu,
+		certUsage: &certUsage,
 	}
 	return newRemoteSigner(ctx, "client.NewRemoteSignerWithCertUsage", priv, complianceRegion)
 }

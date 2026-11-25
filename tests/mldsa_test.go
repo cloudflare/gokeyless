@@ -246,7 +246,7 @@ func (s *IntegrationTestSuite) TestClientMLDSASign() {
 					ski  protocol.SKI
 				)
 				if withCertUsage {
-					priv, err = client.NewRemoteSignerWithCertUsage(ctx, s.client, "", ski, pub, "example.com", nil, cu)
+					priv, err = client.NewRemoteSignerWithCertUsage(ctx, s.client, "", ski, pub, "example.com", nil, *cu)
 				} else {
 					ski = testSKI
 					priv, err = client.NewRemoteSigner(ctx, s.client, "", ski, pub, "example.com", nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rsa"
 	"go/parser"
 	"go/token"
@@ -59,6 +60,10 @@ func TestSignOpFromSignerOpts(t *testing.T) {
 		{"ecdsa sha256", &ecdsa.PublicKey{}, crypto.SHA256, protocol.OpECDSASignSHA256},
 		{"rsa sha256", &rsa.PublicKey{}, crypto.SHA256, protocol.OpRSASignSHA256},
 		{"rsa typed-nil pss", &rsa.PublicKey{}, (*rsa.PSSOptions)(nil), protocol.OpError},
+		{"rsa typed-nil ed25519 opts", &rsa.PublicKey{}, (*ed25519.Options)(nil), protocol.OpError},
+		{"ed25519", ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)), crypto.Hash(0), protocol.OpEd25519Sign},
+		{"ed25519 nil opts", ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)), nil, protocol.OpError},
+		{"ed25519 typed-nil opts", ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)), (*ed25519.Options)(nil), protocol.OpError},
 		{"mldsa44", fakeMLDSAPub(make([]byte, 1312)), crypto.Hash(0), protocol.OpMLDSA44Sign},
 		{"mldsa65", fakeMLDSAPub(make([]byte, 1952)), crypto.Hash(0), protocol.OpMLDSA65Sign},
 		{"mldsa87", fakeMLDSAPub(make([]byte, 2592)), crypto.Hash(0), protocol.OpMLDSA87Sign},
@@ -77,23 +82,21 @@ func TestSignOpFromSignerOpts(t *testing.T) {
 
 func TestNewRemoteSignerWithCertUsage(t *testing.T) {
 	pub := &ecdsa.PublicKey{}
-	newSigner := func(cu *protocol.CertUsage) (crypto.Signer, error) {
+	newSigner := func(cu protocol.CertUsage) (crypto.Signer, error) {
 		return NewRemoteSignerWithCertUsage(context.Background(), nil, "", protocol.SKI{}, pub, "", nil, cu)
 	}
-	for _, cu := range []*protocol.CertUsage{nil, {Usage: 0xff, Scope: "svc"}, {Usage: protocol.CertUsageServiceServer}} {
+	for _, cu := range []protocol.CertUsage{{Usage: 0xff, Scope: "svc"}, {Usage: protocol.CertUsageServiceServer}} {
 		if _, err := newSigner(cu); err == nil {
-			t.Errorf("expected error for cert usage %v", cu)
+			t.Errorf("expected error for cert usage %v", &cu)
 		}
 	}
 
-	cu := &protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: "svc"}
-	s, err := newSigner(cu)
+	s, err := newSigner(protocol.CertUsage{Usage: protocol.CertUsageServiceServer, Scope: "svc"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cu.Scope = "changed"
-	if got := s.(*PrivateKey).certUsage; got == cu || got.Scope != "svc" {
-		t.Fatalf("signer did not keep a copy of cert usage: %v", got)
+	if got := s.(*PrivateKey).certUsage; got == nil || got.Scope != "svc" {
+		t.Fatalf("unexpected cert usage: %v", got)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 
 	"github.com/cloudflare/cfssl/log"
 	"github.com/cloudflare/gokeyless/protocol"
@@ -40,7 +41,10 @@ var (
 )
 
 // mldsaSignOp returns the ML-DSA signing op matching the encoded size of pub,
-// or OpError if pub is not a recognized ML-DSA public key.
+// or OpError if pub is not a recognized ML-DSA public key. Duck typing on
+// Bytes()/MarshalBinary is deliberate, so circl and future stdlib ML-DSA key
+// types work without importing them. Callers must match classical key types
+// first; the keyserver re-checks the key type and is authoritative.
 func mldsaSignOp(pub crypto.PublicKey) protocol.Op {
 	var n int
 	switch k := pub.(type) {
@@ -64,11 +68,12 @@ func mldsaSignOp(pub crypto.PublicKey) protocol.Op {
 }
 
 func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
+	// Typed-nil pointer opts panic on HashFunc, so reject them up front.
+	// Untyped nil is still allowed for ML-DSA.
+	if v := reflect.ValueOf(opts); v.Kind() == reflect.Pointer && v.IsNil() {
+		return protocol.OpError
+	}
 	if pss, ok := opts.(*rsa.PSSOptions); ok {
-		// A typed-nil *PSSOptions panics on HashFunc, so reject it here.
-		if pss == nil {
-			return protocol.OpError
-		}
 		if _, ok := key.Public().(*rsa.PublicKey); !ok {
 			return protocol.OpError
 		}
@@ -108,6 +113,9 @@ func signOpFromSignerOpts(key *PrivateKey, opts crypto.SignerOpts) protocol.Op {
 		}
 		return protocol.OpError
 	case ed25519.PublicKey:
+		if opts == nil {
+			return protocol.OpError
+		}
 		return protocol.OpEd25519Sign
 	default:
 		// ML-DSA signs the message directly: only nil or crypto.Hash(0) opts.
@@ -223,9 +231,7 @@ func (key *PrivateKey) Sign(r io.Reader, msg []byte, opts crypto.SignerOpts) ([]
 			return nil, errors.New("ML-DSA input must be a TLS 1.3 server CertificateVerify message")
 		}
 	} else {
-		if opts == nil {
-			return nil, errors.New("signer options are required")
-		}
+		// signOpFromSignerOpts rejects nil and typed-nil opts for non-ML-DSA ops.
 		// If opts specifies a hash function, then the message is expected to be the
 		// length of the output of that hash function.
 		if opts.HashFunc() != 0 && len(msg) != opts.HashFunc().Size() {
